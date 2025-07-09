@@ -1,0 +1,14 @@
+docling --extra-index-url https://download.pytorch.org/whl/cpu
+lxml_html_clean
+beautifulsoup4
+trafilatura
+langdetect
+transformers
+protobuf
+sentencepiece
+qdrant-client
+torch
+llama-cpp-python
+sentence-transformers
+tiktoken
+pymongo
