@@ -8,6 +8,7 @@ import tasks.ingest.ingest
 import tasks.translate.translate
 import tasks.ask.ask
 import tasks.search.search
+import tasks.embedding.embedding
 
 def process_job(job):
     job_type = job.get("type")
