@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y build-essential cmake ninja-build pytho
 RUN pip3 install --upgrade pip
 COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+RUN python -m spacy download en_core_web_sm
 
 COPY . .
 
