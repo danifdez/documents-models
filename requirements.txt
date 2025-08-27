@@ -12,3 +12,5 @@ llama-cpp-python
 sentence-transformers
 tiktoken
 pymongo
+spacy
+networkx
