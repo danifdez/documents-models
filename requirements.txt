@@ -11,6 +11,6 @@ torch
 llama-cpp-python
 sentence-transformers
 tiktoken
-pymongo
+psycopg[binary]
 spacy
 networkx

@@ -16,11 +16,11 @@ def process_job(job):
     handler = TASK_HANDLERS.get(job_type)
     print(f"Job type: {job_type}, Handler: {handler}")
     if handler:
-        print(f"Processing job: {job['_id']} of type: {job_type}")
+        print(f"Processing job: {job['id']} of type: {job_type}")
         db = get_job_database()
-        db.update_job_status(job['_id'], "processing")
+        db.update_job_status(job['id'], "processing")
         result = handler(job["payload"])
-        db.update_job_result(job['_id'], result)
-        db.update_job_status(job['_id'], "processed")
+        db.update_job_result(job['id'], result)
+        db.update_job_status(job['id'], "processed")
     else:
         print(f"No handler for job type: {job_type}")

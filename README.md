@@ -23,19 +23,26 @@ You can run the models service either with Docker or manually:
 ### Docker
 
 1. Build the Docker image for the models service:
+
    ```bash
    docker build -t documents-models .
    ```
-2. Run the container (set environment variables as needed for MongoDB/Qdrant):
+
+2. Run the container (set environment variables as needed for PostgreSQL/Qdrant):
+
    ```bash
    docker run --rm \
-     -e MONGO_URI="mongodb://<host>:<port>/<db>" \
-     -e MONGO_DB_NAME="<database>" \
+     -e POSTGRES_HOST="<host>" \
+     -e POSTGRES_PORT="<port>" \
+     -e POSTGRES_DB="<database>" \
+     -e POSTGRES_USER="<user>" \
+     -e POSTGRES_PASSWORD="<password>" \
      -e QDRANT_HOST="<host>" \
      -e QDRANT_PORT="<port>" \
      -e QDRANT_COLLECTION="<collection>" \
      documents-models
    ```
+
    The service will start and begin polling for jobs. Adjust environment variables as needed for your setup.
 
 ### Local
@@ -46,18 +53,41 @@ You can run the models service either with Docker or manually:
    - pip (Python package manager)
 
 2. Install Python dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
+
 3. Start the models service:
+
    ```bash
    python jobs.py
    ```
+
    The service will begin polling for jobs and processing them.
 
 ## Getting Started
 
-To manually create jobs in MongoDB for processing, use the following example structures for each job type:
+To manually create jobs for processing, create rows in your jobs table (PostgreSQL) compatible with the models service. Example SQL to create a compatible jobs table:
+
+```sql
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  type TEXT,
+  payload JSONB,
+  status TEXT,
+  priority TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  result JSONB
+);
+```
+
+Example job insert (psql):
+
+```sql
+INSERT INTO jobs (id, type, payload, status, priority)
+VALUES ('job-123', 'summarize', '{"content": "..."}', 'pending', 'normal');
+```
 
 ### Example Job Structures
 
