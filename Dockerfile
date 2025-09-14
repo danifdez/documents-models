@@ -13,8 +13,6 @@ RUN python -m spacy download en_core_web_sm
 
 COPY . .
 
-RUN chown -R appuser:appuser /app
-
 USER appuser
 
 EXPOSE 8000
