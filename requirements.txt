@@ -12,3 +12,4 @@ llama-cpp-python
 sentence-transformers
 tiktoken
 psycopg[binary]
+spacy
