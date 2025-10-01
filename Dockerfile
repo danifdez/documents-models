@@ -16,4 +16,6 @@ USER appuser
 
 EXPOSE 8000
 
+RUN python -m spacy download en_core_web_trf
+
 CMD ["sh", "-c", "python jobs.py"]
