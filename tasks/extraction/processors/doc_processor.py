@@ -16,6 +16,9 @@ def process_doc(file) -> dict:
 
     result = converter.convert(file)
 
+    page_count = len(result.document.pages) if hasattr(
+        result.document, 'pages') else None
+
     html_content = result.document.export_to_html(image_mode='embedded')
     parsed_html = BeautifulSoup(html_content, "html.parser")
 
@@ -61,4 +64,8 @@ def process_doc(file) -> dict:
         processed_content = str(
             parsed_html.body.decode_contents() if parsed_html.body else "")
 
-    return {"content": processed_content}
+    result_dict = {"content": processed_content}
+    if page_count is not None:
+        result_dict["pages"] = page_count
+
+    return result_dict
