@@ -4,7 +4,19 @@ WORKDIR /app
 
 RUN adduser --disabled-password --gecos '' appuser
 
-RUN apt-get update && apt-get install -y build-essential cmake ninja-build python3-dev git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3-dev \
+    git \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --upgrade pip
 COPY requirements.txt /tmp/requirements.txt
