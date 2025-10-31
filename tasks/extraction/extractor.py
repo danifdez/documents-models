@@ -1,9 +1,11 @@
-import os
 from utils.job_registry import job_handler
 from tasks.extraction.processors.html_processor import process_html
 from tasks.extraction.processors.doc_processor import process_doc
 from tasks.extraction.processors.pdf_processor import process_pdf
 from tasks.extraction.processors.txt_processor import process_txt
+from config import DOCUMENTS_STORAGE_DIR
+import os
+
 
 @job_handler("document-extraction")
 def extract(payload) -> dict:
@@ -25,6 +27,7 @@ def extract(payload) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+
 def _get_file_path(hash: str, extension: str) -> str:
     """
     Constructs the file path for the extracted document based on its hash and extension.
@@ -36,6 +39,4 @@ def _get_file_path(hash: str, extension: str) -> str:
     Returns:
         str: The absolute path to the file.
     """
-    extraction_dir = os.getenv("EXTRACTION_DIR", "/app/documents_storage")
-
-    return os.path.join(extraction_dir, hash[:3], hash[3:6],  hash + extension)
+    return os.path.join(DOCUMENTS_STORAGE_DIR, hash[:3], hash[3:6],  hash + extension)

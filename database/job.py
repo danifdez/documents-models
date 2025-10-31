@@ -1,18 +1,25 @@
-import os
 import json
 import psycopg
 from psycopg.rows import dict_row
 from typing import Optional, Dict, Any
+from config import (
+    POSTGRES_HOST,
+    POSTGRES_PORT,
+    POSTGRES_DB,
+    POSTGRES_USER,
+    POSTGRES_PASSWORD,
+    JOBS_TABLE
+)
 
 
 class Job:
     def __init__(self):
-        self.host = os.getenv("POSTGRES_HOST", "database")
-        self.port = int(os.getenv("POSTGRES_PORT", "5432"))
-        self.db = os.getenv("POSTGRES_DB", "documents")
-        self.user = os.getenv("POSTGRES_USER", "postgres")
-        self.password = os.getenv("POSTGRES_PASSWORD", "example")
-        self.table = os.getenv("JOBS_TABLE", "jobs")
+        self.host = POSTGRES_HOST
+        self.port = POSTGRES_PORT
+        self.db = POSTGRES_DB
+        self.user = POSTGRES_USER
+        self.password = POSTGRES_PASSWORD
+        self.table = JOBS_TABLE
 
         self.conn = psycopg.connect(
             host=self.host,

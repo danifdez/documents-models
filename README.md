@@ -40,10 +40,41 @@ You can run the models service either with Docker or manually:
      -e QDRANT_HOST="<host>" \
      -e QDRANT_PORT="<port>" \
      -e QDRANT_COLLECTION="<collection>" \
+     -e LLM_MODEL_NAME="Mistral-7B-Instruct-v0.3-Q8_0.gguf" \
      documents-models
    ```
 
    The service will start and begin polling for jobs. Adjust environment variables as needed for your setup.
+
+## Configuration
+
+The models service can be configured using environment variables or by modifying the `config.py` file. Available configuration options:
+
+### LLM Configuration
+
+- `LLM_MODEL_NAME`: Name of the LLM model file in `/app/models/` directory (default: `Mistral-7B-Instruct-v0.3-Q8_0.gguf`)
+- `LLM_N_CTX`: Context window size for the LLM (default: `32768`)
+- `LLM_N_THREADS`: Number of threads for LLM processing (default: `4`)
+- `LLM_N_BATCH`: Batch size for LLM processing (default: `64`)
+
+### Embedding Configuration
+
+- `EMBEDDING_MODEL_NAME`: Name of the embedding model to use (default: `BAAI/bge-small-en-v1.5`)
+
+### RAG Configuration
+
+- `RAG_DEFAULT_LIMIT`: Default number of results to retrieve from vector database (default: `5`)
+- `RAG_MAX_TOKENS`: Maximum tokens for generated responses (default: `1000`)
+
+Example with custom configuration:
+
+```bash
+docker run --rm \
+  -e LLM_MODEL_NAME="custom-model.gguf" \
+  -e LLM_N_CTX="16384" \
+  -e LLM_N_THREADS="8" \
+  documents-models
+```
 
 ### Local
 
