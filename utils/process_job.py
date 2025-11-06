@@ -10,6 +10,7 @@ import tasks.ask.ask
 import tasks.search.search
 import tasks.embedding.embedding
 import tasks.key_points.key_points
+import tasks.keywords.keywords
 
 
 def process_job(job):
