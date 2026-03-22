@@ -1,14 +1,17 @@
 from sentence_transformers import SentenceTransformer
 from typing import List
-from config import EMBEDDING_MODEL_NAME
+from utils.device import get_device
+from services.model_config import get_task_config
 
 
 class EmbeddingService:
     """Centralized embedding service"""
 
     def __init__(self):
-        self.model_name = EMBEDDING_MODEL_NAME
-        self.model = SentenceTransformer(self.model_name)
+        task_config = get_task_config("embedding")
+        self.model_name = task_config.get("model", "BAAI/bge-small-en-v1.5")
+        self.device = get_device()
+        self.model = SentenceTransformer(self.model_name, device=self.device)
 
     def encode(self, texts: List[str], normalize_embeddings: bool = True):
         """Encode texts to embeddings"""
@@ -17,6 +20,11 @@ class EmbeddingService:
     def encode_single(self, text: str, normalize_embeddings: bool = True):
         """Encode a single text to embedding"""
         return self.model.encode([text], normalize_embeddings=normalize_embeddings)[0]
+
+    def encode_query(self, text: str, normalize_embeddings: bool = True):
+        """Encode a query with BGE instruction prefix for asymmetric retrieval."""
+        prefixed = "Represent this sentence: " + text
+        return self.model.encode([prefixed], normalize_embeddings=normalize_embeddings)[0]
 
 
 # Singleton instance

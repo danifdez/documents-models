@@ -1,10 +1,25 @@
+import logging
 from typing import Dict, List, Any
 import spacy
 from utils.job_registry import job_handler
+from utils.device import HAS_CUDA, get_spacy_model
 
-# Load the spaCy model globally to avoid reloading for each request
-# en_core_web_trf provides transformer-based accuracy with better entity recognition
-nlp = spacy.load("en_core_web_trf")
+logger = logging.getLogger(__name__)
+
+# Lazy-loaded spaCy model to avoid crash at import time if not installed
+nlp = None
+
+def _get_nlp():
+    global nlp
+    if nlp is None:
+        if HAS_CUDA:
+            spacy.prefer_gpu()
+        from services.model_config import get_task_config
+        task_config = get_task_config("entity-extraction")
+        model_name = task_config.get("model") or get_spacy_model()
+        nlp = spacy.load(model_name)
+        logger.info("spaCy loaded model: %s", model_name)
+    return nlp
 
 @job_handler("entity-extraction")
 def entities(payload: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
@@ -47,7 +62,7 @@ def entities(payload: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
     }
     
     # Use spaCy's pipe method for efficient batch processing
-    docs = nlp.pipe(text_strings, batch_size=32)
+    docs = _get_nlp().pipe(text_strings, batch_size=32)
     
     for doc in docs:
         for ent in doc.ents:

@@ -1,17 +1,23 @@
 from utils.job_registry import job_handler
-from services.embedding_service import get_embedding_service
-from database.rag import get_rag
+from rag.retriever import Retriever
+from rag.reranker import Reranker
+from rag.types import RAGContext
+
 
 @job_handler("search")
 def search_snippets(payload) -> dict:
-    embedding_service = get_embedding_service()
-    db = get_rag()
-    query_embedding = embedding_service.encode_single(payload["query"])
-    points = db.query_points(query_embedding, limit=payload["limit"], with_payload=True)
-    results = []
-    for point in points:
-        text = point.payload.get("text", "") if hasattr(point, 'payload') else ""
-        score = getattr(point, 'score', 0.0)
-        metadata = point.payload if hasattr(point, 'payload') else {}
-        results.append({ "text": text, "score": score, "metadata": metadata })
-    return { "results": results }
+    ctx = RAGContext(
+        query=payload["query"],
+        project_id=str(payload["projectId"]) if payload.get("projectId") else None,
+        limit=payload["limit"],
+        score_threshold=payload.get("score_threshold"),
+    )
+
+    ctx = Retriever().run(ctx)
+    ctx = Reranker().run(ctx)
+
+    source = ctx.ranked_chunks if ctx.ranked_chunks else ctx.chunks
+    return {"results": [
+        {"text": c.text, "score": c.score, "metadata": c.metadata}
+        for c in source
+    ]}

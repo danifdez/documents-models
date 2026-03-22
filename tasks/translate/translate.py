@@ -1,6 +1,20 @@
 from typing import List, Dict, Any, Optional
-from transformers import pipeline
+from transformers import pipeline as hf_pipeline
 from utils.job_registry import job_handler
+from utils.device import get_device
+
+_translation_pipelines: Dict[str, Any] = {}
+
+
+def _get_translation_pipeline(source: str, target: str):
+    key = f"{source}-{target}"
+    if key not in _translation_pipelines:
+        from services.model_config import get_task_config
+        prefix = get_task_config("translate").get("model_prefix", "Helsinki-NLP/opus-mt")
+        model_name = f"{prefix}-{source}-{target}"
+        device = get_device()
+        _translation_pipelines[key] = hf_pipeline("translation", model=model_name, device=device)
+    return _translation_pipelines[key]
 
 
 def _normalize_text_items(texts: List[Any]) -> List[str]:
@@ -56,8 +70,7 @@ def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
     translated_texts: List[Dict[str, Optional[str]]] = []
 
     try:
-        model_name = f"Helsinki-NLP/opus-mt-{source}-{target}"
-        translation = pipeline("translation", model=model_name)
+        translation = _get_translation_pipeline(source, target)
 
         chunk_size = 32
         normalized_texts = _normalize_text_items(texts)

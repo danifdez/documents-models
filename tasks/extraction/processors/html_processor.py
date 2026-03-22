@@ -1,6 +1,9 @@
+import logging
 import re
 from trafilatura import extract
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 _author_meta_names = ["author", ":author", "byl", "dc.creator"]
 _date_meta_names = [":published_time", ":publishtime", "date", "publication_date","dc.date.issued", "pubdate", "timestamp"]
@@ -123,7 +126,7 @@ def process_html(html_content) -> dict:
 
             extracted = clean_html.strip()
         except Exception as e:
-            print(f"Error processing HTML content: {str(e)}")
+            logger.error("Error processing HTML content: %s", e)
 
     if extracted:
         extracted = extracted.strip()

@@ -1,18 +1,30 @@
 from utils.job_registry import job_handler
+from utils.device import get_device
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
+
+_summarize_model = None
+_summarize_tokenizer = None
+
+
+def _get_summarize_model():
+    global _summarize_model, _summarize_tokenizer
+    if _summarize_model is None:
+        from services.model_config import get_task_config
+        model_name = get_task_config("summarize").get("model", "facebook/mbart-large-50-one-to-many-mmt")
+        device = get_device()
+        try:
+            _summarize_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        except Exception:
+            _summarize_tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+        _summarize_model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
+    return _summarize_model, _summarize_tokenizer
 
 
 @job_handler("summarize")
 def summarize_text(payload) -> dict:
-    model_name = "facebook/mbart-large-50-one-to-many-mmt"
-
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    device = get_device()
+    model, tokenizer = _get_summarize_model()
     tokenizer.src_lang = payload["sourceLanguage"] + "_XX"
     es_forced_bos_token_id = tokenizer.lang_code_to_id[payload["targetLanguage"] + "_XX"]
 
@@ -23,7 +35,7 @@ def summarize_text(payload) -> dict:
         max_length=1024,
         truncation=True,
         return_tensors="pt"
-    )
+    ).to(device)
 
     summary_ids = model.generate(
         inputs["input_ids"],

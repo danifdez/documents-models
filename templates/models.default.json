@@ -1,0 +1,39 @@
+{
+  "llm_defaults": {
+    "model_dir": "models",
+    "n_ctx": 32768,
+    "n_threads": 4,
+    "n_batch": 64,
+    "n_gpu_layers": 0
+  },
+  "tasks": {
+    "keywords": {
+      "type": "llm",
+      "model": "Phi-4-mini-instruct-Q4_K_M.gguf"
+    },
+    "key-point": {
+      "type": "llm",
+      "model": "Phi-4-mini-instruct-Q4_K_M.gguf"
+    },
+    "ask": {
+      "type": "llm",
+      "model": "Phi-4-mini-instruct-Q4_K_M.gguf"
+    },
+    "embedding": {
+      "type": "sentence-transformer",
+      "model": "BAAI/bge-small-en-v1.5"
+    },
+    "summarize": {
+      "type": "seq2seq",
+      "model": "facebook/mbart-large-50-one-to-many-mmt"
+    },
+    "translate": {
+      "type": "translation",
+      "model_prefix": "Helsinki-NLP/opus-mt"
+    },
+    "entity-extraction": {
+      "type": "spacy",
+      "model": "en_core_web_sm"
+    }
+  }
+}

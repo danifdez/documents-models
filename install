@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# ── Colors ──
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()  { printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
+ok()    { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
+warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
+fail()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+
+# ── Check Python ──
+PYTHON=""
+for cmd in python3 python; do
+  if command -v "$cmd" >/dev/null 2>&1; then
+    PYTHON="$cmd"
+    break
+  fi
+done
+[ -n "$PYTHON" ] || fail "Python 3 is not installed."
+
+PY_VERSION=$($PYTHON --version 2>&1)
+info "$PY_VERSION detected"
+
+# ── Create virtual environment ──
+if [ ! -d ".venv" ]; then
+  info "Creating virtual environment..."
+  $PYTHON -m venv .venv
+  ok "Created .venv"
+else
+  ok ".venv already exists"
+fi
+
+# ── Activate venv ──
+source .venv/bin/activate
+
+info "Upgrading pip..."
+pip install --upgrade pip -q
+
+# ── Install base dependencies ──
+info "Installing base dependencies..."
+pip install -r requirements.txt
+ok "Base dependencies installed"
+
+# ── Detect CUDA / GPU ──
+HAS_CUDA=0
+
+# Method 1: nvidia-smi
+if command -v nvidia-smi >/dev/null 2>&1; then
+  if nvidia-smi >/dev/null 2>&1; then
+    HAS_CUDA=1
+  fi
+fi
+
+# Method 2: Check if nvcc is available
+if [ "$HAS_CUDA" -eq 0 ] && command -v nvcc >/dev/null 2>&1; then
+  HAS_CUDA=1
+fi
+
+# Method 3: Check for CUDA libraries
+if [ "$HAS_CUDA" -eq 0 ] && [ -d "/usr/local/cuda" ]; then
+  HAS_CUDA=1
+fi
+
+# ── Install GPU dependencies if CUDA detected ──
+if [ "$HAS_CUDA" -eq 1 ]; then
+  ok "CUDA detected"
+  if nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | while read -r line; do
+      info "  GPU: $line"
+    done
+  fi
+  info "Installing GPU dependencies (CUDA 12.6 wheels)..."
+  pip install -r requirements-gpu.txt
+  ok "GPU dependencies installed"
+else
+  warn "No CUDA detected — installing CPU-only mode"
+  info "The service will run on CPU. This is fully supported but slower for ML tasks."
+fi
+
+# ── Install spaCy models ──
+info "Installing spaCy language models..."
+python -m spacy download en_core_web_sm -q
+ok "spaCy en_core_web_sm installed"
+
+if [ "$HAS_CUDA" -eq 1 ]; then
+  info "Installing spaCy transformer model (GPU)..."
+  python -m spacy download en_core_web_trf -q
+  ok "spaCy en_core_web_trf installed"
+else
+  info "Installing spaCy large model (CPU)..."
+  python -m spacy download en_core_web_lg -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
+fi
+
+deactivate
+
+# ── Summary ──
+echo ""
+printf "${GREEN}============================================${NC}\n"
+if [ "$HAS_CUDA" -eq 1 ]; then
+  printf "${GREEN}  Models installation complete! (GPU mode)${NC}\n"
+else
+  printf "${GREEN}  Models installation complete! (CPU mode)${NC}\n"
+fi
+printf "${GREEN}============================================${NC}\n"
+echo ""
+echo "  Activate venv:   source .venv/bin/activate"
+echo "  Start worker:    python jobs.py"
+echo ""
+if [ "$HAS_CUDA" -eq 0 ]; then
+  echo "  Note: Running in CPU-only mode."
+  echo "  If you install CUDA later, re-run this script to enable GPU support."
+  echo ""
+fi
