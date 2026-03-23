@@ -1,304 +1,83 @@
-# documents-models
+# Documents models
+
+> WARNING: This project is in ALPHA — features are experimental and may change without notice. Use at your own risk.
 
 ## Overview
 
-This service is part of the documents project and provides Python-based microservices for document processing.
-
-## Features
-
-- **Job Polling & Processing:** Checks for new jobs, processes them, and updates job and resource status.
-- **Document Extraction:** Handles HTML, PDF, DOC, TXT, outputting normalized HTML/content.
-- **Language Detection:** Identifies the language of extracted document content for downstream processing.
-- **Summarization:** Generates concise summaries of documents using AI models.
-- **Translation:** Translates document content between supported languages.
-- **Search:** Performs semantic and keyword-based search using vector embeddings.
-- **Ingest:** Normalizes and stores processed documents and metadata for later retrieval.
-- **Entities:** Extracts named entities (people, organizations, locations, etc.) from documents.
-- **RAG (Retrieval-Augmented Generation):** Combines document retrieval with generative models for advanced question answering.
-
-## Installation
-
-You can run the models service either with Docker or manually:
-
-### Docker
-
-1. Build the Docker image for the models service:
-
-   ```bash
-   docker build -t documents-models .
-   ```
-
-2. Run the container (set environment variables as needed for PostgreSQL/Qdrant):
-
-   ```bash
-   docker run --rm \
-     -e POSTGRES_HOST="<host>" \
-     -e POSTGRES_PORT="<port>" \
-     -e POSTGRES_DB="<database>" \
-     -e POSTGRES_USER="<user>" \
-     -e POSTGRES_PASSWORD="<password>" \
-     -e QDRANT_HOST="<host>" \
-     -e QDRANT_PORT="<port>" \
-     -e QDRANT_COLLECTION="<collection>" \
-     -e LLM_MODEL_NAME="Mistral-7B-Instruct-v0.3-Q8_0.gguf" \
-     documents-models
-   ```
-
-   The service will start and begin polling for jobs. Adjust environment variables as needed for your setup.
-
-## Configuration
-
-The models service can be configured using environment variables or by modifying the `config.py` file. Available configuration options:
-
-### LLM Configuration
-
-- `LLM_MODEL_NAME`: Name of the LLM model file in `/app/models/` directory (default: `Mistral-7B-Instruct-v0.3-Q8_0.gguf`)
-- `LLM_N_CTX`: Context window size for the LLM (default: `32768`)
-- `LLM_N_THREADS`: Number of threads for LLM processing (default: `4`)
-- `LLM_N_BATCH`: Batch size for LLM processing (default: `64`)
-
-### Embedding Configuration
-
-- `EMBEDDING_MODEL_NAME`: Name of the embedding model to use (default: `BAAI/bge-small-en-v1.5`)
-
-### RAG Configuration
-
-- `RAG_DEFAULT_LIMIT`: Default number of results to retrieve from vector database (default: `5`)
-- `RAG_MAX_TOKENS`: Maximum tokens for generated responses (default: `1000`)
-
-Example with custom configuration:
-
-```bash
-docker run --rm \
-  -e LLM_MODEL_NAME="custom-model.gguf" \
-  -e LLM_N_CTX="16384" \
-  -e LLM_N_THREADS="8" \
-  documents-models
-```
-
-### Local
-
-1. Install system dependencies:
-
-   - Python 3.11 or newer
-   - pip (Python package manager)
-
-2. Install Python dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Start the models service:
-
-   ```bash
-   python jobs.py
-   ```
-
-   The service will begin polling for jobs and processing them.
-
-## Getting Started
-
-To manually create jobs for processing, create rows in your jobs table (PostgreSQL) compatible with the models service. Example SQL to create a compatible jobs table:
-
-```sql
-CREATE TABLE IF NOT EXISTS jobs (
-  id TEXT PRIMARY KEY,
-  type TEXT,
-  payload JSONB,
-  status TEXT,
-  priority TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  result JSONB
-);
-```
-
-Example job insert (psql):
-
-```sql
-INSERT INTO jobs (id, type, payload, status, priority)
-VALUES ('job-123', 'summarize', '{"content": "..."}', 'pending', 'normal');
-```
-
-### Example Job Structures
-
-#### Summarize
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "summarize",
-  "payload": {
-    "content": "<document text>",
-    "sourceLanguage": "en",
-    "targetLanguage": "es"
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "summary": "<summary text>"
-}
-```
-
-#### Detect Language
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "detect-language",
-  "payload": {
-    "samples": ["Text sample 1", "Text sample 2"]
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "results": [
-    { "text": "Text sample 1", "language": "en" },
-    { "text": "Text sample 2", "language": "es" }
-  ]
-}
-```
-
-#### Entities
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "entity-extraction",
-  "payload": {
-    "texts": [{ "text": "John Doe works at Acme Corp." }]
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "entities": [
-    { "type": "PERSON", "text": "John Doe" },
-    { "type": "ORG", "text": "Acme Corp" }
-  ]
-}
-```
-
-#### Extraction
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "document-extraction",
-  "payload": {
-    "hash": "<file_hash>",
-    "extension": ".pdf"
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "content": "<normalized HTML>",
-  "metadata": { "title": "<title>", "author": "<author>" }
-}
-```
-
-#### Ingest
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "ingest-content",
-  "payload": {
-    "source_id": "<source_id>",
-    "project_id": "<project_id>",
-    "content": "<normalized HTML>"
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "success": true
-}
-```
-
-#### Translate
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "translate",
-  "payload": {
-    "texts": [{ "text": "Texto a traducir" }],
-    "sourceLanguage": "es",
-    "targetLanguage": "en"
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "translated_texts": [{ "translation_text": "Text to translate" }]
-}
-```
-
-#### Ask
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "ask",
-  "payload": {
-    "question": "<your question>"
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "answer": "<answer to your question>"
-}
-```
-
-#### Search
-
-```json
-{
-  "_id": "<job_id>",
-  "type": "search",
-  "payload": {
-    "query": "<search query>",
-    "limit": 5
-  }
-}
-```
-
-**Result:**
-
-```json
-{
-  "results": [
-    { "text": "...", "score": 0.92, "metadata": {} },
-    { "text": "...", "score": 0.87, "metadata": {} }
-  ]
-}
-```
+The models service is the AI/ML processing layer of the [documents](https://github.com/danifdez/documents-dev) project.
+It runs as a background worker that picks up jobs from a PostgreSQL queue, processes documents using a set of
+AI and NLP models, and writes results back for the rest of the system to consume.
+
+It is designed to run alongside the backend service and can be deployed on any machine — including CPU-only,
+GPU-accelerated, or multi-worker setups. Workers automatically detect hardware capabilities and only claim
+the jobs they are able to handle.
+
+## What it does
+
+### Document processing
+
+- **Extraction** — Converts uploaded files (PDF, DOC/DOCX, HTML, plain text, ODT, EML, audio/video) into
+  clean, normalized HTML. Audio and video files return a metadata summary card.
+- **Language detection** — Identifies the language of a document or text sample.
+- **Summarization** — Generates concise summaries with cross-lingual support (source and target language can differ).
+- **Translation** — Translates text between language pairs using Helsinki-NLP OPUS models.
+- **Entity extraction** — Detects people, organizations, locations and other named entities using spaCy.
+- **Keyword extraction** — Extracts the most relevant keywords and topic phrases from a document.
+- **Key point extraction** — Produces a short list of key takeaways from long documents.
+- **Dataset statistics** — Computes descriptive statistics (mean, std, top values, etc.) for structured datasets.
+
+### Semantic search and RAG
+
+- **Ingestion** — Chunks document content and stores vector embeddings in Qdrant for later retrieval.
+- **Semantic search** — Finds the most relevant document fragments for a given query using cosine similarity.
+- **Question answering (RAG)** — Retrieves relevant context and generates grounded answers using Mistral-7B.
+
+### Infrastructure
+
+- **Priority queue** — Jobs are processed in order: `high` → `normal` → `background`. Background jobs run
+  only when the queue is idle or during configured off-peak hours.
+- **Multi-worker support** — Multiple instances can run on different machines, all sharing the same
+  PostgreSQL database. Load is distributed automatically.
+- **Hardware detection** — At startup each worker detects CPU cores, RAM, GPU and VRAM, and registers
+  its capabilities. Workers without a GPU or LLM skip jobs that require them.
+- **Atomic job claiming** — Uses `SELECT FOR UPDATE SKIP LOCKED` to prevent two workers from processing
+  the same job.
+- **Heartbeat & recovery** — Workers send a heartbeat every 15 seconds. If a worker dies mid-job,
+  the job is automatically requeued after 60 seconds.
+
+## Models used
+
+| Capability | Model |
+|------------|-------|
+| Embeddings | `BAAI/bge-small-en-v1.5` (384-dim, sentence-transformers) |
+| Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
+| Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
+| NER | spaCy (model configured in `models.json`, default: `en_core_web_sm`) |
+| LLM (keywords, key points, Q&A) | GGUF model (configured in `models.json`, default: Phi-4-mini-instruct) |
+
+Most models are downloaded automatically from Hugging Face on first use. The GGUF file for the LLM must
+be placed manually in the `models/` directory and configured in `config/models.json`.
+
+## Requirements
+
+- Python 3.11+
+- PostgreSQL (shared with the backend)
+- Qdrant vector database
+- Docker (optional, recommended)
+
+GPU acceleration (CUDA 12.6) is supported but not required. CPU-only workers handle all tasks except
+those that explicitly need a GPU.
+
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
+- [Job types](docs/job-types.md)
+- [NLP tasks](docs/nlp-tasks.md)
+- [RAG pipeline](docs/rag-pipeline.md)
+- [Document extraction](docs/document-extraction.md)
+- [Data storage](docs/database.md)
 
 ## License
 
