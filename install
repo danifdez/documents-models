@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Colors ──
@@ -10,11 +11,106 @@ CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+BOLD='\033[1m'
+DIM='\033[2m'
 
 info()  { printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
 ok()    { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
 warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 fail()  { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+
+ask() {
+  local prompt="$1" default="$2"
+  printf "  ${BOLD}%s${NC} ${DIM}[%s]${NC}: " "$prompt" "$default"
+  read -r REPLY
+  REPLY="${REPLY:-$default}"
+}
+
+# ── Load root .env defaults ──
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
+# ── Configure .env ──
+if [ -f ".env" ]; then
+  ok ".env already exists (skipping)"
+else
+  echo ""
+  printf "${BOLD}${CYAN}── Models environment configuration ──${NC}\n"
+  printf "${DIM}  Press Enter to accept the default value shown in brackets.${NC}\n"
+  echo ""
+
+  ask "PostgreSQL host" "${POSTGRES_HOST:-localhost}";       PG_HOST="$REPLY"
+  ask "PostgreSQL port" "${POSTGRES_PORT:-5432}";            PG_PORT="$REPLY"
+  ask "PostgreSQL database" "${POSTGRES_DB:-documents}";     PG_DB="$REPLY"
+  ask "PostgreSQL user" "${POSTGRES_USER:-postgres}";        PG_USER="$REPLY"
+  ask "PostgreSQL password" "${POSTGRES_PASSWORD:-example}"; PG_PASS="$REPLY"
+  ask "Qdrant host" "${QDRANT_HOST:-localhost}";             QD_HOST="$REPLY"
+  ask "Qdrant port" "${QDRANT_PORT:-6333}";                  QD_PORT="$REPLY"
+  ask "Qdrant collection name" "rag_docs";                   QD_COLL="$REPLY"
+  ask "RAG default limit" "5";                               RAG_LIM="$REPLY"
+  ask "RAG max tokens" "1000";                               RAG_TOK="$REPLY"
+  ask "RAG score threshold" "0.35";                          RAG_TH="$REPLY"
+  ask "RAG chunk target words" "150";                        CH_TARGET="$REPLY"
+  ask "RAG chunk max words" "250";                           CH_MAX="$REPLY"
+  ask "RAG chunk overlap words" "30";                        CH_OVER="$REPLY"
+  ask "Heartbeat interval (seconds)" "15";                   HB="$REPLY"
+  ask "Disable LLM tasks (true/false)" "false";              DIS_LLM="$REPLY"
+  ask "Disable embeddings tasks (true/false)" "false";       DIS_EMB="$REPLY"
+  ask "Background hours start (0-23)" "2";                   BG_START="$REPLY"
+  ask "Background hours end (0-23)" "6";                     BG_END="$REPLY"
+  ask "Documents storage directory" "../documents";          STORAGE="$REPLY"
+
+  cat > ".env" <<EOF
+# Database Configuration
+POSTGRES_HOST=$PG_HOST
+POSTGRES_PORT=$PG_PORT
+POSTGRES_DB=$PG_DB
+POSTGRES_USER=$PG_USER
+POSTGRES_PASSWORD=$PG_PASS
+JOBS_TABLE=jobs
+
+# Qdrant Configuration
+QDRANT_HOST=$QD_HOST
+QDRANT_PORT=$QD_PORT
+QDRANT_URL=http://$QD_HOST:$QD_PORT
+QDRANT_COLLECTION=$QD_COLL
+
+# RAG Configuration
+RAG_DEFAULT_LIMIT=$RAG_LIM
+RAG_MAX_TOKENS=$RAG_TOK
+RAG_SCORE_THRESHOLD=$RAG_TH
+
+# RAG Chunking Configuration
+RAG_CHUNK_TARGET_WORDS=$CH_TARGET
+RAG_CHUNK_MAX_WORDS=$CH_MAX
+RAG_CHUNK_OVERLAP_WORDS=$CH_OVER
+
+# Worker Identity Configuration
+WORKER_ID=
+WORKER_NAME=
+HEARTBEAT_INTERVAL=$HB
+
+# Worker Capabilities Configuration
+WORKER_DISABLE_LLM=$DIS_LLM
+WORKER_DISABLE_EMBEDDINGS=$DIS_EMB
+
+# Task Filtering Configuration
+WORKER_ENABLED_TASKS=
+WORKER_DISABLED_TASKS=
+
+# Background Processing Hours (24h format)
+BACKGROUND_HOURS_START=$BG_START
+BACKGROUND_HOURS_END=$BG_END
+
+# File Storage Configuration
+DOCUMENTS_STORAGE_DIR=$STORAGE
+EOF
+  ok "Created .env"
+fi
 
 # ── Check Python ──
 PYTHON=""
@@ -87,16 +183,16 @@ fi
 
 # ── Install spaCy models ──
 info "Installing spaCy language models..."
-python -m spacy download en_core_web_sm -q
+pip install --no-cache-dir en_core_web_sm -f https://github.com/explosion/spacy-models/releases -q
 ok "spaCy en_core_web_sm installed"
 
 if [ "$HAS_CUDA" -eq 1 ]; then
   info "Installing spaCy transformer model (GPU)..."
-  python -m spacy download en_core_web_trf -q
+  pip install --no-cache-dir en_core_web_trf -f https://github.com/explosion/spacy-models/releases -q
   ok "spaCy en_core_web_trf installed"
 else
   info "Installing spaCy large model (CPU)..."
-  python -m spacy download en_core_web_lg -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
+  pip install --no-cache-dir en_core_web_lg -f https://github.com/explosion/spacy-models/releases -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
 fi
 
 deactivate
