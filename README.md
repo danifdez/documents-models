@@ -73,6 +73,7 @@ those that explicitly need a GPU.
 - [Getting started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
+- [Tasks](docs/tasks.md)
 - [Job types](docs/job-types.md)
 - [NLP tasks](docs/nlp-tasks.md)
 - [RAG pipeline](docs/rag-pipeline.md)
