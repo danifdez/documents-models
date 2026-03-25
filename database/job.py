@@ -160,8 +160,10 @@ class Job:
 
     def _is_background_eligible(self, cur) -> bool:
         """Check if background jobs should run now."""
-        bg_start = int(os.getenv("BACKGROUND_HOURS_START", "2"))
-        bg_end = int(os.getenv("BACKGROUND_HOURS_END", "6"))
+        from services.model_config import get_worker_config
+        worker = get_worker_config()
+        bg_start = int(worker.get("background_hours_start", 2))
+        bg_end = int(worker.get("background_hours_end", 6))
         current_hour = datetime.now().hour
 
         if bg_start <= current_hour < bg_end:

@@ -31,7 +31,7 @@ cd models
 chmod +x install && ./install
 ```
 
-The script performs venv creation, installs CPU/GPU dependencies (if CUDA is detected), and downloads spaCy models. After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
+The script creates `config/tasks.json` from defaults (prompting for database, Qdrant, and storage settings), sets up the venv, installs CPU/GPU dependencies (if CUDA is detected), and downloads spaCy models. After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
 
 ## Running the service
 
@@ -44,19 +44,19 @@ python jobs.py
 
 ## AI Models
 
-The service uses several AI models. Most are downloaded automatically from Hugging Face on first use. Which model is used for each task is controlled by `config/models.json` (auto-created from `templates/models.default.json`).
+The service uses several AI models. Most are downloaded automatically from Hugging Face on first use. Which model is used for each task is controlled by `config/tasks.json` (auto-created from `common/tasks.default.json`).
 
 | Model | Purpose | Downloaded By |
 |-------|---------|---------------|
-| spaCy model (see `models.json`) | NER | `python -m spacy download <model>` (Docker build runs this for the default model) |
+| spaCy model (see `tasks.json`) | NER | `python -m spacy download <model>` (Docker build runs this for the default model) |
 | `BAAI/bge-small-en-v1.5` | Text embeddings (384-dim) | sentence-transformers (auto on first request) |
 | `facebook/mbart-large-50-one-to-many-mmt` | Summarization | Hugging Face transformers (auto on first request) |
 | `Helsinki-NLP/opus-mt-{src}-{tgt}` | Translation (per language pair) | Hugging Face transformers (auto on first request) |
-| GGUF LLM (see `models.json`, default: Phi-4-mini-instruct) | Key points, keywords, Q&A | Must be placed manually in the `models/` directory |
+| GGUF LLM (see `tasks.json`, default: Phi-4-mini-instruct) | Key points, keywords, Q&A | Must be placed manually in the `models/` directory |
 
 ### LLM Setup
 
-The LLM (GGUF file) is **not** auto-downloaded. Place the model file in the `models/` subdirectory, then set the filename in `config/models.json` under the `keywords`, `key-point`, and `ask` task entries. Tasks that depend on it will fall back to heuristics or fail gracefully if the file is not present.
+The LLM (GGUF file) is **not** auto-downloaded. Place the model file in the `models/` subdirectory, then set the filename in `config/tasks.json` under the `keywords`, `key-point`, and `ask` task entries. Tasks that depend on it will fall back to heuristics or fail gracefully if the file is not present.
 
 ## Verifying the Service
 

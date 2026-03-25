@@ -1,0 +1,132 @@
+{
+  "keywords": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 500,
+    "max_items": 10,
+    "max_words_per_item": 3
+  },
+  "key-point": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 1000,
+    "max_items": 5,
+    "min_words": 3,
+    "max_words": 10
+  },
+  "ask": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "capabilities": ["llm", "embeddings"]
+  },
+  "embedding": {
+    "enabled": true,
+    "type": "sentence-transformer",
+    "model": "BAAI/bge-small-en-v1.5",
+    "capabilities": ["embeddings"]
+  },
+  "summarize": {
+    "enabled": true,
+    "type": "seq2seq",
+    "model": "facebook/mbart-large-50-one-to-many-mmt",
+    "capabilities": [],
+    "num_beams": 4,
+    "max_length": 200,
+    "min_length": 30
+  },
+  "translate": {
+    "enabled": true,
+    "type": "translation",
+    "model_prefix": "Helsinki-NLP/opus-mt",
+    "capabilities": [],
+    "chunk_size": 32
+  },
+  "entity-extraction": {
+    "enabled": true,
+    "type": "spacy",
+    "model": "en_core_web_sm",
+    "capabilities": [],
+    "batch_size": 32,
+    "ignored_entity_types": ["CARDINAL", "DATE", "MONEY", "ORDINAL", "PERCENT", "QUANTITY", "TIME"]
+  },
+  "search": {
+    "enabled": true,
+    "type": "rag",
+    "capabilities": ["embeddings"]
+  },
+  "ingest-content": {
+    "enabled": true,
+    "type": "pipeline",
+    "capabilities": ["embeddings"]
+  },
+  "delete-vectors": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "detect-language": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "document-extraction": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "distribution": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "correlation": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "correlation-matrix": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "group-by": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "time-series": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "outliers": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "pivot-table": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "summary": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "query": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "chart": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  }
+}

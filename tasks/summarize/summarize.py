@@ -23,6 +23,9 @@ def _get_summarize_model():
 
 @job_handler("summarize")
 def summarize_text(payload) -> dict:
+    from services.model_config import get_task_config
+    task_config = get_task_config("summarize")
+
     device = get_device()
     model, tokenizer = _get_summarize_model()
     tokenizer.src_lang = payload["sourceLanguage"] + "_XX"
@@ -40,9 +43,9 @@ def summarize_text(payload) -> dict:
     summary_ids = model.generate(
         inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
-        num_beams=4,
-        max_length=200,
-        min_length=30,
+        num_beams=task_config.get("num_beams", 4),
+        max_length=task_config.get("max_length", 200),
+        min_length=task_config.get("min_length", 30),
         forced_bos_token_id=es_forced_bos_token_id,
         no_repeat_ngram_size=3
     )

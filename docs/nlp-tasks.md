@@ -18,7 +18,7 @@ Detects the language of one or more text samples and returns ISO 639-1 language 
 
 **Job type:** `summarize`
 **File:** `tasks/summarize/summarize.py`
-**Model:** configured in `config/models.json` (default: `facebook/mbart-large-50-one-to-many-mmt`)
+**Model:** configured in `config/tasks.json` (default: `facebook/mbart-large-50-one-to-many-mmt`)
 
 Generates a summary of the input text with cross-lingual support (source and target language can differ).
 
@@ -43,7 +43,7 @@ Generates a summary of the input text with cross-lingual support (source and tar
 
 **Job type:** `translate`
 **File:** `tasks/translate/translate.py`
-**Model:** `Helsinki-NLP/opus-mt-{source}-{target}` (prefix configured in `models.json`)
+**Model:** `Helsinki-NLP/opus-mt-{source}-{target}` (prefix configured in `tasks.json`)
 
 Translates a list of texts from a source language to a target language.
 
@@ -66,7 +66,7 @@ Translates a list of texts from a source language to a target language.
 
 **Job type:** `entity-extraction`
 **File:** `tasks/entities/entities.py`
-**Model:** spaCy model configured in `config/models.json` (default: `en_core_web_sm`; set to `en_core_web_trf` for transformer-based NER)
+**Model:** spaCy model configured in `config/tasks.json` (default: `en_core_web_sm`; set to `en_core_web_trf` for transformer-based NER)
 
 Extracts named entities (persons, organizations, locations, etc.) from text.
 
@@ -100,7 +100,7 @@ Extracts named entities (persons, organizations, locations, etc.) from text.
 
 **Job type:** `key-point`
 **File:** `tasks/key_points/key_points.py`
-**Model:** GGUF LLM configured in `config/models.json` (default: Phi-4-mini-instruct), with heuristic fallback
+**Model:** GGUF LLM configured in `config/tasks.json` (default: Phi-4-mini-instruct), with heuristic fallback
 
 Extracts up to 5 concise key points from text content.
 
@@ -120,7 +120,7 @@ Extracts up to 5 concise key points from text content.
 
 **Job type:** `keywords`
 **File:** `tasks/keywords/keywords.py`
-**Model:** GGUF LLM configured in `config/models.json` (default: Phi-4-mini-instruct), with heuristic fallback
+**Model:** GGUF LLM configured in `config/tasks.json` (default: Phi-4-mini-instruct), with heuristic fallback
 
 Extracts up to 10 keywords or short topic phrases from text content.
 

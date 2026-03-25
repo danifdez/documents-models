@@ -2,7 +2,7 @@ from utils.job_registry import job_handler
 from services.llm_service import get_llm_service
 from services.text import normalize_text
 from services.prompts import get_prompt
-from services.model_config import get_llm_params
+from services.model_config import get_llm_params, get_task_config
 import re
 from typing import List
 
@@ -18,12 +18,11 @@ def split_and_clean(generated: str) -> List[str]:
     return cleaned
 
 
-def enforce_constraints(items: List[str], max_items: int = 10) -> List[str]:
+def enforce_constraints(items: List[str], max_items: int = 10, max_words: int = 3) -> List[str]:
     out = []
     seen = set()
     for t in items:
-        # truncate to 3 words
-        t2 = ' '.join(t.split()[:3]).strip()
+        t2 = ' '.join(t.split()[:max_words]).strip()
         if not t2:
             continue
         key = t2.lower()
@@ -50,17 +49,20 @@ def keywords(payload) -> dict:
 
         prompt = get_prompt("keywords").format(target_lang=target_lang, text=text)
 
+        task_config = get_task_config("keywords")
+
         generated = ""
         try:
             params = get_llm_params("keywords")
             llm_service = get_llm_service(**params)
+            max_tokens = task_config.get("max_tokens", 500)
             try:
                 generated = llm_service.chat(
                     [{"role": "user", "content": prompt}],
-                    max_tokens=500,
+                    max_tokens=max_tokens,
                 )
             except Exception:
-                generated = llm_service.generate(prompt, max_tokens=500)
+                generated = llm_service.generate(prompt, max_tokens=max_tokens)
         except Exception:
             generated = ""
 
@@ -76,7 +78,11 @@ def keywords(payload) -> dict:
                 heur.append(' '.join(s.split()[:3]))
             candidates = heur
 
-        keywords_list = enforce_constraints(candidates, max_items=10)
+        keywords_list = enforce_constraints(
+            candidates,
+            max_items=task_config.get("max_items", 10),
+            max_words=task_config.get("max_words_per_item", 3),
+        )
 
         return {"keywords": keywords_list}
 

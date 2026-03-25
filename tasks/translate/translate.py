@@ -72,7 +72,8 @@ def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         translation = _get_translation_pipeline(source, target)
 
-        chunk_size = 32
+        from services.model_config import get_task_config
+        chunk_size = get_task_config("translate").get("chunk_size", 32)
         normalized_texts = _normalize_text_items(texts)
 
         for i in range(0, len(normalized_texts), chunk_size):

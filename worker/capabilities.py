@@ -1,57 +1,34 @@
-import os
+from services.model_config import get_all_task_requirements, get_worker_config, get_task_config
 
-# Capability tags
 GPU = "gpu"
 LLM = "llm"
 EMBEDDINGS = "embeddings"
-
-# What capabilities each task type requires (empty = any worker can handle it)
-TASK_REQUIREMENTS = {
-    "detect-language":     [],
-    "document-extraction": [],
-    "embedding":           [EMBEDDINGS],
-    "keywords":            [LLM],
-    "key-point":           [LLM],
-    "summarize":           [],
-    "translate":           [],
-    "entity-extraction":   [],
-    "search":              [EMBEDDINGS],
-    "ask":                 [LLM, EMBEDDINGS],
-    "ingest-content":      [EMBEDDINGS],
-    "delete-vectors":      [],
-    "dataset-stats":       [],
-}
 
 
 def detect_worker_capabilities() -> list:
     """Detect capabilities based on hardware and configuration."""
     from utils.device import HAS_CUDA
 
+    worker = get_worker_config()
     caps = []
     if HAS_CUDA:
         caps.append(GPU)
-    if os.getenv("WORKER_DISABLE_LLM", "false").lower() != "true":
+    if not worker.get("disable_llm", False):
         caps.append(LLM)
-    if os.getenv("WORKER_DISABLE_EMBEDDINGS", "false").lower() != "true":
+    if not worker.get("disable_embeddings", False):
         caps.append(EMBEDDINGS)
     return caps
 
 
 def get_supported_task_types(capabilities: list) -> list:
-    """Return task types this worker can handle based on its capabilities and task filters."""
+    """Return task types this worker can handle based on capabilities and per-task enabled flag."""
+    task_requirements = get_all_task_requirements()
     supported = []
-    for task_type, required_caps in TASK_REQUIREMENTS.items():
+    for task_type, required_caps in task_requirements.items():
+        task_cfg = get_task_config(task_type)
+        if not task_cfg.get("enabled", True):
+            continue
         if all(cap in capabilities for cap in required_caps):
             supported.append(task_type)
-
-    enabled = os.getenv("WORKER_ENABLED_TASKS", "").strip()
-    disabled = os.getenv("WORKER_DISABLED_TASKS", "").strip()
-
-    if enabled:
-        allowed = [t.strip() for t in enabled.split(",") if t.strip()]
-        supported = [t for t in supported if t in allowed]
-    if disabled:
-        blocked = [t.strip() for t in disabled.split(",") if t.strip()]
-        supported = [t for t in supported if t not in blocked]
 
     return supported

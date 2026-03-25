@@ -1,163 +1,164 @@
 # Configuration
 
-All configuration is managed through environment variables with sensible defaults. Values are read in `config.py` using `os.getenv()`. Copy `.env.example` to `.env` for local development.
+Configuration is split into two JSON files inside `config/`:
 
-Per-task model selection is controlled separately via `config/models.json` — see [Per-task model configuration](#per-task-model-configuration) below.
+- **`config/config.json`** — General settings (database, Qdrant, storage, LLM defaults, RAG, worker)
+- **`config/tasks.json`** — Per-task configuration (models, capabilities, parameters, enabled/disabled)
 
-## Environment Variables
+Both are auto-created from `common/config.default.json` and `common/tasks.default.json` during installation. Edit them directly to change any setting.
 
-### PostgreSQL
+Per-task overrides can also be placed in `config/tasks/<task-name>/`.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTGRES_HOST` | `database` | PostgreSQL host (Docker service name by default) |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port |
-| `POSTGRES_DB` | `documents` | Database name |
-| `POSTGRES_USER` | `postgres` | Database user |
-| `POSTGRES_PASSWORD` | `example` | Database password |
-| `JOBS_TABLE` | `jobs` | Name of the jobs table |
+## config.json
+
+### Database
+
+```json
+"database": {
+  "host": "localhost",
+  "port": 5432,
+  "name": "documents",
+  "user": "postgres",
+  "password": "example",
+  "jobs_table": "jobs"
+}
+```
 
 ### Qdrant
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `QDRANT_HOST` | `qdrant` | Qdrant host (Docker service name by default) |
-| `QDRANT_PORT` | `6333` | Qdrant HTTP port |
-| `QDRANT_URL` | `http://{QDRANT_HOST}:{QDRANT_PORT}` | Full Qdrant URL (auto-constructed from host and port if not set) |
-| `QDRANT_COLLECTION` | `rag_docs` | Vector collection name |
+```json
+"qdrant": {
+  "enabled": true,
+  "host": "localhost",
+  "port": 6333,
+  "collection": "rag_docs"
+}
+```
 
-### RAG
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RAG_DEFAULT_LIMIT` | `5` | Number of chunks retrieved for the `ask` task |
-| `RAG_MAX_TOKENS` | `1000` | Maximum tokens in LLM responses for RAG |
-| `RAG_SCORE_THRESHOLD` | `0.35` | Minimum cosine similarity score to include a chunk in results |
-
-### RAG Chunking
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RAG_CHUNK_TARGET_WORDS` | `150` | Target chunk size in words |
-| `RAG_CHUNK_MAX_WORDS` | `250` | Maximum words before a chunk is split |
-| `RAG_CHUNK_OVERLAP_WORDS` | `30` | Number of words shared between consecutive chunks |
-
-### Worker Identity
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_ID` | auto UUID (persisted to `.worker_id`) | Stable worker identity across restarts. Set explicitly for predictable IDs |
-| `WORKER_NAME` | `worker-{id[:8]}` | Human-readable name shown in logs and the `workers` table |
-| `HEARTBEAT_INTERVAL` | `15` | Seconds between heartbeat updates |
-
-### Worker Capabilities
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_DISABLE_LLM` | `false` | Set `true` to skip all LLM tasks (`keywords`, `key-point`, `ask`) |
-| `WORKER_DISABLE_EMBEDDINGS` | `false` | Set `true` to skip all embedding tasks (`embedding`, `search`, `ingest-content`, `ask`) |
-
-### Task Filtering
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_ENABLED_TASKS` | _(empty — all)_ | Comma-separated allowlist of task types this worker will process |
-| `WORKER_DISABLED_TASKS` | _(empty — none)_ | Comma-separated blocklist of task types this worker will skip |
-
-Both filters are applied after capability checks. `WORKER_ENABLED_TASKS` takes priority: if set, only listed tasks are eligible.
-
-### Background Processing
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BACKGROUND_HOURS_START` | `2` | Hour (0-23, inclusive) when the background window opens |
-| `BACKGROUND_HOURS_END` | `6` | Hour (0-23, exclusive) when the background window closes |
-
-`background` priority jobs are processed only when no `high`/`normal` jobs are pending, **or** when the current time falls inside the background window.
+Set `enabled` to `false` to disable all RAG/embedding features. This automatically disables tasks that require embeddings.
 
 ### Storage
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOCUMENTS_STORAGE_DIR` | `../documents` | Root directory for uploaded documents |
+```json
+"storage": {
+  "documents_dir": "../documents"
+}
+```
 
-## Per-task Model Configuration
+### LLM Defaults
 
-Model selection for each task is driven by `config/models.json`. This file is auto-created on first run from `templates/models.default.json`. Edit it to change which model a task uses without modifying the code.
+Shared parameters for all LLM-based tasks. Individual tasks can override any of these.
 
-Default configuration (`templates/models.default.json`):
+```json
+"llm_defaults": {
+  "model_dir": "models",
+  "n_ctx": 32768,
+  "n_threads": 4,
+  "n_batch": 64,
+  "n_gpu_layers": 0
+}
+```
+
+> **Note:** Set `n_gpu_layers` to `-1` to offload all layers to GPU when one is available.
+
+### RAG
+
+```json
+"rag": {
+  "default_limit": 5,
+  "max_tokens": 1000,
+  "score_threshold": 0.35,
+  "chunk_target_words": 150,
+  "chunk_max_words": 250,
+  "chunk_overlap_words": 30
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `default_limit` | `5` | Number of chunks retrieved for the `ask` task |
+| `max_tokens` | `1000` | Maximum tokens in LLM responses for RAG |
+| `score_threshold` | `0.35` | Minimum cosine similarity to include a chunk |
+| `chunk_target_words` | `150` | Target chunk size in words |
+| `chunk_max_words` | `250` | Maximum words before a chunk is split |
+| `chunk_overlap_words` | `30` | Overlap words between consecutive chunks |
+
+### Worker
+
+```json
+"worker": {
+  "id": "",
+  "name": "",
+  "heartbeat_interval": 15,
+  "disable_llm": false,
+  "disable_embeddings": false,
+  "background_hours_start": 2,
+  "background_hours_end": 6
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `id` | auto UUID (persisted to `.worker_id`) | Stable worker identity across restarts |
+| `name` | `worker-{id[:8]}` | Human-readable name for logs |
+| `heartbeat_interval` | `15` | Seconds between heartbeat updates |
+| `disable_llm` | `false` | Disable all LLM capabilities on this worker |
+| `disable_embeddings` | `false` | Disable all embedding capabilities on this worker |
+| `background_hours_start` | `2` | Hour (0-23) when background window opens |
+| `background_hours_end` | `6` | Hour (0-23) when background window closes |
+
+`background` priority jobs are processed only when no `high`/`normal` jobs are pending, **or** when the current time falls inside the background window.
+
+## tasks.json
+
+Each task has its own entry as a top-level key:
 
 ```json
 {
-  "llm_defaults": {
-    "model_dir": "models",
-    "n_ctx": 32768,
-    "n_threads": 4,
-    "n_batch": 64,
-    "n_gpu_layers": 0
-  },
-  "tasks": {
-    "keywords":          { "type": "llm",               "model": "Phi-4-mini-instruct-Q4_K_M.gguf" },
-    "key-point":         { "type": "llm",               "model": "Phi-4-mini-instruct-Q4_K_M.gguf" },
-    "ask":               { "type": "llm",               "model": "Phi-4-mini-instruct-Q4_K_M.gguf" },
-    "embedding":         { "type": "sentence-transformer", "model": "BAAI/bge-small-en-v1.5" },
-    "summarize":         { "type": "seq2seq",           "model": "facebook/mbart-large-50-one-to-many-mmt" },
-    "translate":         { "type": "translation",       "model_prefix": "Helsinki-NLP/opus-mt" },
-    "entity-extraction": { "type": "spacy",             "model": "en_core_web_sm" }
+  "keywords": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 500,
+    "max_items": 10,
+    "max_words_per_item": 3
   }
 }
 ```
 
-LLM parameters (`n_ctx`, `n_threads`, `n_batch`, `n_gpu_layers`) can be overridden per-task by adding entries inside the task object.
+Common fields for all tasks:
 
-> **Note:** `n_gpu_layers` is set to `0` in defaults. Override to `-1` to offload all layers to GPU when one is available.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `enabled` | yes | `true`/`false` — whether this task is active |
+| `type` | yes | Model type: `llm`, `sentence-transformer`, `seq2seq`, `spacy`, `translation`, `rag`, `pipeline`, `utility` |
+| `capabilities` | yes | Required worker capabilities (`["llm"]`, `["embeddings"]`, `["llm", "embeddings"]`, or `[]`) |
+| `model` | no | Model name or path |
 
-## Template File
+Additional task-specific parameters vary by task (see `common/tasks.default.json` for the full default configuration).
 
-The `.env.example` file provides a ready-to-use template for local development:
+## Per-task Overrides
 
-```bash
-# Database Configuration
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=documents
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=example
-JOBS_TABLE=jobs
+You can override task behavior without editing `config/tasks.json`:
 
-# Qdrant Configuration
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
-QDRANT_URL=http://localhost:6333
-QDRANT_COLLECTION=rag_docs
+### Prompt Override
 
-# RAG Configuration
-RAG_DEFAULT_LIMIT=5
-RAG_MAX_TOKENS=1000
-RAG_SCORE_THRESHOLD=0.35
+Create `config/tasks/<task-type>/prompt.md` with your custom prompt. This takes priority over the default prompt in `tasks/<task-dir>/prompt.md`.
 
-# RAG Chunking Configuration
-RAG_CHUNK_TARGET_WORDS=150
-RAG_CHUNK_MAX_WORDS=250
-RAG_CHUNK_OVERLAP_WORDS=30
+### Config Override
 
-# Worker Identity Configuration
-WORKER_ID=
-WORKER_NAME=
-HEARTBEAT_INTERVAL=15
+Create `config/tasks/<task-type>/config.json` with parameter overrides. These are merged on top of the task's entry in `tasks.json`:
 
-# Worker Capabilities Configuration
-WORKER_DISABLE_LLM=false
-WORKER_DISABLE_EMBEDDINGS=false
-
-# Task Filtering Configuration
-WORKER_ENABLED_TASKS=
-WORKER_DISABLED_TASKS=
-
-# Background Processing Hours (24h format)
-BACKGROUND_HOURS_START=2
-BACKGROUND_HOURS_END=6
-
-# File Storage Configuration
-DOCUMENTS_STORAGE_DIR=../documents
+```json
+{
+  "max_tokens": 2000,
+  "max_items": 20
+}
 ```
+
+## Installation
+
+Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for database, Qdrant (optional), and storage settings.
+
+See [creating-tasks.md](creating-tasks.md) for how to add new tasks.

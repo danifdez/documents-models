@@ -52,17 +52,17 @@ the jobs they are able to handle.
 | Embeddings | `BAAI/bge-small-en-v1.5` (384-dim, sentence-transformers) |
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
-| NER | spaCy (model configured in `models.json`, default: `en_core_web_sm`) |
-| LLM (keywords, key points, Q&A) | GGUF model (configured in `models.json`, default: Phi-4-mini-instruct) |
+| NER | spaCy (model configured in `tasks.json`, default: `en_core_web_sm`) |
+| LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Phi-4-mini-instruct) |
 
 Most models are downloaded automatically from Hugging Face on first use. The GGUF file for the LLM must
-be placed manually in the `models/` directory and configured in `config/models.json`.
+be placed manually in the `models/` directory and configured in `config/tasks.json`.
 
 ## Requirements
 
 - Python 3.11+
 - PostgreSQL (shared with the backend)
-- Qdrant vector database
+- Qdrant vector database (optional — can be disabled during install)
 - Docker (optional, recommended)
 
 GPU acceleration (CUDA 12.6) is supported but not required. CPU-only workers handle all tasks except
@@ -78,6 +78,7 @@ those that explicitly need a GPU.
 - [RAG pipeline](docs/rag-pipeline.md)
 - [Document extraction](docs/document-extraction.md)
 - [Data storage](docs/database.md)
+- [Creating tasks](docs/creating-tasks.md)
 
 ## License
 

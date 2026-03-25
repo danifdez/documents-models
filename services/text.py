@@ -1,7 +1,6 @@
 import re
 import html
 from bs4 import BeautifulSoup
-from config import RAG_CHUNK_TARGET_WORDS, RAG_CHUNK_MAX_WORDS, RAG_CHUNK_OVERLAP_WORDS
 
 
 def normalize_text(text: str) -> str:
@@ -118,12 +117,15 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
     Chunk text using recursive splitting with overlap.
     Works well for both small and large texts.
     """
-    if target_words is None:
-        target_words = RAG_CHUNK_TARGET_WORDS
-    if max_words is None:
-        max_words = RAG_CHUNK_MAX_WORDS
-    if overlap_words is None:
-        overlap_words = RAG_CHUNK_OVERLAP_WORDS
+    if target_words is None or max_words is None or overlap_words is None:
+        from services.model_config import get_rag_config
+        rag = get_rag_config()
+        if target_words is None:
+            target_words = rag.get("chunk_target_words", 150)
+        if max_words is None:
+            max_words = rag.get("chunk_max_words", 250)
+        if overlap_words is None:
+            overlap_words = rag.get("chunk_overlap_words", 30)
 
     if not text_elements:
         return []

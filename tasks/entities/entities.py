@@ -50,19 +50,15 @@ def entities(payload: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
         else:
             text_strings.append(str(item))
     
-    # Entity types to ignore (typically numerical or temporal values)
-    ignored_entity_types = {
-        'CARDINAL',  # Numerals that do not fall under another type
-        'DATE',      # Absolute or relative dates or periods
-        'MONEY',     # Monetary values, including unit
-        'ORDINAL',   # "first", "second", etc.
-        'PERCENT',   # Percentage, including "%"
-        'QUANTITY',  # Measurements, as of weight or distance
-        'TIME'       # Times smaller than a day
-    }
-    
-    # Use spaCy's pipe method for efficient batch processing
-    docs = _get_nlp().pipe(text_strings, batch_size=32)
+    from services.model_config import get_task_config
+    task_config = get_task_config("entity-extraction")
+
+    ignored_entity_types = set(task_config.get("ignored_entity_types", [
+        'CARDINAL', 'DATE', 'MONEY', 'ORDINAL', 'PERCENT', 'QUANTITY', 'TIME'
+    ]))
+
+    batch_size = task_config.get("batch_size", 32)
+    docs = _get_nlp().pipe(text_strings, batch_size=batch_size)
     
     for doc in docs:
         for ent in doc.ents:

@@ -5,15 +5,18 @@ import uuid
 import threading
 import time
 
+from services.model_config import get_worker_config
+
 logger = logging.getLogger(__name__)
 
 WORKER_ID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.worker_id')
 
 
 def _load_or_create_worker_id() -> str:
-    env_id = os.getenv("WORKER_ID")
-    if env_id:
-        return env_id
+    worker_cfg = get_worker_config()
+    cfg_id = worker_cfg.get("id", "")
+    if cfg_id:
+        return cfg_id
     try:
         with open(WORKER_ID_FILE, 'r') as f:
             return f.read().strip()
@@ -25,8 +28,9 @@ def _load_or_create_worker_id() -> str:
 
 
 WORKER_ID = _load_or_create_worker_id()
-WORKER_NAME = os.getenv("WORKER_NAME", f"worker-{WORKER_ID[:8]}")
-HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "15"))
+_worker_cfg = get_worker_config()
+WORKER_NAME = _worker_cfg.get("name", "") or f"worker-{WORKER_ID[:8]}"
+HEARTBEAT_INTERVAL = int(_worker_cfg.get("heartbeat_interval", 15))
 
 
 def register_worker(capabilities: list, metadata: dict):

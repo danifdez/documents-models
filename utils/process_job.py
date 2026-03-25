@@ -14,7 +14,16 @@ import tasks.search.search
 import tasks.embedding.embedding
 import tasks.key_points.key_points
 import tasks.keywords.keywords
-import tasks.dataset_stats.stats
+import tasks.distribution.distribution
+import tasks.correlation.correlation
+import tasks.correlation_matrix.correlation_matrix
+import tasks.group_by.group_by
+import tasks.time_series.time_series
+import tasks.outliers.outliers
+import tasks.pivot_table.pivot_table
+import tasks.summary.summary
+import tasks.query.query
+import tasks.chart.chart
 
 
 def process_job(job):

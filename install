@@ -26,90 +26,125 @@ ask() {
   REPLY="${REPLY:-$default}"
 }
 
-# ── Load root .env defaults ──
-if [ -f "$ROOT_DIR/.env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT_DIR/.env"
-  set +a
-fi
+ask_yn() {
+  local prompt="$1" default="$2"
+  printf "  ${BOLD}%s${NC} ${DIM}[%s]${NC}: " "$prompt" "$default"
+  read -r REPLY
+  REPLY="${REPLY:-$default}"
+  [[ "$REPLY" =~ ^[Yy] ]]
+}
 
-# ── Configure .env ──
-if [ -f ".env" ]; then
-  ok ".env already exists (skipping)"
+# ── Create config directory ──
+mkdir -p config/tasks
+
+# ── Configure config.json ──
+if [ -f "config/config.json" ]; then
+  ok "config/config.json already exists (skipping)"
 else
+  if [ ! -f "common/config.default.json" ]; then
+    fail "common/config.default.json not found"
+  fi
+
+  cp common/config.default.json config/config.json
+  ok "Created config/config.json from defaults"
+
   echo ""
-  printf "${BOLD}${CYAN}── Models environment configuration ──${NC}\n"
+  printf "${BOLD}${CYAN}── Models configuration ──${NC}\n"
   printf "${DIM}  Press Enter to accept the default value shown in brackets.${NC}\n"
   echo ""
 
-  ask "PostgreSQL host" "${POSTGRES_HOST:-localhost}";       PG_HOST="$REPLY"
-  ask "PostgreSQL port" "${POSTGRES_PORT:-5432}";            PG_PORT="$REPLY"
-  ask "PostgreSQL database" "${POSTGRES_DB:-documents}";     PG_DB="$REPLY"
-  ask "PostgreSQL user" "${POSTGRES_USER:-postgres}";        PG_USER="$REPLY"
-  ask "PostgreSQL password" "${POSTGRES_PASSWORD:-example}"; PG_PASS="$REPLY"
-  ask "Qdrant host" "${QDRANT_HOST:-localhost}";             QD_HOST="$REPLY"
-  ask "Qdrant port" "${QDRANT_PORT:-6333}";                  QD_PORT="$REPLY"
-  ask "Qdrant collection name" "rag_docs";                   QD_COLL="$REPLY"
-  ask "RAG default limit" "5";                               RAG_LIM="$REPLY"
-  ask "RAG max tokens" "1000";                               RAG_TOK="$REPLY"
-  ask "RAG score threshold" "0.35";                          RAG_TH="$REPLY"
-  ask "RAG chunk target words" "150";                        CH_TARGET="$REPLY"
-  ask "RAG chunk max words" "250";                           CH_MAX="$REPLY"
-  ask "RAG chunk overlap words" "30";                        CH_OVER="$REPLY"
-  ask "Heartbeat interval (seconds)" "15";                   HB="$REPLY"
-  ask "Disable LLM tasks (true/false)" "false";              DIS_LLM="$REPLY"
-  ask "Disable embeddings tasks (true/false)" "false";       DIS_EMB="$REPLY"
-  ask "Background hours start (0-23)" "2";                   BG_START="$REPLY"
-  ask "Background hours end (0-23)" "6";                     BG_END="$REPLY"
-  ask "Documents storage directory" "../documents";          STORAGE="$REPLY"
+  # ── Database ──
+  printf "${BOLD}  Database${NC}\n"
+  ask "PostgreSQL host" "localhost";       PG_HOST="$REPLY"
+  ask "PostgreSQL port" "5432";            PG_PORT="$REPLY"
+  ask "PostgreSQL database" "documents";   PG_DB="$REPLY"
+  ask "PostgreSQL user" "postgres";        PG_USER="$REPLY"
+  ask "PostgreSQL password" "example";     PG_PASS="$REPLY"
+  echo ""
 
-  cat > ".env" <<EOF
-# Database Configuration
-POSTGRES_HOST=$PG_HOST
-POSTGRES_PORT=$PG_PORT
-POSTGRES_DB=$PG_DB
-POSTGRES_USER=$PG_USER
-POSTGRES_PASSWORD=$PG_PASS
-JOBS_TABLE=jobs
+  # ── Qdrant ──
+  ENABLE_QDRANT=true
+  if ask_yn "Enable Qdrant/RAG?" "yes"; then
+    printf "${BOLD}  Qdrant${NC}\n"
+    ask "Qdrant host" "localhost";         QD_HOST="$REPLY"
+    ask "Qdrant port" "6333";              QD_PORT="$REPLY"
+    ask "Qdrant collection name" "rag_docs"; QD_COLL="$REPLY"
+  else
+    ENABLE_QDRANT=false
+    QD_HOST="localhost"
+    QD_PORT="6333"
+    QD_COLL="rag_docs"
+    warn "Qdrant disabled — embedding tasks will be disabled"
+  fi
+  echo ""
 
-# Qdrant Configuration
-QDRANT_HOST=$QD_HOST
-QDRANT_PORT=$QD_PORT
-QDRANT_URL=http://$QD_HOST:$QD_PORT
-QDRANT_COLLECTION=$QD_COLL
+  # ── Storage ──
+  ask "Documents storage directory" "../documents"; STORAGE="$REPLY"
+  echo ""
 
-# RAG Configuration
-RAG_DEFAULT_LIMIT=$RAG_LIM
-RAG_MAX_TOKENS=$RAG_TOK
-RAG_SCORE_THRESHOLD=$RAG_TH
+  # ── Apply configuration using Python ──
+  info "Writing configuration..."
 
-# RAG Chunking Configuration
-RAG_CHUNK_TARGET_WORDS=$CH_TARGET
-RAG_CHUNK_MAX_WORDS=$CH_MAX
-RAG_CHUNK_OVERLAP_WORDS=$CH_OVER
+  python3 -c "
+import json
 
-# Worker Identity Configuration
-WORKER_ID=
-WORKER_NAME=
-HEARTBEAT_INTERVAL=$HB
+with open('config/config.json', 'r') as f:
+    cfg = json.load(f)
 
-# Worker Capabilities Configuration
-WORKER_DISABLE_LLM=$DIS_LLM
-WORKER_DISABLE_EMBEDDINGS=$DIS_EMB
+cfg['database']['host'] = '$PG_HOST'
+cfg['database']['port'] = int('$PG_PORT')
+cfg['database']['name'] = '$PG_DB'
+cfg['database']['user'] = '$PG_USER'
+cfg['database']['password'] = '$PG_PASS'
 
-# Task Filtering Configuration
-WORKER_ENABLED_TASKS=
-WORKER_DISABLED_TASKS=
+cfg['qdrant']['enabled'] = $( [ "$ENABLE_QDRANT" = true ] && echo 'True' || echo 'False' )
+cfg['qdrant']['host'] = '$QD_HOST'
+cfg['qdrant']['port'] = int('$QD_PORT')
+cfg['qdrant']['collection'] = '$QD_COLL'
 
-# Background Processing Hours (24h format)
-BACKGROUND_HOURS_START=$BG_START
-BACKGROUND_HOURS_END=$BG_END
+cfg['storage']['documents_dir'] = '$STORAGE'
 
-# File Storage Configuration
-DOCUMENTS_STORAGE_DIR=$STORAGE
-EOF
-  ok "Created .env"
+# If Qdrant disabled, disable embeddings
+if not cfg['qdrant']['enabled']:
+    cfg['worker']['disable_embeddings'] = True
+
+with open('config/config.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.write('\n')
+"
+
+  ok "Configuration saved to config/config.json"
+fi
+
+# ── Configure tasks.json ──
+if [ -f "config/tasks.json" ]; then
+  ok "config/tasks.json already exists (skipping)"
+else
+  if [ ! -f "common/tasks.default.json" ]; then
+    fail "common/tasks.default.json not found"
+  fi
+
+  cp common/tasks.default.json config/tasks.json
+
+  # If Qdrant disabled, disable embedding-dependent tasks
+  if [ "$ENABLE_QDRANT" = false ]; then
+    python3 -c "
+import json
+
+with open('config/tasks.json', 'r') as f:
+    tasks = json.load(f)
+
+for task_name in ['search', 'ask', 'ingest-content', 'embedding']:
+    if task_name in tasks:
+        tasks[task_name]['enabled'] = False
+
+with open('config/tasks.json', 'w') as f:
+    json.dump(tasks, f, indent=2)
+    f.write('\n')
+"
+  fi
+
+  ok "Created config/tasks.json from defaults"
 fi
 
 # ── Check Python ──
@@ -182,17 +217,20 @@ else
 fi
 
 # ── Install spaCy models ──
-info "Installing spaCy language models..."
-pip install --no-cache-dir en_core_web_sm -f https://github.com/explosion/spacy-models/releases -q
+SPACY_VERSION=$($PYTHON -c "import spacy; print('.'.join(spacy.__version__.split('.')[:2]))")
+SPACY_MODELS_URL="https://github.com/explosion/spacy-models/releases/download"
+
+info "Installing spaCy language models (spaCy $SPACY_VERSION)..."
+pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_sm-${SPACY_VERSION}.0/en_core_web_sm-${SPACY_VERSION}.0.tar.gz" -q
 ok "spaCy en_core_web_sm installed"
 
 if [ "$HAS_CUDA" -eq 1 ]; then
   info "Installing spaCy transformer model (GPU)..."
-  pip install --no-cache-dir en_core_web_trf -f https://github.com/explosion/spacy-models/releases -q
+  pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_trf-${SPACY_VERSION}.0/en_core_web_trf-${SPACY_VERSION}.0.tar.gz" -q
   ok "spaCy en_core_web_trf installed"
 else
   info "Installing spaCy large model (CPU)..."
-  pip install --no-cache-dir en_core_web_lg -f https://github.com/explosion/spacy-models/releases -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
+  pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_lg-${SPACY_VERSION}.0/en_core_web_lg-${SPACY_VERSION}.0.tar.gz" -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
 fi
 
 deactivate
@@ -207,6 +245,7 @@ else
 fi
 printf "${GREEN}============================================${NC}\n"
 echo ""
+echo "  Configuration: config/config.json, config/tasks.json"
 echo "  Activate venv:   source .venv/bin/activate"
 echo "  Start worker:    python jobs.py"
 echo ""

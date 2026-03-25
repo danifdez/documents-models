@@ -1,0 +1,43 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "documents",
+    "user": "postgres",
+    "password": "example",
+    "jobs_table": "jobs"
+  },
+  "qdrant": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 6333,
+    "collection": "rag_docs"
+  },
+  "storage": {
+    "documents_dir": "../documents"
+  },
+  "llm_defaults": {
+    "model_dir": "models",
+    "n_ctx": 32768,
+    "n_threads": 4,
+    "n_batch": 64,
+    "n_gpu_layers": 0
+  },
+  "rag": {
+    "default_limit": 5,
+    "max_tokens": 1000,
+    "score_threshold": 0.35,
+    "chunk_target_words": 150,
+    "chunk_max_words": 250,
+    "chunk_overlap_words": 30
+  },
+  "worker": {
+    "id": "",
+    "name": "",
+    "heartbeat_interval": 15,
+    "disable_llm": false,
+    "disable_embeddings": false,
+    "background_hours_start": 2,
+    "background_hours_end": 6
+  }
+}

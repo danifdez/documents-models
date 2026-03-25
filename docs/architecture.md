@@ -61,16 +61,17 @@ while True:
 
 ```
 models/
-├── config.py                    # Centralized environment-based configuration
+├── config.py                    # Configuration constants (reads from config/config.json)
 ├── jobs.py                      # Entry point — worker bootstrap and polling loop
 ├── requirements.txt             # Python dependencies
 ├── Dockerfile                   # Container definition
-├── .env.example                 # Environment variable template
-├── config/
-│   └── models.json              # Per-task model configuration (created from template)
-├── templates/
-│   ├── models.default.json      # Default per-task model definitions
-│   └── prompts/                 # Prompt templates (YAML)
+├── common/
+│   ├── config.default.json      # Default general configuration
+│   └── tasks.default.json       # Default task configuration
+├── config/                      # User configuration (created by install, .gitignored)
+│   ├── config.json              # General settings (DB, Qdrant, storage, worker, RAG, LLM)
+│   ├── tasks.json               # Task settings (models, capabilities, parameters)
+│   └── tasks/                   # Per-task overrides (prompt.md, config.json)
 ├── database/
 │   ├── job.py                  # PostgreSQL job queue + worker operations (Job class)
 │   └── rag.py                  # Qdrant vector database operations (Rag class)
@@ -85,11 +86,12 @@ models/
 ├── services/
 │   ├── embedding_service.py    # Sentence-transformers embedding wrapper
 │   ├── llm_service.py          # llama-cpp-python LLM wrapper (cached instances)
-│   ├── model_config.py         # Per-task model config loader (models.json)
-│   ├── prompts.py              # Prompt loader (prompts YAML)
+│   ├── model_config.py         # Configuration loader (config.json + tasks.json + overrides)
+│   ├── prompts.py              # Prompt loader (config/tasks/ -> tasks/<dir>/prompt.md)
 │   └── text.py                 # HTML text extraction and semantic chunking
 ├── tasks/
-│   ├── ask/                    # RAG question answering
+│   ├── base.py                  # Task interface definition and TaskDefinition dataclass
+│   ├── ask/                    # RAG question answering (+ prompt.md)
 │   ├── dataset_stats/          # Dataset statistics computation
 │   ├── detect_language/        # Language detection
 │   ├── embedding/              # Text-to-vector conversion
@@ -108,7 +110,7 @@ models/
 │   ├── job_registry.py         # @job_handler decorator and handler registry
 │   └── process_job.py          # Job dispatch and lifecycle management
 └── worker/
-    ├── capabilities.py         # Capability detection and task requirements
+    ├── capabilities.py         # Capability detection (reads task requirements from JSON)
     └── identity.py             # Worker ID, name, registration and heartbeat
 ```
 
@@ -157,7 +159,7 @@ Database connections and model instances are created once and reused:
 
 ### Per-Task Model Configuration
 
-Model selection is driven by `config/models.json` (auto-created from `templates/models.default.json` on first run). This allows changing the model for a task (e.g., switching from Mistral to Phi-4) without modifying code.
+Model selection is driven by `config/tasks.json` (auto-created from `common/tasks.default.json` on first run). This allows changing the model for a task (e.g., switching from Mistral to Phi-4) without modifying code.
 
 ### Modular RAG Pipeline
 

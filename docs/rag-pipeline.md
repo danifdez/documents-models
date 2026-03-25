@@ -79,7 +79,7 @@ Default values (configurable via env vars):
 
 Each chunk is encoded using the `EmbeddingService` singleton (`services/embedding_service.py`):
 
-- **Model**: configured in `config/models.json` (default: `BAAI/bge-small-en-v1.5`)
+- **Model**: configured in `config/tasks.json` (default: `BAAI/bge-small-en-v1.5`)
 - **Dimensions**: 384
 - **Normalization**: L2-normalized (`normalize_embeddings=True`)
 - Batch encoding for efficiency
@@ -114,7 +114,7 @@ The ask pipeline is: **Retriever → Reranker → ContextBuilder → PromptBuild
 2. **Reranker** — Deduplicates and sorts chunks by score.
 3. **ContextBuilder** — Joins ranked chunks into a single context string (separator: `\n\n---\n\n`).
 4. **PromptBuilder** — Fills the `ask` prompt template (from `templates/prompts/`) with context and question.
-5. **Generator** — Runs LLM inference using the model configured for the `ask` task in `models.json`.
+5. **Generator** — Runs LLM inference using the model configured for the `ask` task in `tasks.json`.
 
 Default prompt instructs the LLM to:
 - Answer only using the provided context
@@ -127,7 +127,7 @@ If no relevant chunks are found, returns `"No relevant information was found to 
 
 The `EmbeddingService` class (`services/embedding_service.py`) wraps sentence-transformers:
 
-- Model loaded from `config/models.json` (task: `embedding`)
+- Model loaded from `config/tasks.json` (task: `embedding`)
 - Runs on GPU automatically when CUDA is available
 - Provides:
   - `encode(texts)` — batch encoding for ingestion
@@ -140,7 +140,7 @@ The `EmbeddingService` class (`services/embedding_service.py`) wraps sentence-tr
 
 The `LLMService` class (`services/llm_service.py`) wraps llama-cpp-python:
 
-- Model path and parameters loaded from `config/models.json` via `get_llm_params(task_name)`
+- Model path and parameters loaded from `config/tasks.json` via `get_llm_params(task_name)`
 - Cached per model path via `get_llm_service()` — one instance shared across requests for the same model
 - Provides `generate(prompt, max_tokens)` for completion and `chat(messages, max_tokens)` for chat completion
 
