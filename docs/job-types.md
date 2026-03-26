@@ -1,6 +1,6 @@
 # Job Types
 
-The models service processes 11 job types, each registered via the `@job_handler` decorator. All handlers receive a `payload` dict and return a result dict.
+The models service processes 13 job types, each registered via the `@job_handler` decorator. All handlers receive a `payload` dict and return a result dict.
 
 ## Overview
 
@@ -17,6 +17,8 @@ The models service processes 11 job types, each registered via the `@job_handler
 | `key-point` | `key_points()` | `tasks/key_points/key_points.py` | Mistral-7B (with heuristic fallback) |
 | `keywords` | `keywords()` | `tasks/keywords/keywords.py` | Mistral-7B (with heuristic fallback) |
 | `embedding` | `create_embedding()` | `tasks/embedding/embedding.py` | BAAI/bge-small-en-v1.5 |
+| `image-generate` | `generate_image()` | `tasks/image_generate/image_generate.py` | Stable Diffusion XL (diffusers) |
+| `image-edit` | `edit_image()` | `tasks/image_edit/image_edit.py` | Stable Diffusion XL (diffusers) |
 
 ---
 
@@ -450,3 +452,86 @@ Computes descriptive statistics for a dataset stored in the `datasets` / `datase
 - Reads schema and records directly from PostgreSQL.
 - Builds a pandas DataFrame and computes per-field statistics (numeric: mean/std/min/max/percentiles; string: unique count and most-frequent value; boolean: true/false counts).
 - Does not require any capability (any worker can handle it).
+
+---
+
+## image-generate
+
+Generates an image from a text prompt using a local Stable Diffusion model.
+
+**Input:**
+
+```json
+{
+  "prompt": "A mountain landscape at sunset",
+  "negativePrompt": "blurry, low quality",
+  "width": 1024,
+  "height": 1024,
+  "steps": 30,
+  "guidanceScale": 7.5,
+  "seed": 42,
+  "requestId": "uuid"
+}
+```
+
+**Output:**
+
+```json
+{
+  "hash": "a1b2c3d4e5f6...",
+  "relativePath": "a1b/2c3/a1b2c3d4e5f6...png",
+  "extension": ".png",
+  "width": 1024,
+  "height": 1024,
+  "prompt": "A mountain landscape at sunset",
+  "requestId": "uuid"
+}
+```
+
+- Uses `stabilityai/stable-diffusion-xl-base-1.0` by default (configurable in `tasks.json`).
+- Requires GPU capability (~7 GB VRAM for SDXL in float16).
+- The generated PNG is saved to the shared documents storage using the same hash-based path scheme as uploaded files.
+- The model is loaded lazily on first use and cached as a singleton.
+
+See [image-generate task](./tasks/image-generate.md) for full details.
+
+---
+
+## image-edit
+
+Modifies an existing image using img2img diffusion guided by a text prompt.
+
+**Input:**
+
+```json
+{
+  "sourceHash": "a1b2c3d4e5f6...",
+  "sourceExtension": ".png",
+  "prompt": "Transform into a watercolor painting",
+  "strength": 0.75,
+  "steps": 30,
+  "guidanceScale": 7.5,
+  "requestId": "uuid"
+}
+```
+
+**Output:**
+
+```json
+{
+  "hash": "f4a3b2c1d0e9...",
+  "relativePath": "f4a/3b2/f4a3b2c1d0e9...png",
+  "extension": ".png",
+  "width": 1024,
+  "height": 1024,
+  "prompt": "Transform into a watercolor painting",
+  "requestId": "uuid",
+  "sourceHash": "a1b2c3d4e5f6..."
+}
+```
+
+- Loads the source image from the shared documents storage using `sourceHash` and `sourceExtension`.
+- The `strength` parameter (0.1–1.0) controls how much the output deviates from the input.
+- Shares the same diffusion model and GPU requirements as `image-generate`.
+
+See [image-edit task](./tasks/image-edit.md) for full details.

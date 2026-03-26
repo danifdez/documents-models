@@ -4,7 +4,7 @@ The **document-extraction** task extracts the text content from an uploaded file
 
 ### What it does
 
-Given a file identified by its hash and extension, the task reads the file from storage, parses it using the appropriate processor, and returns the extracted content as HTML. For media files (audio and video), it performs speech-to-text transcription.
+Given a file identified by its hash and extension, the task reads the file from storage, parses it using the appropriate processor, and returns the extracted content as HTML. For media files (audio and video), it extracts technical metadata (duration, bitrate, etc.). Speech-to-text transcription is handled separately by the [transcribe](./transcribe.md) task, which runs automatically after extraction.
 
 ### Parameters
 

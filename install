@@ -160,6 +160,23 @@ done
 PY_VERSION=$($PYTHON --version 2>&1)
 info "$PY_VERSION detected"
 
+# ── Check / install ffmpeg (required for audio/video transcription) ──
+if command -v ffmpeg >/dev/null 2>&1; then
+  FFMPEG_VERSION=$(ffmpeg -version 2>&1 | head -n1)
+  ok "ffmpeg detected: $FFMPEG_VERSION"
+else
+  info "ffmpeg not found — attempting to install..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get install -y ffmpeg -qq && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo apt install ffmpeg)"
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y ffmpeg -q && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo dnf install ffmpeg)"
+  elif command -v brew >/dev/null 2>&1; then
+    brew install ffmpeg && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: brew install ffmpeg)"
+  else
+    warn "Could not install ffmpeg automatically. Install it manually for audio/video support."
+  fi
+fi
+
 # ── Create virtual environment ──
 if [ ! -d ".venv" ]; then
   info "Creating virtual environment..."
@@ -232,6 +249,52 @@ else
   info "Installing spaCy large model (CPU)..."
   pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_lg-${SPACY_VERSION}.0/en_core_web_lg-${SPACY_VERSION}.0.tar.gz" -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
 fi
+
+# ── Pre-download HuggingFace models ──
+info "Pre-downloading models (this may take a while on first run)..."
+
+$PYTHON -c "
+import json, sys
+
+with open('config/tasks.json') as f:
+    tasks = json.load(f)
+
+# Embedding model
+if tasks.get('embedding', {}).get('enabled', False):
+    model = tasks['embedding'].get('model', 'BAAI/bge-small-en-v1.5')
+    print(f'  Downloading embedding model: {model}', flush=True)
+    from sentence_transformers import SentenceTransformer
+    SentenceTransformer(model)
+    print(f'  ✓ {model}', flush=True)
+
+# Summarization model
+if tasks.get('summarize', {}).get('enabled', False):
+    model = tasks['summarize'].get('model', 'facebook/mbart-large-50-one-to-many-mmt')
+    print(f'  Downloading summarization model: {model}', flush=True)
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    AutoTokenizer.from_pretrained(model)
+    AutoModelForSeq2SeqLM.from_pretrained(model)
+    print(f'  ✓ {model}', flush=True)
+
+# Whisper model (transcription)
+if tasks.get('transcribe', {}).get('enabled', False):
+    model_size = tasks['transcribe'].get('model', 'base')
+    print(f'  Downloading whisper model: {model_size}', flush=True)
+    from faster_whisper import WhisperModel
+    WhisperModel(model_size, device='cpu', compute_type='int8')
+    print(f'  ✓ whisper {model_size}', flush=True)
+
+# Diffusion model (image generation)
+has_cuda = '$HAS_CUDA' == '1'
+if has_cuda and tasks.get('image-generate', {}).get('enabled', False):
+    model = tasks['image-generate'].get('model', 'stabilityai/stable-diffusion-xl-base-1.0')
+    print(f'  Downloading diffusion model: {model}', flush=True)
+    import torch
+    from diffusers import AutoPipelineForText2Image
+    AutoPipelineForText2Image.from_pretrained(model, torch_dtype=torch.float16, variant='fp16')
+    print(f'  ✓ {model}', flush=True)
+"
+ok "All models pre-downloaded"
 
 deactivate
 

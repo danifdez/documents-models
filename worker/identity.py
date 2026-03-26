@@ -59,18 +59,24 @@ def register_worker(capabilities: list, metadata: dict):
 def start_heartbeat_thread():
     """Start a daemon thread that updates last_heartbeat every HEARTBEAT_INTERVAL seconds."""
     def _heartbeat_loop():
+        from database.job import get_job_database
+        db = get_job_database()
+        conn = db.get_connection()
         while True:
             time.sleep(HEARTBEAT_INTERVAL)
             try:
-                from database.job import get_job_database
-                db = get_job_database()
-                with db.conn.cursor() as cur:
+                with conn.cursor() as cur:
                     cur.execute(
                         "UPDATE workers SET last_heartbeat = NOW() WHERE id = %s",
                         (WORKER_ID,)
                     )
             except Exception as e:
                 logger.error("Heartbeat error: %s", e)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = db.get_connection()
 
     t = threading.Thread(target=_heartbeat_loop, daemon=True)
     t.start()

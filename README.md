@@ -26,6 +26,11 @@ the jobs they are able to handle.
 - **Key point extraction** — Produces a short list of key takeaways from long documents.
 - **Dataset statistics** — Computes descriptive statistics (mean, std, top values, etc.) for structured datasets.
 
+### Image generation
+
+- **Text-to-image** — Generates images from text prompts using a local Stable Diffusion model (SDXL by default).
+- **Image editing** — Modifies existing images using img2img diffusion guided by a text prompt and configurable strength.
+
 ### Semantic search and RAG
 
 - **Ingestion** — Chunks document content and stores vector embeddings in Qdrant for later retrieval.
@@ -54,6 +59,7 @@ the jobs they are able to handle.
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
 | NER | spaCy (model configured in `tasks.json`, default: `en_core_web_sm`) |
 | LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Phi-4-mini-instruct) |
+| Image generation | `stabilityai/stable-diffusion-xl-base-1.0` (diffusers) |
 
 Most models are downloaded automatically from Hugging Face on first use. The GGUF file for the LLM must
 be placed manually in the `models/` directory and configured in `config/tasks.json`.

@@ -15,3 +15,7 @@ psycopg[binary]
 spacy
 mutagen
 odfpy
+faster-whisper
+diffusers
+accelerate
+safetensors

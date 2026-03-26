@@ -74,6 +74,15 @@
     "type": "utility",
     "capabilities": []
   },
+  "transcribe": {
+    "enabled": true,
+    "type": "whisper",
+    "model": "base",
+    "device": "cpu",
+    "compute_type": "int8",
+    "capabilities": [],
+    "beam_size": 5
+  },
   "document-extraction": {
     "enabled": true,
     "type": "utility",
@@ -128,5 +137,24 @@
     "enabled": true,
     "type": "utility",
     "capabilities": []
+  },
+  "image-generate": {
+    "enabled": true,
+    "type": "diffusion",
+    "model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capabilities": ["gpu"],
+    "default_steps": 30,
+    "default_guidance_scale": 7.5,
+    "default_width": 1024,
+    "default_height": 1024
+  },
+  "image-edit": {
+    "enabled": true,
+    "type": "diffusion",
+    "model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capabilities": ["gpu"],
+    "default_steps": 30,
+    "default_strength": 0.75,
+    "default_guidance_scale": 7.5
   }
 }
