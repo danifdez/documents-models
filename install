@@ -116,6 +116,46 @@ with open('config/config.json', 'w') as f:
   ok "Configuration saved to config/config.json"
 fi
 
+# ── Sync feature flags from backend .env (if available) ──
+BACKEND_ENV="$ROOT_DIR/backend/.env"
+if [ -f "$BACKEND_ENV" ]; then
+  info "Syncing feature flags from backend .env..."
+  python3 -c "
+import json, os
+
+backend_env = '$BACKEND_ENV'
+env_vars = {}
+with open(backend_env) as f:
+    for line in f:
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, val = line.split('=', 1)
+            env_vars[key.strip()] = val.strip()
+
+cfg_path = 'config/config.json'
+with open(cfg_path) as f:
+    cfg = json.load(f)
+
+feature_map = {
+    'FEATURE_ENTITIES': 'entities',
+    'FEATURE_DATASETS': 'datasets',
+    'FEATURE_CANVAS': 'canvas',
+    'FEATURE_RAG': 'rag',
+}
+
+features = cfg.get('features', {})
+for env_key, feat_key in feature_map.items():
+    val = env_vars.get(env_key, 'true')
+    features[feat_key] = val != 'false'
+cfg['features'] = features
+
+with open(cfg_path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.write('\n')
+"
+  ok "Feature flags synced"
+fi
+
 # ── Configure tasks.json ──
 if [ -f "config/tasks.json" ]; then
   ok "config/tasks.json already exists (skipping)"
@@ -225,8 +265,11 @@ if [ "$HAS_CUDA" -eq 1 ]; then
       info "  GPU: $line"
     done
   fi
-  info "Installing GPU dependencies (CUDA 12.6 wheels)..."
+  info "Installing GPU dependencies..."
   pip install -r requirements-gpu.txt
+  # Force reinstall llama-cpp-python with CUDA support (compile from source)
+  info "Compiling llama-cpp-python with CUDA support (this may take a few minutes)..."
+  CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
   ok "GPU dependencies installed"
 else
   warn "No CUDA detected — installing CPU-only mode"

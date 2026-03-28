@@ -25,6 +25,9 @@ class RAGContext:
     # Retriever output
     chunks: List[RetrievedChunk] = field(default_factory=list)
 
+    # Graph retriever output
+    graph_context: list = field(default_factory=list)
+
     # Reranker output
     ranked_chunks: List[RetrievedChunk] = field(default_factory=list)
 

@@ -13,6 +13,13 @@
     "port": 6333,
     "collection": "rag_docs"
   },
+  "neo4j": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 7687,
+    "user": "neo4j",
+    "password": "example123"
+  },
   "storage": {
     "documents_dir": "../documents"
   },

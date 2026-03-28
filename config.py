@@ -27,6 +27,15 @@ QDRANT_PORT = int(_qd.get("port", 6333))
 QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 QDRANT_COLLECTION = _qd.get("collection", "rag_docs")
 
+# Neo4j Configuration
+_n4j = _cfg.get("neo4j", {})
+NEO4J_ENABLED = _n4j.get("enabled", False)
+NEO4J_HOST = _n4j.get("host", "localhost")
+NEO4J_PORT = int(_n4j.get("port", 7687))
+NEO4J_URI = f"bolt://{NEO4J_HOST}:{NEO4J_PORT}"
+NEO4J_USER = _n4j.get("user", "neo4j")
+NEO4J_PASSWORD = _n4j.get("password", "example123")
+
 # File Storage Configuration
 _st = _cfg.get("storage", {})
 DOCUMENTS_STORAGE_DIR = os.path.abspath(

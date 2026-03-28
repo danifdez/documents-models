@@ -156,5 +156,22 @@
     "default_steps": 30,
     "default_strength": 0.75,
     "default_guidance_scale": 7.5
+  },
+  "relationship-extraction": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 2000
+  },
+  "relationship-query": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
+  "relationship-modify": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
   }
 }

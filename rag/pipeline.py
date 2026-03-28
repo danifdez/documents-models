@@ -1,6 +1,7 @@
 from typing import List, Any
 from rag.types import RAGContext
 from rag.retriever import Retriever
+from rag.graph_retriever import GraphRetriever
 from rag.reranker import Reranker
 from rag.context_builder import ContextBuilder
 from rag.prompt_builder import PromptBuilder
@@ -20,9 +21,10 @@ class RAGPipeline:
 
 
 def create_ask_pipeline() -> RAGPipeline:
-    """Full RAG pipeline: retrieve -> rerank -> build context -> build prompt -> generate."""
+    """Full RAG pipeline: retrieve -> graph retrieve -> rerank -> build context -> build prompt -> generate."""
     return RAGPipeline([
         Retriever(),
+        GraphRetriever(),
         Reranker(),
         ContextBuilder(),
         PromptBuilder(),
