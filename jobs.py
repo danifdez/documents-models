@@ -68,4 +68,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--setup" in sys.argv:
+        # Pre-download all ML models without starting the worker
+        from setup_models import setup
+        setup()
+    else:
+        main()
