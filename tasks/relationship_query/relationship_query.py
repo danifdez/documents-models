@@ -19,7 +19,9 @@ def query_relationships(payload) -> dict:
         return {"entities": [], "relationships": [], "error": "Neo4j is not enabled"}
 
     try:
-        if query_type == "by-resource" and resource_id:
+        if query_type == "all":
+            result = neo4j.query_all(limit=limit)
+        elif query_type == "by-resource" and resource_id:
             result = neo4j.query_by_resource(int(resource_id), limit=limit)
         elif query_type == "by-project" and project_id:
             rid_list = [int(r) for r in resource_ids] if resource_ids else None

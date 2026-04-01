@@ -101,6 +101,19 @@ class Neo4jDB:
                 )
             return self._parse_relationship_results(result)
 
+    def query_all(self, limit: int = 500) -> Dict[str, Any]:
+        """Query all entities and relationships (global view, no project filter)."""
+        with self.driver.session() as session:
+            result = session.run(
+                "MATCH (s:Entity)-[r:REL]->(o:Entity) "
+                "RETURN s.entity_id AS source_id, s.name AS source_name, s.entity_type AS source_type, "
+                "r.predicate AS predicate, r.confidence AS confidence, r.resource_id AS resource_id, "
+                "o.entity_id AS target_id, o.name AS target_name, o.entity_type AS target_type "
+                "LIMIT $limit",
+                limit=limit,
+            )
+            return self._parse_relationship_results(result)
+
     def query_neighborhood(self, entity_names: List[str], project_id: Optional[str] = None,
                             depth: int = 2) -> List[Dict[str, Any]]:
         """Query relationships in the neighborhood of given entity names. Used for RAG context."""
