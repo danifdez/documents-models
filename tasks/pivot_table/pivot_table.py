@@ -1,5 +1,5 @@
 from utils.job_registry import job_handler
-from common.dataset import load_dataset, safe_float
+from common.dataset import load_dataset, safe_float, resolve_fk_labels, _normalize_fk_value
 import pandas as pd
 
 
@@ -40,8 +40,12 @@ def pivot_table(payload) -> dict:
                                    columns=col_field, aggfunc="sum", fill_value=0)
             agg_fn = "count"
 
-        rows = [str(v) for v in pivot.index.tolist()]
-        cols = [str(v) for v in pivot.columns.tolist()]
+        raw_rows = pivot.index.tolist()
+        raw_cols = pivot.columns.tolist()
+        row_fk_map = resolve_fk_labels(schema, row_field, raw_rows)
+        col_fk_map = resolve_fk_labels(schema, col_field, raw_cols)
+        rows = [row_fk_map.get(_normalize_fk_value(v), str(v)) for v in raw_rows]
+        cols = [col_fk_map.get(_normalize_fk_value(v), str(v)) for v in raw_cols]
         values = [[safe_float(pivot.iloc[i, j]) for j in range(len(cols))] for i in range(len(rows))]
         row_totals = [safe_float(sum(r)) for r in values]
         col_totals = [safe_float(sum(values[i][j] or 0 for i in range(len(rows)))) for j in range(len(cols))]

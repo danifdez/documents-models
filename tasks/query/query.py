@@ -1,5 +1,5 @@
 from utils.job_registry import job_handler
-from common.dataset import load_dataset, safe_float, apply_filters, get_dataset_records, build_dataframe
+from common.dataset import load_dataset, safe_float, apply_filters, get_dataset_records, build_dataframe, resolve_fk_labels, _normalize_fk_value
 import pandas as pd
 
 
@@ -63,7 +63,9 @@ def query(payload) -> dict:
                 grouped = df.groupby(group_by_field).size().sort_values(ascending=False)
                 grouped.name = "count"
 
-            labels = [str(v) for v in grouped.index.tolist()]
+            raw_labels = grouped.index.tolist()
+            fk_map = resolve_fk_labels(schema, group_by_field, raw_labels)
+            labels = [fk_map.get(_normalize_fk_value(v), str(v)) for v in raw_labels]
             values = [safe_float(v) for v in grouped.values]
 
             return {

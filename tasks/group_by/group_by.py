@@ -1,5 +1,5 @@
 from utils.job_registry import job_handler
-from common.dataset import load_dataset, safe_float
+from common.dataset import load_dataset, safe_float, resolve_fk_labels, _normalize_fk_value
 import pandas as pd
 
 
@@ -31,6 +31,11 @@ def group_by(payload) -> dict:
 
         grouped = sub.groupby(group_field)[value_field].agg(fn).sort_values(ascending=False)
 
+        raw_labels = grouped.index.tolist()
+        fk_map = resolve_fk_labels(schema, group_field, raw_labels)
+        labels = [fk_map.get(_normalize_fk_value(v), str(v)) for v in raw_labels]
+        values = [safe_float(v) for v in grouped.values]
+
         return {
             "chartType": "bar",
             "field": value_field,
@@ -39,16 +44,16 @@ def group_by(payload) -> dict:
             "groupFieldName": g_def["name"],
             "fn": agg_fn,
             "chartData": {
-                "labels": [str(v) for v in grouped.index.tolist()],
-                "values": [safe_float(v) for v in grouped.values],
+                "labels": labels,
+                "values": values,
             },
             "stats": {
                 "groupCount": len(grouped),
                 "totalRecords": len(sub),
             },
             "tableData": {
-                "labels": [str(v) for v in grouped.index.tolist()],
-                "values": [safe_float(v) for v in grouped.values],
+                "labels": labels,
+                "values": values,
             },
             "operation": "group_by",
             "datasetId": dataset_id,
