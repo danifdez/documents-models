@@ -54,6 +54,14 @@
     "batch_size": 32,
     "ignored_entity_types": ["CARDINAL", "DATE", "MONEY", "ORDINAL", "PERCENT", "QUANTITY", "TIME"]
   },
+  "date-extraction": {
+    "enabled": true,
+    "type": "spacy",
+    "model": "en_core_web_sm",
+    "capabilities": [],
+    "enable_llm_fallback": true,
+    "max_llm_fallbacks": 10
+  },
   "search": {
     "enabled": true,
     "type": "rag",

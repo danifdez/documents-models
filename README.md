@@ -64,6 +64,9 @@ the jobs they are able to handle.
 Most models are downloaded automatically from Hugging Face on first use. The GGUF file for the LLM must
 be placed manually in the `models/` directory and configured in `config/tasks.json`.
 
+LLM tasks optionally support LoRA adapters (`lora_model`, `lora_scale` in the task entry) applied on top
+of the base GGUF. Adapter files are also placed manually. See [docs/configuration.md](docs/configuration.md#tasksjson).
+
 ## Requirements
 
 - Python 3.11+

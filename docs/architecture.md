@@ -155,11 +155,11 @@ Database connections and model instances are created once and reused:
 - `get_job_database()` — PostgreSQL connection (autocommit, dict rows)
 - `get_rag()` — Qdrant client (ensures collection and indexes exist on init)
 - `get_embedding_service()` — SentenceTransformer model (loaded on first call)
-- `get_llm_service()` — LLM instance, cached per model path
+- `get_llm_service()` — LLM instance, cached per `(model_path, lora_path, lora_scale)` tuple
 
 ### Per-Task Model Configuration
 
-Model selection is driven by `config/tasks.json` (auto-created from `common/tasks.default.json` on first run). This allows changing the model for a task (e.g., switching from Mistral to Phi-4) without modifying code.
+Model selection is driven by `config/tasks.json` (auto-created from `common/tasks.default.json` on first run). This allows changing the model for a task (e.g., switching from Mistral to Phi-4) without modifying code. Each `type: "llm"` task can also declare an optional `lora_model` (+ `lora_scale`) to apply a LoRA adapter on top of its base GGUF; different base+adapter combinations coexist in the cache as distinct instances.
 
 ### Modular RAG Pipeline
 

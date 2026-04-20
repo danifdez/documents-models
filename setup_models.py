@@ -67,6 +67,9 @@ def setup():
                 steps.append(("llm", model, download_gguf))
                 break  # Only need to download once
 
+    # LoRA adapters are placed manually; warn if configured but missing
+    check_lora_files(tasks)
+
     total = len(steps)
     for i, (name, model, fn) in enumerate(steps):
         pct = int((i / total) * 100)
@@ -106,6 +109,25 @@ def download_seq2seq(model_name):
 def download_whisper(model_size):
     from faster_whisper import WhisperModel
     WhisperModel(model_size, device="cpu", compute_type="int8")
+
+
+def check_lora_files(tasks):
+    """Warn if any LLM task references a lora_model/lora_path that is not present on disk."""
+    model_dir = os.path.join(SCRIPT_DIR, "models")
+    for task_name, task in tasks.items():
+        if task.get("type") != "llm" or not task.get("enabled", False):
+            continue
+        lora_path = task.get("lora_path")
+        lora_name = task.get("lora_model")
+        if not lora_path and lora_name:
+            lora_path = lora_name if os.path.isabs(lora_name) else os.path.join(model_dir, lora_name)
+        if lora_path and not os.path.exists(lora_path):
+            print(
+                f"WARNING: LoRA for task '{task_name}' not found at {lora_path}. "
+                f"Place the adapter .gguf manually before running this task.",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def download_gguf(model_filename):

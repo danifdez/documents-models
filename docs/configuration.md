@@ -136,6 +136,16 @@ Common fields for all tasks:
 | `capabilities` | yes | Required worker capabilities (`["llm"]`, `["embeddings"]`, `["llm", "embeddings"]`, or `[]`) |
 | `model` | no | Model name or path |
 
+Optional fields for `type: "llm"` tasks (applied on top of the base GGUF model):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `lora_model` | — | Filename of a LoRA adapter `.gguf` inside `model_dir`. Place the file manually. |
+| `lora_path` | — | Absolute path to the LoRA adapter. Overrides `lora_model` when set. |
+| `lora_scale` | `1.0` | Blend scale for the LoRA adapter. |
+
+Each `(model, lora_path, lora_scale)` combination is cached as a separate Llama instance, so different tasks can use different base+adapter pairs without collision.
+
 Additional task-specific parameters vary by task (see `common/tasks.default.json` for the full default configuration).
 
 ## Per-task Overrides

@@ -131,12 +131,20 @@ def get_llm_params(task_name: str) -> dict:
     model_name = task.get('model', defaults.get('model', ''))
     model_path = task.get('model_path', os.path.join(model_dir, model_name))
 
+    lora_name = task.get('lora_model')
+    lora_path = task.get('lora_path')
+    if lora_path is None and lora_name:
+        lora_path = lora_name if os.path.isabs(lora_name) else os.path.join(model_dir, lora_name)
+    lora_scale = task.get('lora_scale', 1.0)
+
     return {
         'model_path': model_path,
         'n_ctx': task.get('n_ctx', defaults.get('n_ctx', 32768)),
         'n_threads': task.get('n_threads', defaults.get('n_threads', 4)),
         'n_batch': task.get('n_batch', defaults.get('n_batch', 64)),
         'n_gpu_layers': task.get('n_gpu_layers', defaults.get('n_gpu_layers', 0)),
+        'lora_path': lora_path,
+        'lora_scale': lora_scale,
     }
 
 

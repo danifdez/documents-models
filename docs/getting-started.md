@@ -58,6 +58,8 @@ The service uses several AI models. Most are downloaded automatically from Huggi
 
 The LLM (GGUF file) is **not** auto-downloaded. Place the model file in the `models/` subdirectory, then set the filename in `config/tasks.json` under the `keywords`, `key-point`, and `ask` task entries. Tasks that depend on it will fall back to heuristics or fail gracefully if the file is not present.
 
+**Optional LoRA adapters.** To fine-tune any LLM task, place a LoRA adapter `.gguf` in `models/` and add `lora_model` (and optionally `lora_scale`) to the task entry. See [configuration.md](configuration.md#tasksjson) for details.
+
 ## Verifying the Service
 
 Once started, the service logs hardware info, registers the worker, and then prints:

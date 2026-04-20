@@ -179,3 +179,21 @@ Text: {text}
 ```python
 import tasks.sentiment.sentiment
 ```
+
+### Applying a LoRA Adapter
+
+Any `type: "llm"` task can load a LoRA adapter on top of its base GGUF. Drop the adapter `.gguf` in the `models/` directory and add `lora_model` to the task entry:
+
+```json
+"sentiment": {
+  "enabled": true,
+  "type": "llm",
+  "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+  "lora_model": "sentiment-finetune.gguf",
+  "lora_scale": 1.0,
+  "capabilities": ["llm"],
+  "max_tokens": 50
+}
+```
+
+LoRA files are not auto-downloaded — place them manually alongside the base GGUF. A missing adapter raises `FileNotFoundError` on task load.
