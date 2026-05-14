@@ -1,9 +1,10 @@
 docling
 lxml_html_clean
 beautifulsoup4
+markdownify
 trafilatura
 langdetect
-transformers
+transformers<5
 protobuf
 sentencepiece
 qdrant-client

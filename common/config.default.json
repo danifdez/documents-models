@@ -20,9 +20,6 @@
     "user": "neo4j",
     "password": "example123"
   },
-  "storage": {
-    "documents_dir": "../documents"
-  },
   "llm_defaults": {
     "model_dir": "models",
     "n_ctx": 32768,

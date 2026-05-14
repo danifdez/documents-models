@@ -100,7 +100,7 @@ Extracts named entities (persons, organizations, locations, etc.) from text.
 
 **Job type:** `key-point`
 **File:** `tasks/key_points/key_points.py`
-**Model:** GGUF LLM configured in `config/tasks.json` (default: Phi-4-mini-instruct), with heuristic fallback
+**Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
 
 Extracts up to 5 concise key points from text content.
 
@@ -120,7 +120,7 @@ Extracts up to 5 concise key points from text content.
 
 **Job type:** `keywords`
 **File:** `tasks/keywords/keywords.py`
-**Model:** GGUF LLM configured in `config/tasks.json` (default: Phi-4-mini-instruct), with heuristic fallback
+**Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
 
 Extracts up to 10 keywords or short topic phrases from text content.
 

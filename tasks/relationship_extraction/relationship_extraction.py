@@ -1,15 +1,46 @@
+"""Agentic relationship extraction.
+
+Mirrors the state-machine used by `summarize`, `key-point`, `keywords`, and
+`date-extraction`:
+
+- Top-level cleans the text (HTML → markdown, strip dense blobs), drops
+  auxiliary sections via the relevance filter, and chunks the survivors
+  with `semantic_chunk_text` (overlap-aware so cross-chunk relationships at
+  boundaries still have a chance). Single chunk → run inline; N chunks →
+  fan-out one `relationship-extraction` child per chunk.
+- Each child detects `_chunk_idx` in payload, runs the LLM on its single
+  chunk, validates relationships against the entity list (provided in the
+  payload) and returns the validated raw list.
+- Once all children finish, the dispatcher re-invokes the handler with the
+  persisted state; `_phase_merge` deduplicates across chunks and persists to
+  Neo4j. **Neo4j writes only happen at merge time** so a partially failed
+  job never leaves an inconsistent graph.
+"""
+
 import json
-import re
 import logging
-from typing import List, Dict, Set
-from utils.job_registry import job_handler
-from services.llm_service import get_llm_service
-from services.prompts import get_prompt
-from services.model_config import get_llm_params, get_task_config
-from services.text import normalize_text
+import re
+from typing import Any, Dict, List, Optional, Set
+
 from database.neo4j_db import get_neo4j
+from services.llm_service import get_llm_service
+from services.model_config import get_llm_defaults, get_llm_params, get_task_config
+from services.prompts import get_prompt
+from services.relevance import select_relevant_units
+from services.text import (
+    extract_section_units,
+    html_to_markdown,
+    semantic_chunk_text,
+    strip_dense_blobs,
+)
+from utils.job_registry import job_handler
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers (preserved from the previous one-shot version)
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _parse_json_array(text: str) -> list:
@@ -61,24 +92,9 @@ def _deduplicate(relationships: list) -> list:
     return list(best.values())
 
 
-def _chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
-    """Split text into overlapping chunks by words."""
-    words = text.split()
-    if len(words) <= chunk_size:
-        return [text]
-
-    chunks = []
-    start = 0
-    while start < len(words):
-        end = start + chunk_size
-        chunks.append(" ".join(words[start:end]))
-        start += chunk_size - overlap
-    return chunks
-
-
 def _extract_from_chunk(chunk: str, entities_str: str, prompt_template: str,
                          llm_service, max_tokens: int) -> str:
-    """Run LLM on a single chunk and return raw response."""
+    """Run LLM on a single chunk and return the raw response text."""
     prompt = prompt_template.format(entities=entities_str, text=chunk)
     try:
         return llm_service.chat(
@@ -89,106 +105,91 @@ def _extract_from_chunk(chunk: str, entities_str: str, prompt_template: str,
         return llm_service.generate(prompt, max_tokens=max_tokens)
 
 
-@job_handler("relationship-extraction")
-def extract_relationships(payload) -> dict:
-    text = payload.get("text", "")
-    entities = payload.get("entities", [])
-    resource_id = payload.get("resource_id") or payload.get("resourceId")
-    project_id = payload.get("project_id") or payload.get("projectId")
+# ─────────────────────────────────────────────────────────────────────────────
+# Defensive truncation against degenerate chunks
+# ─────────────────────────────────────────────────────────────────────────────
 
-    if not text or not entities:
-        return {"relationships": []}
 
-    task_config = get_task_config("relationship-extraction")
-    text = normalize_text(str(text))
+def _char_budget(cfg: Dict[str, Any]) -> int:
+    override = cfg.get("input_char_budget")
+    if override is not None:
+        return int(override)
+    n_ctx = int(get_llm_defaults().get("n_ctx", 32768))
+    out_tokens = int(cfg.get("max_tokens", 2000))
+    available_tokens = max(512, n_ctx - out_tokens - 512)
+    return available_tokens * 4
 
-    # Build entity lookup
-    entity_names = {e["name"] for e in entities}
-    entity_map = {e["name"]: e for e in entities}
-    entities_str = "\n".join(
-        f"- {e['name']} ({e.get('type', 'UNKNOWN')})" for e in entities
-    )
 
-    # Build prompt template
-    prompt_template = get_prompt("relationship-extraction")
-    if not prompt_template:
-        return {"relationships": [], "error": "Prompt template not found"}
+def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
+    cap = _char_budget(cfg)
+    if len(text) <= cap:
+        return text
+    return text[:cap]
 
-    # Load LLM
-    try:
-        params = get_llm_params("relationship-extraction")
-        llm_service = get_llm_service(**params)
-    except Exception as e:
-        logger.error("LLM error during relationship extraction: %s", e)
-        return {"relationships": [], "error": str(e)}
 
-    max_tokens = task_config.get("max_tokens", 2000)
-    chunk_size = task_config.get("chunk_words", 600)
-    chunk_overlap = task_config.get("chunk_overlap", 100)
+# ─────────────────────────────────────────────────────────────────────────────
+# Neo4j persistence (called only from merge phase)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    # Split text into chunks
-    chunks = _chunk_text(text, chunk_size, chunk_overlap)
-    logger.info("Processing %d chunk(s) for relationship extraction (%d entities, %d chars)",
-                len(chunks), len(entities), len(text))
 
-    # Extract from each chunk
-    all_relationships = []
-    for i, chunk in enumerate(chunks):
-        try:
-            generated = _extract_from_chunk(chunk, entities_str, prompt_template,
-                                             llm_service, max_tokens)
-            logger.info("Chunk %d/%d LLM response (%d chars): %s",
-                        i + 1, len(chunks), len(generated), generated[:300])
-
-            raw = _parse_json_array(generated)
-            valid = _validate_relationships(raw, entity_names)
-            logger.info("Chunk %d/%d: %d raw -> %d valid relationships", i + 1, len(chunks), len(raw), len(valid))
-            all_relationships.extend(valid)
-        except Exception as e:
-            logger.error("Error processing chunk %d: %s", i + 1, e)
-
-    # Deduplicate across chunks
-    relationships = _deduplicate(all_relationships)
-    logger.info("Total: %d relationships after deduplication", len(relationships))
-
-    # Store in Neo4j
+def _persist_to_neo4j(
+    relationships: List[Dict[str, Any]],
+    entity_map: Dict[str, Dict[str, Any]],
+    resource_id,
+    project_id,
+) -> Optional[str]:
+    """Write entities and relationships to Neo4j. Returns an error string on
+    failure, None on success or no-op."""
+    if not relationships:
+        return None
     neo4j = get_neo4j()
-    if neo4j and relationships:
-        try:
-            seen_entities = set()
-            for rel in relationships:
-                for name in (rel["subject"], rel["object"]):
-                    if name not in seen_entities:
-                        seen_entities.add(name)
-                        e = entity_map[name]
-                        neo4j.upsert_entity(
-                            entity_id=e["id"],
-                            name=e["name"],
-                            entity_type=e.get("type", "UNKNOWN"),
-                            project_id=int(project_id) if project_id else None,
-                            resource_id=int(resource_id) if resource_id else None,
-                        )
-
-            for rel in relationships:
-                subject = entity_map[rel["subject"]]
-                obj = entity_map[rel["object"]]
-                neo4j.upsert_relationship(
-                    subject_id=subject["id"],
-                    predicate=rel["predicate"],
-                    object_id=obj["id"],
-                    resource_id=int(resource_id) if resource_id else 0,
+    if not neo4j:
+        return None
+    try:
+        seen_entities = set()
+        for rel in relationships:
+            for name in (rel["subject"], rel["object"]):
+                if name in seen_entities:
+                    continue
+                seen_entities.add(name)
+                e = entity_map.get(name)
+                if not e:
+                    continue
+                neo4j.upsert_entity(
+                    entity_id=e["id"],
+                    name=e["name"],
+                    entity_type=e.get("type", "UNKNOWN"),
                     project_id=int(project_id) if project_id else None,
-                    confidence=rel["confidence"],
-                    context=rel.get("context", ""),
+                    resource_id=int(resource_id) if resource_id else None,
                 )
 
-            logger.info("Stored %d relationships for resource %s in Neo4j",
-                        len(relationships), resource_id)
-        except Exception as e:
-            logger.error("Failed to store relationships in Neo4j: %s", e)
-            return {"relationships": relationships, "error": f"Neo4j storage failed: {e}"}
+        for rel in relationships:
+            subject = entity_map.get(rel["subject"])
+            obj = entity_map.get(rel["object"])
+            if not subject or not obj:
+                continue
+            neo4j.upsert_relationship(
+                subject_id=subject["id"],
+                predicate=rel["predicate"],
+                object_id=obj["id"],
+                resource_id=int(resource_id) if resource_id else 0,
+                project_id=int(project_id) if project_id else None,
+                confidence=rel["confidence"],
+                context=rel.get("context", ""),
+            )
 
-    return {
+        logger.info(
+            "Stored %d relationships for resource %s in Neo4j",
+            len(relationships), resource_id,
+        )
+        return None
+    except Exception as e:
+        logger.error("Failed to store relationships in Neo4j: %s", e)
+        return f"Neo4j storage failed: {e}"
+
+
+def _final_result(relationships: List[Dict[str, Any]], resource_id, error: Optional[str] = None) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
         "relationships": [
             {
                 "subject": r["subject"],
@@ -200,3 +201,215 @@ def extract_relationships(payload) -> dict:
         ],
         "resourceId": resource_id,
     }
+    if error:
+        out["error"] = error
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phases
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _run_chunk_llm(
+    chunk: str,
+    entities_str: str,
+    entity_names: Set[str],
+    prompt_template: str,
+    cfg: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Single LLM call against one chunk, validated against entity_names."""
+    if not chunk or not chunk.strip():
+        return []
+    safe = _truncate_for_llm(strip_dense_blobs(chunk), cfg)
+    try:
+        params = get_llm_params("relationship-extraction")
+        llm_service = get_llm_service(**params)
+    except Exception as e:
+        logger.error("LLM error: %s", e)
+        return []
+    if llm_service is None:
+        return []
+    max_tokens = int(cfg.get("max_tokens", 2000))
+    try:
+        generated = _extract_from_chunk(safe, entities_str, prompt_template, llm_service, max_tokens)
+    except Exception as e:
+        logger.warning("relationship-extraction chunk LLM failed: %s", e)
+        return []
+    raw = _parse_json_array(generated or "")
+    return _validate_relationships(raw, entity_names)
+
+
+def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
+    text = payload.get("text", "")
+    entities = payload.get("entities", [])
+    resource_id = payload.get("resource_id") or payload.get("resourceId")
+    project_id = payload.get("project_id") or payload.get("projectId")
+    is_child = "_chunk_idx" in payload
+
+    if not text or not entities:
+        return _final_result([], resource_id)
+
+    entity_names = {e["name"] for e in entities}
+    entity_map = {e["name"]: e for e in entities}
+    entities_str = "\n".join(
+        f"- {e['name']} ({e.get('type', 'UNKNOWN')})" for e in entities
+    )
+    prompt_template = get_prompt("relationship-extraction")
+    if not prompt_template:
+        return _final_result([], resource_id, error="Prompt template not found")
+
+    # CHILD: skip chunking; run LLM directly on the received chunk text.
+    if is_child:
+        valid = _run_chunk_llm(text, entities_str, entity_names, prompt_template, cfg)
+        return {"relationships": valid}
+
+    # TOP-LEVEL: clean → units → relevance → semantic chunks.
+    units = extract_section_units(strip_dense_blobs(html_to_markdown(str(text))))
+    if not units:
+        return _final_result([], resource_id)
+
+    if cfg.get("relevance_filter_enabled", True):
+        units = select_relevant_units(
+            units, cfg, task_label="relationship extraction",
+        ) or units
+
+    chunk_words = int(cfg.get("chunk_words", 600))
+    chunk_overlap = int(cfg.get("chunk_overlap", 100))
+    max_words_per_chunk = int(cfg.get("max_words_per_chunk", chunk_words + 100))
+    chunks = semantic_chunk_text(
+        units,
+        target_words=chunk_words,
+        max_words=max_words_per_chunk,
+        overlap_words=chunk_overlap,
+    )
+    if not chunks:
+        return _final_result([], resource_id)
+
+    logger.info(
+        "Processing %d chunk(s) for relationship extraction (%d entities)",
+        len(chunks), len(entities),
+    )
+
+    # TOP-LEVEL with 1 chunk: run inline + persist.
+    if len(chunks) == 1:
+        valid = _run_chunk_llm(chunks[0], entities_str, entity_names, prompt_template, cfg)
+        deduped = _deduplicate(valid)
+        err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+        return _final_result(deduped, resource_id, error=err)
+
+    # No DB ctx (unit tests / fallback): run all chunks in-process.
+    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
+        all_valid: List[Dict[str, Any]] = []
+        for c in chunks:
+            all_valid.extend(_run_chunk_llm(c, entities_str, entity_names, prompt_template, cfg))
+        deduped = _deduplicate(all_valid)
+        err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+        return _final_result(deduped, resource_id, error=err)
+
+    # FAN-OUT: one child per chunk.
+    pending: Dict[str, int] = {}
+    results: Dict[str, Optional[Dict[str, Any]]] = {}
+    retries: Dict[str, int] = {}
+    for i, chunk in enumerate(chunks):
+        child_payload = {
+            "text": chunk,
+            "entities": entities,
+            "resource_id": resource_id,
+            "project_id": project_id,
+            "_chunk_idx": i,
+        }
+        child_id = ctx.db.enqueue_child_job(
+            ctx.job_id,
+            "relationship-extraction",
+            payload=child_payload,
+            agent_max_steps=1,
+        )
+        if child_id is None:
+            return {"error": f"failed to enqueue child for chunk {i}"}
+        pending[str(child_id)] = i
+        results[str(i)] = None
+        retries[str(i)] = 0
+
+    state = {
+        "phase": "merging",
+        "chunks_count": len(chunks),
+        "pending": pending,
+        "results": results,
+        "retries": retries,
+        "chunks": chunks,
+        "entities": entities,
+        "resource_id": resource_id,
+        "project_id": project_id,
+        "chunk_field": "text",
+        "chunk_payload_template": {
+            "entities": entities,
+            "resource_id": resource_id,
+            "project_id": project_id,
+        },
+    }
+    return {
+        "_sub_agent_pending_many": True,
+        "_state": state,
+        "pending_children": pending,
+    }
+
+
+def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
+    failed_idx = state.get("failed_idx")
+    if failed_idx is not None:
+        return _final_result(
+            [],
+            state.get("resource_id"),
+            error=(
+                f"chunk {failed_idx} failed after retries: "
+                f"{state.get('failed_error') or 'unknown error'}"
+            ),
+        )
+
+    n = int(state.get("chunks_count", 0))
+    entities = state.get("entities") or []
+    resource_id = state.get("resource_id")
+    project_id = state.get("project_id")
+    entity_map = {e["name"]: e for e in entities}
+    results = state.get("results") or {}
+
+    all_rels: List[Dict[str, Any]] = []
+    for i in range(n):
+        r = results.get(str(i))
+        if isinstance(r, dict):
+            for rel in (r.get("relationships") or []):
+                if isinstance(rel, dict):
+                    all_rels.append(rel)
+
+    deduped = _deduplicate(all_rels)
+    err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+    return _final_result(deduped, resource_id, error=err)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@job_handler("relationship-extraction")
+def extract_relationships(
+    payload: Dict[str, Any],
+    state: Optional[Dict[str, Any]] = None,
+    ctx=None,
+) -> Dict[str, Any]:
+    """Reentrant handler. `state` is None on first invocation; populated by the
+    dispatcher when the parent is woken after all children complete."""
+    try:
+        cfg = get_task_config("relationship-extraction")
+        if state and state.get("phase") == "merging":
+            return _phase_merge(state, cfg, ctx)
+        return _phase_plan_or_leaf(payload, cfg, ctx)
+    except Exception as e:
+        logger.exception("relationship-extraction failed")
+        resource_id = (
+            (state or {}).get("resource_id")
+            or payload.get("resource_id")
+            or payload.get("resourceId")
+        )
+        return _final_result([], resource_id, error=f"relationship-extraction failed: {e}")

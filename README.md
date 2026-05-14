@@ -58,14 +58,15 @@ the jobs they are able to handle.
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
 | NER | spaCy (model configured in `tasks.json`, default: `en_core_web_sm`) |
-| LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Phi-4-mini-instruct) |
+| LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Qwen3-8B) |
 | Image generation | `stabilityai/stable-diffusion-xl-base-1.0` (diffusers) |
 
-Most models are downloaded automatically from Hugging Face on first use. The GGUF file for the LLM must
-be placed manually in the `models/` directory and configured in `config/tasks.json`.
+All models are downloaded automatically: most from Hugging Face on first use, and the base GGUF LLM
+is pre-fetched by the `install` script (and by `setup_models.py --setup` in the standalone bundle)
+into the `models/` directory, using the filename declared in `config/tasks.json`.
 
 LLM tasks optionally support LoRA adapters (`lora_model`, `lora_scale` in the task entry) applied on top
-of the base GGUF. Adapter files are also placed manually. See [docs/configuration.md](docs/configuration.md#tasksjson).
+of the base GGUF. Adapter files are placed manually. See [docs/configuration.md](docs/configuration.md#tasksjson).
 
 ## Requirements
 

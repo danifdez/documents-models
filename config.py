@@ -5,7 +5,6 @@ All configuration is loaded from config/config.json (see services/model_config.p
 This module re-exports infrastructure constants for backward compatibility.
 """
 
-import os
 from services.model_config import get_config
 
 _cfg = get_config()
@@ -36,11 +35,3 @@ NEO4J_URI = f"bolt://{NEO4J_HOST}:{NEO4J_PORT}"
 NEO4J_USER = _n4j.get("user", "neo4j")
 NEO4J_PASSWORD = _n4j.get("password", "example123")
 
-# File Storage Configuration
-_st = _cfg.get("storage", {})
-DOCUMENTS_STORAGE_DIR = os.path.abspath(
-    os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        _st.get("documents_dir", "../documents")
-    )
-)

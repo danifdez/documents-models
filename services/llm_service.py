@@ -26,6 +26,7 @@ class LLMService:
             "n_threads": n_threads,
             "n_batch": n_batch,
             "n_gpu_layers": n_gpu_layers,
+            "verbose": False,
         }
         if lora_path:
             if not os.path.isfile(lora_path):

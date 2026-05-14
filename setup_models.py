@@ -132,8 +132,7 @@ def check_lora_files(tasks):
 
 def download_gguf(model_filename):
     """Download GGUF model from HuggingFace Hub."""
-    # Default repo for Phi-4-mini-instruct GGUF
-    repo_id = "microsoft/Phi-4-mini-instruct-gguf"
+    repo_id = "Qwen/Qwen3-8B-GGUF"
 
     try:
         from huggingface_hub import hf_hub_download

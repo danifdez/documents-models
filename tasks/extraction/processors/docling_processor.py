@@ -11,6 +11,7 @@ def process_with_docling(file) -> dict:
     pipeline_options.do_ocr = False
     pipeline_options.generate_picture_images = True
     pipeline_options.images_scale = 2.0
+    pipeline_options.do_formula_enrichment = True
 
     pdf_format_option = PdfFormatOption(pipeline_options=pipeline_options)
 
@@ -28,6 +29,17 @@ def process_with_docling(file) -> dict:
     try:
         body = parsed_html.body
         if body:
+            for math_el in body.find_all('math'):
+                annotation = math_el.find('annotation', attrs={'encoding': 'TeX'})
+                latex = (annotation.get_text() if annotation else '').strip()
+                if latex:
+                    span = parsed_html.new_tag('span', attrs={'data-formula': latex})
+                    span.string = latex
+                else:
+                    span = parsed_html.new_tag('span', attrs={'data-formula-error': 'true'})
+                    span.string = '[Formula not extracted]'
+                math_el.replace_with(span)
+
             for tag in body.find_all(True):
                 if tag.has_attr('style'):
                     del tag['style']

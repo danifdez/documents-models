@@ -336,6 +336,29 @@ if has_cuda and tasks.get('image-generate', {}).get('enabled', False):
     from diffusers import AutoPipelineForText2Image
     AutoPipelineForText2Image.from_pretrained(model, torch_dtype=torch.float16, variant='fp16')
     print(f'  ✓ {model}', flush=True)
+
+# LLM (GGUF) model — into <project>/models/, matching services/model_config.py
+import os
+gguf_files = set()
+for task_name, task in tasks.items():
+    if not task.get('enabled', False):
+        continue
+    for key in ('model', 'llm_model'):
+        val = task.get(key)
+        if isinstance(val, str) and val.endswith('.gguf'):
+            gguf_files.add(val)
+if gguf_files:
+    from huggingface_hub import hf_hub_download
+    model_dir = os.path.abspath('models')
+    os.makedirs(model_dir, exist_ok=True)
+    for fname in sorted(gguf_files):
+        dest = os.path.join(model_dir, fname)
+        if os.path.exists(dest):
+            print(f'  ✓ LLM already present: {fname}', flush=True)
+            continue
+        print(f'  Downloading LLM: {fname} -> {model_dir}', flush=True)
+        hf_hub_download(repo_id='Qwen/Qwen3-8B-GGUF', filename=fname, local_dir=model_dir)
+        print(f'  ✓ {fname}', flush=True)
 "
 ok "All models pre-downloaded"
 

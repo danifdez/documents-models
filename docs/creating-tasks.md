@@ -169,7 +169,7 @@ Text: {text}
 "sentiment": {
   "enabled": true,
   "type": "llm",
-  "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+  "model": "Qwen3-8B-Q5_K_M.gguf",
   "capabilities": ["llm"],
   "max_tokens": 50
 }
@@ -188,7 +188,7 @@ Any `type: "llm"` task can load a LoRA adapter on top of its base GGUF. Drop the
 "sentiment": {
   "enabled": true,
   "type": "llm",
-  "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+  "model": "Qwen3-8B-Q5_K_M.gguf",
   "lora_model": "sentiment-finetune.gguf",
   "lora_scale": 1.0,
   "capabilities": ["llm"],

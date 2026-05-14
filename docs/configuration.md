@@ -118,7 +118,7 @@ Each task has its own entry as a top-level key:
   "keywords": {
     "enabled": true,
     "type": "llm",
-    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 500,
     "max_items": 10,

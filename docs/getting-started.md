@@ -52,11 +52,11 @@ The service uses several AI models. Most are downloaded automatically from Huggi
 | `BAAI/bge-small-en-v1.5` | Text embeddings (384-dim) | sentence-transformers (auto on first request) |
 | `facebook/mbart-large-50-one-to-many-mmt` | Summarization | Hugging Face transformers (auto on first request) |
 | `Helsinki-NLP/opus-mt-{src}-{tgt}` | Translation (per language pair) | Hugging Face transformers (auto on first request) |
-| GGUF LLM (see `tasks.json`, default: Phi-4-mini-instruct) | Key points, keywords, Q&A | Must be placed manually in the `models/` directory |
+| GGUF LLM (see `tasks.json`, default: Qwen3-8B) | Key points, keywords, Q&A | Auto-downloaded from `Qwen/Qwen3-8B-GGUF` into `models/` by `install` / `setup_models.py` |
 
 ### LLM Setup
 
-The LLM (GGUF file) is **not** auto-downloaded. Place the model file in the `models/` subdirectory, then set the filename in `config/tasks.json` under the `keywords`, `key-point`, and `ask` task entries. Tasks that depend on it will fall back to heuristics or fail gracefully if the file is not present.
+The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `install` script during local setup, and by `setup_models.py --setup` when the standalone bundle is installed by the Electron app. The filename used is whatever is declared in `config/tasks.json` under the `keywords`, `key-point`, `ask`, and `summarize` task entries (default: `Qwen3-8B-Q5_K_M.gguf`). If the file is missing at runtime, tasks fall back to heuristics or fail gracefully.
 
 **Optional LoRA adapters.** To fine-tune any LLM task, place a LoRA adapter `.gguf` in `models/` and add `lora_model` (and optionally `lora_scale`) to the task entry. See [configuration.md](configuration.md#tasksjson) for details.
 

@@ -1,0 +1,27 @@
+{
+  "name": "entity-extraction",
+  "model": {
+    "path": "Qwen3-8B-Q5_K_M.gguf",
+    "lora": null,
+    "lora_scale": 1.0
+  },
+  "max_steps": 6,
+  "max_depth": 1,
+  "system_prompt": "You are a Named Entity Recognition agent. Given one or more texts, extract named entities (PERSON, ORG, GPE, LOC, PRODUCT, EVENT, NORP, FAC, WORK_OF_ART, LANGUAGE, LAW). Each entity word MUST be a literal substring of the source text. Use llm_extract to propose entities, substring_check to verify them against the source, and finish with the validated list. Skip CARDINAL/DATE/MONEY/ORDINAL/PERCENT/QUANTITY/TIME — those are handled elsewhere.",
+  "tools": [
+    "llm_extract",
+    "substring_check",
+    "finish"
+  ],
+  "tool_defaults": {
+    "llm_extract": {
+      "max_tokens": 600
+    }
+  },
+  "input_schema": {
+    "texts": "list of strings or {text: string}"
+  },
+  "output_schema": {
+    "entities": "list of {word: string, entity: string}"
+  }
+}

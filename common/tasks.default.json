@@ -2,26 +2,40 @@
   "keywords": {
     "enabled": true,
     "type": "llm",
-    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 500,
     "max_items": 10,
-    "max_words_per_item": 3
+    "max_words_per_item": 3,
+    "chunk_word_budget": 1500,
+    "chunk_max_retries": 2,
+    "relevance_filter_enabled": true,
+    "relevance_batch_size": 30,
+    "relevance_max_tokens": 300
   },
   "key-point": {
     "enabled": true,
     "type": "llm",
-    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 1000,
     "max_items": 5,
     "min_words": 3,
-    "max_words": 10
+    "max_words": 10,
+    "chunk_word_budget": 1500,
+    "chunk_max_retries": 2,
+    "dedupe_similarity_threshold": 0.85,
+    "refine_enabled": true,
+    "refine_chunk_size": 30,
+    "refine_overselect": 3,
+    "relevance_filter_enabled": true,
+    "relevance_batch_size": 30,
+    "relevance_max_tokens": 300
   },
   "ask": {
     "enabled": true,
     "type": "llm",
-    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm", "embeddings"]
   },
   "embedding": {
@@ -32,19 +46,25 @@
   },
   "summarize": {
     "enabled": true,
-    "type": "seq2seq",
-    "model": "facebook/mbart-large-50-one-to-many-mmt",
-    "capabilities": [],
-    "num_beams": 4,
-    "max_length": 200,
-    "min_length": 30
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "chunk_word_budget": 1500,
+    "chunk_max_tokens": 400,
+    "merge_max_tokens": 800,
+    "chunk_max_retries": 2,
+    "merge_recursion_factor": 2,
+    "relevance_filter_enabled": true,
+    "relevance_batch_size": 30,
+    "relevance_max_tokens": 300
   },
   "translate": {
     "enabled": true,
     "type": "translation",
     "model_prefix": "Helsinki-NLP/opus-mt",
     "capabilities": [],
-    "chunk_size": 32
+    "chunk_size": 32,
+    "max_words_per_item": 400
   },
   "entity-extraction": {
     "enabled": true,
@@ -52,15 +72,25 @@
     "model": "en_core_web_sm",
     "capabilities": [],
     "batch_size": 32,
-    "ignored_entity_types": ["CARDINAL", "DATE", "MONEY", "ORDINAL", "PERCENT", "QUANTITY", "TIME"]
+    "ignored_entity_types": ["CARDINAL", "DATE", "MONEY", "ORDINAL", "PERCENT", "QUANTITY", "TIME"],
+    "agent": {
+      "enabled": false,
+      "max_steps": 6
+    }
   },
   "date-extraction": {
     "enabled": true,
     "type": "spacy",
     "model": "en_core_web_sm",
     "capabilities": [],
+    "chunk_word_budget": 1500,
+    "chunk_max_retries": 2,
+    "chunk_max_llm_fallbacks": 5,
     "enable_llm_fallback": true,
-    "max_llm_fallbacks": 10
+    "llm_model": "Qwen3-8B-Q5_K_M.gguf",
+    "relevance_filter_enabled": true,
+    "relevance_batch_size": 30,
+    "relevance_max_tokens": 300
   },
   "search": {
     "enabled": true,
@@ -168,9 +198,16 @@
   "relationship-extraction": {
     "enabled": true,
     "type": "llm",
-    "model": "Phi-4-mini-instruct-Q4_K_M.gguf",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
-    "max_tokens": 2000
+    "max_tokens": 2000,
+    "chunk_words": 600,
+    "chunk_overlap": 100,
+    "max_words_per_chunk": 700,
+    "chunk_max_retries": 2,
+    "relevance_filter_enabled": true,
+    "relevance_batch_size": 30,
+    "relevance_max_tokens": 300
   },
   "relationship-query": {
     "enabled": true,

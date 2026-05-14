@@ -5,7 +5,6 @@ import tempfile
 
 from utils.job_registry import job_handler
 from services.model_config import get_task_config
-from config import DOCUMENTS_STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +30,17 @@ def _get_model():
     return _model
 
 
-def _get_file_path(hash: str, extension: str) -> str:
-    return os.path.join(DOCUMENTS_STORAGE_DIR, hash[:3], hash[3:6], hash + extension)
+def _materialize(input_blob: bytes, extension: str) -> str:
+    fd, path = tempfile.mkstemp(suffix=extension)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(input_blob)
+    except Exception:
+        os.close(fd)
+        if os.path.exists(path):
+            os.remove(path)
+        raise
+    return path
 
 
 def _extract_audio_from_video(video_path: str) -> str:
@@ -47,17 +55,19 @@ def _extract_audio_from_video(video_path: str) -> str:
 
 @job_handler("transcribe")
 def transcribe(payload) -> dict:
-    hash_val = payload["hash"]
     ext = payload["extension"]
-    file_path = _get_file_path(hash_val, ext)
+    input_blob = payload.get("_input_blob")
+    if input_blob is None:
+        return {"error": "transcribe job is missing input_blob"}
 
+    source_path = _materialize(input_blob, ext)
     is_video = ext.lower() in _VIDEO_EXTENSIONS
-    audio_path = file_path
+    audio_path = source_path
     temp_audio = None
 
     if is_video:
-        logger.info("Extracting audio from video: %s", file_path)
-        temp_audio = _extract_audio_from_video(file_path)
+        logger.info("Extracting audio from video: %s", source_path)
+        temp_audio = _extract_audio_from_video(source_path)
         audio_path = temp_audio
 
     try:
@@ -87,3 +97,5 @@ def transcribe(payload) -> dict:
     finally:
         if temp_audio and os.path.exists(temp_audio):
             os.remove(temp_audio)
+        if os.path.exists(source_path):
+            os.remove(source_path)

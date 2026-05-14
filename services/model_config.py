@@ -120,16 +120,25 @@ def get_all_task_requirements() -> dict:
     return {name: t.get('capabilities', []) for name, t in tasks.items()}
 
 
-def get_llm_params(task_name: str) -> dict:
-    """Get full LLM parameters for a task, merging task overrides with defaults."""
+def get_llm_params(task_name: str, model_name: str | None = None) -> dict:
+    """Get full LLM parameters for a task, merging task overrides with defaults.
+
+    If `model_name` is provided, it overrides the task's `model` field — useful when
+    the task's primary model is not an LLM (e.g. spaCy) and an LLM fallback needs a
+    different model from the same task config.
+    """
     defaults = get_llm_defaults()
     task = get_task_config(task_name)
 
     model_dir = task.get('model_dir', defaults.get('model_dir', 'models'))
     if not os.path.isabs(model_dir):
         model_dir = os.path.join(_PROJECT_DIR, model_dir)
-    model_name = task.get('model', defaults.get('model', ''))
-    model_path = task.get('model_path', os.path.join(model_dir, model_name))
+    if model_name is None:
+        model_name = task.get('model', defaults.get('model', ''))
+    if 'model_path' in task:
+        model_path = task['model_path']
+    else:
+        model_path = os.path.join(model_dir, model_name)
 
     lora_name = task.get('lora_model')
     lora_path = task.get('lora_path')
