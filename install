@@ -374,9 +374,10 @@ else
 fi
 printf "${GREEN}============================================${NC}\n"
 echo ""
-echo "  Configuration: config/config.json, config/tasks.json"
-echo "  Activate venv:   source .venv/bin/activate"
-echo "  Start worker:    python jobs.py"
+echo "  Configuration:       config/config.json, config/tasks.json"
+echo "  Activate venv:       source .venv/bin/activate"
+echo "  Start jobs worker:   python jobs.py"
+echo "  Start voice worker:  python -m voice.run_pool    (live dictation; opt-in)"
 echo ""
 if [ "$HAS_CUDA" -eq 0 ]; then
   echo "  Note: Running in CPU-only mode."

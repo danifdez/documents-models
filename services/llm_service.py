@@ -1,4 +1,5 @@
 import os
+from typing import Any, Iterator, List, Optional
 
 from llama_cpp import Llama
 
@@ -53,6 +54,49 @@ class LLMService:
         if "message" in choice and "content" in choice["message"]:
             return choice["message"]["content"].strip()
         return choice.get("text", "").strip()
+
+    def chat_with_tools(
+        self,
+        messages: list,
+        tools: List[dict],
+        max_tokens: int = 1000,
+        tool_choice: str = "auto",
+    ) -> dict:
+        """Chat completion with function/tool calling enabled.
+
+        Returns the full first choice's `message` dict so the caller can
+        inspect either `content` (plain reply) or `tool_calls` (a list of
+        functions the model wants invoked). The caller is responsible for
+        executing the tools and feeding the results back in a follow-up call.
+
+        Non-streaming on purpose: the model decides whether to call a tool
+        before producing user-visible text, so there's nothing useful to
+        stream yet."""
+        resp = self.llm.create_chat_completion(
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            max_tokens=max_tokens,
+        )
+        choice = resp["choices"][0]
+        return choice.get("message") or {}
+
+    def chat_stream(self, messages: list, max_tokens: int = 1000) -> Iterator[str]:
+        """Chat completion as a token stream. Yields content chunks as the
+        model produces them. The caller is responsible for accumulating the
+        full reply if they need it. Each yielded value is a (possibly empty)
+        string; consumers should ignore empties."""
+        stream = self.llm.create_chat_completion(
+            messages=messages, max_tokens=max_tokens, stream=True
+        )
+        for chunk in stream:
+            try:
+                delta = chunk["choices"][0].get("delta") or {}
+                piece = delta.get("content") or ""
+            except (KeyError, IndexError, TypeError):
+                piece = ""
+            if piece:
+                yield piece
 
 
 # Cache of LLM instances keyed by (model_path, lora_path, lora_scale)

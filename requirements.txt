@@ -22,3 +22,4 @@ faster-whisper
 diffusers
 accelerate
 safetensors
+websockets>=12

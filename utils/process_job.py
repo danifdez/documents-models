@@ -307,6 +307,7 @@ def process_job(job: Dict[str, Any]) -> None:
         payload = job.get("payload") or {}
         if isinstance(payload, dict):
             payload = dict(payload)
+            payload["jobId"] = job["id"]
             input_blob = job.get("input_blob")
             if input_blob is not None:
                 payload["_input_blob"] = bytes(input_blob)

@@ -27,6 +27,7 @@ TASK_FEATURE_MAP = {
     "relationship-extraction": "relationships",
     "relationship-query": "relationships",
     "relationship-modify": "relationships",
+    "assistant-chat": "assistants",
 }
 
 
