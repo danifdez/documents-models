@@ -25,6 +25,7 @@ QDRANT_HOST = _qd.get("host", "localhost")
 QDRANT_PORT = int(_qd.get("port", 6333))
 QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 QDRANT_COLLECTION = _qd.get("collection", "rag_docs")
+QDRANT_FOLDER_COLLECTION = _qd.get("folder_collection", "assistant_folder_files")
 
 # Neo4j Configuration
 _n4j = _cfg.get("neo4j", {})

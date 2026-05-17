@@ -23,3 +23,6 @@ diffusers
 accelerate
 safetensors
 websockets>=12
+pypandoc-binary
+typst
+openpyxl

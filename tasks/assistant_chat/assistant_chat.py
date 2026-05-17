@@ -20,14 +20,23 @@ Returns:
   {"reply": str, "memoryToSave"?: {"name", "type", "body"}}  or  {"error": str}
 """
 
+import base64
 import json
 import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import urllib.error
+
+from tasks.assistant_chat.file_writers import (
+    ConversionError,
+    UnsupportedExtension,
+    normalize_and_categorize,
+    to_bytes as _writer_to_bytes,
+)
+import urllib.parse
 import urllib.request
 
 from services.llm_service import get_llm_service
@@ -179,6 +188,161 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                         "description": "Project ID. Omit to list all.",
                     },
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "folder_delete",
+            "description": (
+                "Delete a file from the assistant's working folder. Identify "
+                "the file by indexedFileId (preferred) or filename. This tool "
+                "ALWAYS shows a confirmation card to the user before the file "
+                "is actually removed: never delete without explicit user "
+                "approval in the card. If the filename is ambiguous you'll "
+                "receive a list of candidates and you must ask the user."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "indexedFileId": {
+                        "type": "integer",
+                        "description": "Numeric id of the file (preferred).",
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Relative filename, e.g. 'shopping-list.md'.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "folder_search",
+            "description": (
+                "Semantic search across the files in the assistant's working "
+                "folder. Use it when the user describes a file by content or "
+                "topic and does not remember the exact filename. Returns hits "
+                "with indexedFileId, filename and a text snippet — to read a "
+                "full result, chain with folder_read using its indexedFileId. "
+                "DO NOT confuse with search_workspace, which searches notes / "
+                "tasks / canvases in the workspace at large — different "
+                "collections. If the user mentions 'my files', 'in my folder' "
+                "or anything tied to the working folder, use folder_search."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language query describing what to find.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max hits to return. Default 10.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "folder_read",
+            "description": (
+                "Read a file from the assistant's working folder. Use it when "
+                "the user asks to summarise, modify or look at an existing "
+                "file. Identify the file by indexedFileId (preferred, when you "
+                "saw it in a previous folder_search or folder_write call) or "
+                "by filename. If the filename is ambiguous you'll get a list "
+                "of candidates — ask the user which one. For non-text files "
+                "(PDF, etc.) you receive the extracted text rather than the "
+                "binary; the derivedFromExtraction flag is set so you know."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "indexedFileId": {
+                        "type": "integer",
+                        "description": "Numeric id of the file (preferred).",
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Relative filename, e.g. 'shopping-list.md'.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "folder_write",
+            "description": (
+                "Create or overwrite a file in the assistant's working folder. "
+                "The content you must emit depends on the filename's extension:\n"
+                "\n"
+                "  TEXT (.md, .markdown, .txt, .csv, .tsv, .json, .xml, .yaml, "
+                ".yml, .toml, .ini, .log, .html, .htm, .svg, .py, .js, .ts, "
+                ".tsx, .jsx, .sh, .bash, .sql, .css, .scss, .less, .go, .rs, "
+                ".rb, .java, .c, .cpp, .h, .hpp, .cs, .php, .r, .kt, .swift, "
+                ".dockerfile)\n"
+                "    -> `content` is written verbatim as UTF-8.\n"
+                "\n"
+                "  DOCUMENT (.pdf, .docx, .odt)\n"
+                "    -> `content` MUST be MARKDOWN source. The worker renders "
+                "it to the target format with pandoc. Supports headings, "
+                "lists, tables, code blocks, links, blockquotes. Embedded "
+                "images are NOT supported in this version.\n"
+                "\n"
+                "  SPREADSHEET (.xlsx)\n"
+                "    -> `content` MUST be CSV (comma-separated; first row = "
+                "column headers). The worker converts via openpyxl. Numbers "
+                "and floats are auto-detected; leading-zero strings stay as "
+                "strings (phone numbers, zip codes are safe).\n"
+                "\n"
+                "If `filename` has no extension, `.md` is assumed.\n"
+                "\n"
+                "If the file already exists and overwrite=false you'll receive "
+                "`file_exists` and must ask the user before retrying with "
+                "overwrite=true. With overwrite=true on an existing file the "
+                "user sees a confirmation card; the change is NOT applied "
+                "until they confirm. Unknown extensions return "
+                "`unsupported_extension`."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "Relative filename including extension, e.g. "
+                            "'shopping-list.md', 'report.pdf', 'data.xlsx', "
+                            "'script.py'. Subfolders allowed (e.g. "
+                            "'notes/2025-01-15.md')."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": (
+                            "Content shaped according to the extension (see "
+                            "tool description): UTF-8 text, markdown source "
+                            "for .pdf/.docx/.odt, or CSV for .xlsx."
+                        ),
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": (
+                            "Set to true ONLY after the user has explicitly "
+                            "agreed to overwrite an existing file. Default false."
+                        ),
+                    },
+                },
+                "required": ["filename", "content"],
             },
         },
     },
@@ -538,23 +702,38 @@ def _post_tool_event(
     status: str,
     summary: str = "",
     entity: Optional[Dict[str, Any]] = None,
+    kind: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    confirm_label: Optional[str] = None,
+    cancel_label: Optional[str] = None,
 ) -> None:
     """Best-effort POST to /assistants/:id/tool-event. Lets the UI render a
     "Searching..." card the instant the worker starts a tool — without it the
     user sees a 1-2s gap of "Thinking..." while the model thinks + tool runs.
 
     `entity` (e.g. {kind:'note', id:N, title:...}) is set on `done` events
-    that created something deletable — the UI uses it to show a Delete button."""
+    that created something deletable — the UI uses it to show a Delete button.
+
+    `kind`/`payload`/`confirm_label`/`cancel_label` are set on
+    `pending_confirmation` events so the frontend knows which confirm handler
+    to invoke and what data to pass back."""
     url = f"{BACKEND_URL}/assistants/{assistant_id}/tool-event"
     tool_payload: Dict[str, Any] = {"name": name, "args": args_label, "summary": summary}
     if entity:
         tool_payload["entity"] = entity
-    payload = {
+    if status == "pending_confirmation":
+        tool_payload["kind"] = kind or ""
+        tool_payload["payload"] = payload or {}
+        if confirm_label:
+            tool_payload["confirmLabel"] = confirm_label
+        if cancel_label:
+            tool_payload["cancelLabel"] = cancel_label
+    body = {
         "jobId": job_id,
         "status": status,
         "tool": tool_payload,
     }
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url, data=data, method="POST",
         headers={"Content-Type": "application/json"},
@@ -698,6 +877,35 @@ def _http_json(method: str, path: str, body: Optional[Dict[str, Any]] = None) ->
         return None
 
 
+def _http_json_with_status(
+    method: str, path: str, body: Optional[Dict[str, Any]] = None,
+) -> Tuple[int, Optional[Any]]:
+    """Variant of _http_json that returns (status_code, parsed_body). Lets the
+    caller distinguish e.g. 409 (conflict) from a hard failure."""
+    url = f"{BACKEND_URL}{path}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8")
+            return resp.getcode(), (json.loads(raw) if raw else None)
+    except urllib.error.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8")
+            parsed = json.loads(raw) if raw else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed = None
+        return e.code, parsed
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        logger.warning("assistant-chat: %s %s failed: %s", method, path, e)
+        return 0, None
+
+
 def _execute_create_note(args: Dict[str, Any]) -> Dict[str, Any]:
     title = str(args.get("title") or "").strip()
     body = str(args.get("body") or "").strip()
@@ -813,7 +1021,255 @@ def _execute_list_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"tasks": tasks[:50]}
 
 
-def _execute_tool(name: str, args_json: str) -> Dict[str, Any]:
+
+
+def _resolve_folder_target(
+    args: Dict[str, Any], assistant_id: int,
+) -> Dict[str, Any]:
+    """Resolve a `folder_*` tool argument set to a concrete IndexedFile, using
+    the same flow as folder_read (by id, then by exact filename, then by
+    basename). Returns `{ok: True, indexedFileId, filename}` or an error dict.
+    """
+    indexed_file_id = args.get("indexedFileId")
+    filename_raw = args.get("filename")
+
+    if isinstance(indexed_file_id, int):
+        path = f"/assistants/{assistant_id}/indexed-files/{indexed_file_id}/content"
+    elif isinstance(filename_raw, str) and filename_raw.strip():
+        encoded = urllib.parse.quote(filename_raw.strip(), safe="")
+        path = f"/assistants/{assistant_id}/indexed-files/by-filename?filename={encoded}"
+    else:
+        return {"error": "bad_request", "message": "indexedFileId or filename required"}
+
+    status, body = _http_json_with_status("GET", path)
+    if status == 200 and isinstance(body, dict) and body.get("ok"):
+        return {
+            "ok": True,
+            "indexedFileId": body.get("indexedFileId"),
+            "filename": body.get("filename"),
+        }
+    if status == 202 and isinstance(body, dict):
+        return {
+            "ok": True,
+            "indexedFileId": body.get("indexedFileId"),
+            "filename": body.get("filename"),
+        }
+    if status in (404, 409, 422) and isinstance(body, dict):
+        return body
+    return {"error": "internal", "status": status}
+
+
+def _execute_folder_delete(
+    args: Dict[str, Any],
+    assistant_id: Optional[int],
+    job_id: Optional[int],
+) -> Dict[str, Any]:
+    if not isinstance(assistant_id, int):
+        return {"error": "internal", "message": "missing assistant context"}
+
+    target = _resolve_folder_target(args, assistant_id)
+    if not target.get("ok"):
+        return target
+
+    indexed_file_id = target.get("indexedFileId")
+    filename = target.get("filename") or ""
+
+    if isinstance(job_id, int):
+        _post_tool_event(
+            assistant_id, job_id, "folder_delete", filename,
+            status="pending_confirmation",
+            summary=f"Pending: delete {filename}",
+            kind="folder_delete",
+            payload={"indexedFileId": indexed_file_id, "filename": filename},
+            confirm_label="Confirm delete",
+            cancel_label="Cancel",
+        )
+
+    return {
+        "ok": True,
+        "pendingConfirmation": True,
+        "indexedFileId": indexed_file_id,
+        "filename": filename,
+    }
+
+
+def _execute_folder_search(args: Dict[str, Any], assistant_id: Optional[int]) -> Dict[str, Any]:
+    if not isinstance(assistant_id, int):
+        return {"error": "internal", "message": "missing assistant context"}
+
+    query = str(args.get("query") or "").strip()
+    if len(query) < 3:
+        return {"error": "query_too_short"}
+
+    limit = args.get("limit") if isinstance(args.get("limit"), int) else 10
+    encoded = urllib.parse.quote(query, safe="")
+    path = (
+        f"/assistants/{assistant_id}/indexed-files/search"
+        f"?query={encoded}&limit={limit}"
+    )
+    status, body = _http_json_with_status("GET", path)
+
+    if status == 200 and isinstance(body, dict):
+        hits = body.get("hits") or []
+        return {"ok": True, "hits": hits, "query": query}
+    if status == 409 and isinstance(body, dict) and body.get("error") == "no_folder_configured":
+        return {"error": "no_folder_configured"}
+    if status == 400 and isinstance(body, dict):
+        return {"error": body.get("error") or "bad_request"}
+    # Backend failure or vector store unavailable — empty hits with a note so
+    # the model can distinguish "nothing found" from "couldn't search".
+    return {
+        "ok": True,
+        "hits": [],
+        "query": query,
+        "note": "search temporarily degraded or no matches",
+    }
+
+
+def _execute_folder_read(args: Dict[str, Any], assistant_id: Optional[int]) -> Dict[str, Any]:
+    if not isinstance(assistant_id, int):
+        return {"error": "internal", "message": "missing assistant context"}
+
+    indexed_file_id = args.get("indexedFileId")
+    filename_raw = args.get("filename")
+
+    if isinstance(indexed_file_id, int):
+        path = f"/assistants/{assistant_id}/indexed-files/{indexed_file_id}/content"
+    elif isinstance(filename_raw, str) and filename_raw.strip():
+        # urllib.parse.quote keeps slashes by default; force quoting all chars
+        # so the filename arrives intact even when it contains spaces or '#'.
+        encoded = urllib.parse.quote(filename_raw.strip(), safe="")
+        path = f"/assistants/{assistant_id}/indexed-files/by-filename?filename={encoded}"
+    else:
+        return {"error": "bad_request", "message": "indexedFileId or filename required"}
+
+    status, body = _http_json_with_status("GET", path)
+
+    if status == 200 and isinstance(body, dict):
+        return body
+    if status in (404, 409, 422) and isinstance(body, dict):
+        return body
+    if status == 202 and isinstance(body, dict):
+        return body
+    return {"error": "internal", "status": status}
+
+
+def _execute_folder_write(
+    args: Dict[str, Any],
+    assistant_id: Optional[int],
+    job_id: Optional[int],
+) -> Dict[str, Any]:
+    if not isinstance(assistant_id, int):
+        return {"error": "internal", "message": "missing assistant context"}
+
+    filename_raw = str(args.get("filename") or "")
+    content = args.get("content")
+    if not isinstance(content, str):
+        return {"error": "internal", "message": "content must be a string"}
+
+    # Categorize the target so we know whether the content needs conversion
+    # (markdown → pdf/docx/odt, csv → xlsx) or is written verbatim.
+    try:
+        filename, category = normalize_and_categorize(filename_raw)
+    except UnsupportedExtension as e:
+        return {
+            "error": "unsupported_extension",
+            "filename": filename_raw,
+            "extension": e.ext,
+            "hint": (
+                "Supported extensions: text files (.md, .txt, .csv, .json, "
+                ".yaml, code…), documents (.pdf, .docx, .odt) where content "
+                "must be markdown, and spreadsheets (.xlsx) where content "
+                "must be CSV."
+            ),
+        }
+
+    # Convert content to bytes according to category. For text we keep the
+    # string and let the backend write UTF-8; for binary we send base64.
+    body_payload: Dict[str, Any] = {"filename": filename}
+    if category == "text":
+        body_payload["content"] = content
+    else:
+        try:
+            data = _writer_to_bytes(content, filename, category)
+        except ConversionError as e:
+            hint = {
+                "pandoc_not_available": "Install pypandoc-binary in the worker.",
+                "typst_not_available": "Install the typst pip package in the worker.",
+                "openpyxl_not_available": "Install openpyxl in the worker.",
+                "conversion_failed": (
+                    "Check that the markdown is well-formed. For .pdf try "
+                    "simpler markdown; for .xlsx ensure the content is valid "
+                    "CSV with consistent column counts."
+                ),
+                "csv_parse_error": "The content was not valid CSV.",
+            }.get(e.reason, "")
+            return {
+                "error": e.reason,
+                "filename": filename,
+                "detail": e.detail[:200] if e.detail else "",
+                "hint": hint,
+            }
+        body_payload["contentBase64"] = base64.b64encode(data).decode("ascii")
+
+    overwrite_requested = bool(args.get("overwrite"))
+
+    # Always try create first. If the file does not exist, this is a clean
+    # create with no destructive side-effect, regardless of `overwrite`.
+    status, body = _http_json_with_status(
+        "POST",
+        f"/assistants/{assistant_id}/indexed-files",
+        body_payload,
+    )
+
+    if status == 201 and isinstance(body, dict):
+        return {
+            "ok": True,
+            "indexedFileId": body.get("id"),
+            "filename": body.get("filename") or filename,
+            "category": category,
+        }
+
+    if status == 409 and isinstance(body, dict) and body.get("error") == "file_exists":
+        if not overwrite_requested:
+            return {"error": "file_exists", "filename": filename}
+        # Overwrite intended: hand the action to the user via a confirmation
+        # card. The frontend's folder_overwrite handler reposts with overwrite.
+        # For binary categories we ship contentBase64 in the payload so the
+        # frontend doesn't have to re-run pandoc/openpyxl.
+        if isinstance(job_id, int):
+            payload: Dict[str, Any] = {"filename": filename}
+            if "content" in body_payload:
+                payload["content"] = body_payload["content"]
+            else:
+                payload["contentBase64"] = body_payload["contentBase64"]
+            _post_tool_event(
+                assistant_id, job_id, "folder_write", filename,
+                status="pending_confirmation",
+                summary=f"Pending: overwrite {filename}",
+                kind="folder_overwrite",
+                payload=payload,
+                confirm_label="Confirm overwrite",
+                cancel_label="Cancel",
+            )
+        return {"ok": True, "pendingConfirmation": True, "filename": filename}
+
+    if status == 409 and isinstance(body, dict):
+        return {"error": body.get("error") or "conflict", "filename": filename}
+    if status == 400 and isinstance(body, dict):
+        err = body.get("error") or body.get("message") or "bad_request"
+        return {"error": err, "filename": filename}
+    if status == 403 and isinstance(body, dict):
+        return {"error": body.get("error") or "forbidden", "filename": filename}
+    return {"error": "internal", "filename": filename, "status": status}
+
+
+def _execute_tool(
+    name: str,
+    args_json: str,
+    assistant_id: Optional[int] = None,
+    job_id: Optional[int] = None,
+) -> Dict[str, Any]:
     """Dispatch a single tool call. Returns the result as a dict (will be
     JSON-encoded by the caller before feeding back to the model)."""
     try:
@@ -836,6 +1292,14 @@ def _execute_tool(name: str, args_json: str) -> Dict[str, Any]:
         return _execute_list_notes(args)
     if name == "list_tasks":
         return _execute_list_tasks(args)
+    if name == "folder_search":
+        return _execute_folder_search(args, assistant_id)
+    if name == "folder_read":
+        return _execute_folder_read(args, assistant_id)
+    if name == "folder_write":
+        return _execute_folder_write(args, assistant_id, job_id)
+    if name == "folder_delete":
+        return _execute_folder_delete(args, assistant_id, job_id)
     return {"error": f"Unknown tool: {name}"}
 
 
@@ -897,7 +1361,9 @@ def _run_tool_rounds(
             # "Searching '<query>'..." immediately.
             if can_emit_live:
                 _post_tool_event(assistant_id, job_id, name, args_label, status="running")
-            result = _execute_tool(name, args_json)
+            result = _execute_tool(
+                name, args_json, assistant_id=assistant_id, job_id=job_id,
+            )
             # Per-tool result summary + extract any created entity so the
             # frontend can render a "Delete" action on the card.
             entity: Optional[Dict[str, Any]] = None
@@ -925,6 +1391,26 @@ def _run_tool_rounds(
                 elif name == "get_resource_content":
                     n = len(result.get("content") or "")
                     summary = f"{n} chars read" + (" (truncated)" if result.get("truncated") else "")
+                elif name == "folder_write" and result.get("ok"):
+                    fn = result.get("filename") or ""
+                    summary = f"Wrote: {fn}"
+                    entity = {
+                        "kind": "indexedFile",
+                        "id": result.get("indexedFileId"),
+                        "title": fn,
+                    }
+                elif name == "folder_read" and result.get("ok"):
+                    fn = result.get("filename") or ""
+                    summary = f"Read: {fn}"
+                    if result.get("derivedFromExtraction"):
+                        summary += " (extracted)"
+                elif name == "folder_search" and result.get("ok"):
+                    hits = result.get("hits") or []
+                    q = result.get("query") or ""
+                    if hits:
+                        summary = f"{len(hits)} file(s) for «{q}»"
+                    else:
+                        summary = f"No matches for «{q}»"
                 elif "error" in result:
                     summary = f"error: {result['error']}"
                 else:
@@ -940,7 +1426,12 @@ def _run_tool_rounds(
                 "content": json.dumps(result, ensure_ascii=False),
             })
             # LIVE: finalise the card with the result count + any created entity.
-            if can_emit_live:
+            # Tools that emit their own pending_confirmation card own the final
+            # state — don't overwrite it with a generic `done` here.
+            emitted_pending = (
+                isinstance(result, dict) and result.get("pendingConfirmation")
+            )
+            if can_emit_live and not emitted_pending:
                 _post_tool_event(
                     assistant_id, job_id, name, args_label,
                     status="done", summary=summary, entity=entity,
