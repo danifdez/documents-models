@@ -1,23 +1,31 @@
-"""Personal assistant and helper handler.
+"""Personal assistant and agent handler.
 
 Multi-turn chat with system prompt and history. This is NOT a Q&A over a file
 (that's `ask`). The thread is persisted on the NestJS backend.
 
-Expected payload:
+Expected payload (common fields):
   {
-    "assistantId": int,
-    "assistantName": str,
-    "systemPrompt": str,                  # includes identity (personal / helper)
-    "folderScope": str | null,            # informational only for now
-    "conversation": [{"role": "user"|"assistant", "content": str}, ...]
-                                          # The last element is the current turn's message.
-    "memorySnippets": [{"name", "type", "body"}, ...]  # memory injected by backend
-    "extractMemory": bool                  # if True, second call to structure
-                                          # a memory entry from the last user message.
+    "kind": "assistant" | "agent",        # default "assistant" for back-compat
+    "ownerType": "main-assistant" | "agent",
+    "ownerId": int,                       # id in owner's table
+    "name": str,                          # owner's display name
+    "systemPrompt": str | null,           # owner's custom prompt; null => default
+    "folderScope": str | null,
+    "conversation": [{"role": ..., "content": ...}, ...]
   }
 
+For kind="assistant" additionally:
+  "assistantId": int,                     # legacy alias of ownerId
+  "assistantName": str,                   # legacy alias of name
+  "assistantSystem": bool,                # true for the personal assistant
+  "memorySnippets": [...],                # injected memory
+  "extractMemory": bool                   # run memory extraction
+
+For kind="agent" additionally:
+  "agentId": int                          # legacy alias of ownerId
+
 Returns:
-  {"reply": str, "memoryToSave"?: {"name", "type", "body"}}  or  {"error": str}
+  {"reply": str, "memoryAction"?: {...}}  or  {"error": str}
 """
 
 import base64
@@ -372,6 +380,62 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         },
     },
 ]
+# Tools an agent is allowed to call. Strictly limited to its own working
+# folder (Cambio #5 / #6). The personal assistant gets the full ASSISTANT_TOOLS
+# list; agents only see this subset, both at the prompt level (the model never
+# learns the other tools exist) and at the dispatcher level (defensive reject
+# if the model hallucinates a name).
+AGENT_ALLOWED_TOOLS = {
+    "folder_search",
+    "folder_read",
+    "folder_write",
+    "folder_delete",
+}
+
+
+def _tools_for_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return the tools the model sees, filtered by the payload's kind."""
+    if (payload.get("kind") or "assistant") == "agent":
+        return [
+            t for t in ASSISTANT_TOOLS
+            if t.get("function", {}).get("name") in AGENT_ALLOWED_TOOLS
+        ]
+    return ASSISTANT_TOOLS
+
+
+def _owner_id(payload: Dict[str, Any]) -> Optional[int]:
+    """Resolve the owner id for streaming / tool-event POSTs.
+    Prefers `ownerId`; falls back to legacy `assistantId` or `agentId`."""
+    for key in ("ownerId", "assistantId", "agentId"):
+        v = payload.get(key)
+        if isinstance(v, int):
+            return v
+    return None
+
+
+def _owner_type(payload: Dict[str, Any]) -> str:
+    """'main-assistant' or 'agent'. Defaults to legacy assistant."""
+    t = payload.get("ownerType")
+    if t in ("main-assistant", "agent"):
+        return t
+    return "agent" if (payload.get("kind") == "agent") else "main-assistant"
+
+
+def _backend_owner_segment(payload: Dict[str, Any]) -> str:
+    """`/assistants/:id` or `/agents/:id` prefix for indexed-files endpoints."""
+    return "agents" if _owner_type(payload) == "agent" else "assistants"
+
+
+DEFAULT_AGENT_SYSTEM_PROMPT = (
+    "You are an agent created by the user for a specific task. "
+    "Your scope is strictly limited to the files inside your working folder, "
+    "if one is configured. You do not have access to the user's workspace, "
+    "notes, memory, or any other resource. If asked about anything beyond your "
+    "folder, say you cannot see it and suggest the user redirect the request "
+    "to their main assistant."
+)
+
+
 # Flush a partial chunk to the backend roughly every N ms, regardless of how
 # many tokens have accumulated. Tuned so the user sees forward motion without
 # drowning the HTTP loop in tiny requests.
@@ -379,7 +443,11 @@ STREAM_FLUSH_INTERVAL_MS = 120
 
 
 def _post_stream_chunk(
-    assistant_id: int, job_id: int, chunk: str, done: bool = False,
+    owner_segment: str,
+    owner_id: int,
+    job_id: int,
+    chunk: str,
+    done: bool = False,
 ) -> None:
     """Best-effort POST of a partial reply chunk back to the backend. Failures
     are logged but never raised — streaming is purely a UX nicety; the final
@@ -391,7 +459,7 @@ def _post_stream_chunk(
     waiting for the final assistantResponse event."""
     if not chunk and not done:
         return
-    url = f"{BACKEND_URL}/assistants/{assistant_id}/stream-chunk"
+    url = f"{BACKEND_URL}/{owner_segment}/{owner_id}/stream-chunk"
     body = {"jobId": job_id, "chunk": chunk}
     if done:
         body["done"] = True
@@ -633,15 +701,20 @@ def _format_memory_block(snippets: List[Dict[str, Any]]) -> str:
 
 
 def _build_messages(payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, str]]:
-    system_prompt = (payload.get("systemPrompt") or "").strip()
+    kind = (payload.get("kind") or "assistant")
+    raw_system_prompt = (payload.get("systemPrompt") or "").strip()
+    # Agent without custom prompt → use the default scope-restriction prompt.
+    if kind == "agent" and not raw_system_prompt:
+        system_prompt = DEFAULT_AGENT_SYSTEM_PROMPT
+    else:
+        system_prompt = raw_system_prompt
     folder_scope = (payload.get("folderScope") or "").strip()
-    memory_snippets = payload.get("memorySnippets") or []
+    memory_snippets = payload.get("memorySnippets") or [] if kind == "assistant" else []
     conversation = payload.get("conversation") or []
 
-    # Persistent user memory. We integrate it INSIDE the main system prompt
-    # — in tests, a separate second `system` message tended to be
-    # ignored. Explicit framing ("What you know about the user… use it when
-    # relevant") pushes the model to lean on these facts when answering.
+    # Persistent user memory only applies to the personal assistant. Agents
+    # don't have memory; skip the injection entirely (and the prompt section
+    # below) when kind != 'assistant'.
     memory_block = _format_memory_block(memory_snippets)
     if memory_block:
         memory_section = (
@@ -695,7 +768,8 @@ def _build_messages(payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[s
 
 
 def _post_tool_event(
-    assistant_id: int,
+    owner_segment: str,
+    owner_id: int,
     job_id: int,
     name: str,
     args_label: str,
@@ -717,7 +791,7 @@ def _post_tool_event(
     `kind`/`payload`/`confirm_label`/`cancel_label` are set on
     `pending_confirmation` events so the frontend knows which confirm handler
     to invoke and what data to pass back."""
-    url = f"{BACKEND_URL}/assistants/{assistant_id}/tool-event"
+    url = f"{BACKEND_URL}/{owner_segment}/{owner_id}/tool-event"
     tool_payload: Dict[str, Any] = {"name": name, "args": args_label, "summary": summary}
     if entity:
         tool_payload["entity"] = entity
@@ -1024,7 +1098,7 @@ def _execute_list_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _resolve_folder_target(
-    args: Dict[str, Any], assistant_id: int,
+    args: Dict[str, Any], owner_segment: str, owner_id: int,
 ) -> Dict[str, Any]:
     """Resolve a `folder_*` tool argument set to a concrete IndexedFile, using
     the same flow as folder_read (by id, then by exact filename, then by
@@ -1034,10 +1108,10 @@ def _resolve_folder_target(
     filename_raw = args.get("filename")
 
     if isinstance(indexed_file_id, int):
-        path = f"/assistants/{assistant_id}/indexed-files/{indexed_file_id}/content"
+        path = f"/{owner_segment}/{owner_id}/indexed-files/{indexed_file_id}/content"
     elif isinstance(filename_raw, str) and filename_raw.strip():
         encoded = urllib.parse.quote(filename_raw.strip(), safe="")
-        path = f"/assistants/{assistant_id}/indexed-files/by-filename?filename={encoded}"
+        path = f"/{owner_segment}/{owner_id}/indexed-files/by-filename?filename={encoded}"
     else:
         return {"error": "bad_request", "message": "indexedFileId or filename required"}
 
@@ -1061,13 +1135,14 @@ def _resolve_folder_target(
 
 def _execute_folder_delete(
     args: Dict[str, Any],
-    assistant_id: Optional[int],
+    owner_segment: str,
+    owner_id: Optional[int],
     job_id: Optional[int],
 ) -> Dict[str, Any]:
-    if not isinstance(assistant_id, int):
-        return {"error": "internal", "message": "missing assistant context"}
+    if not isinstance(owner_id, int):
+        return {"error": "internal", "message": "missing owner context"}
 
-    target = _resolve_folder_target(args, assistant_id)
+    target = _resolve_folder_target(args, owner_segment, owner_id)
     if not target.get("ok"):
         return target
 
@@ -1076,7 +1151,7 @@ def _execute_folder_delete(
 
     if isinstance(job_id, int):
         _post_tool_event(
-            assistant_id, job_id, "folder_delete", filename,
+            owner_segment, owner_id, job_id, "folder_delete", filename,
             status="pending_confirmation",
             summary=f"Pending: delete {filename}",
             kind="folder_delete",
@@ -1093,9 +1168,11 @@ def _execute_folder_delete(
     }
 
 
-def _execute_folder_search(args: Dict[str, Any], assistant_id: Optional[int]) -> Dict[str, Any]:
-    if not isinstance(assistant_id, int):
-        return {"error": "internal", "message": "missing assistant context"}
+def _execute_folder_search(
+    args: Dict[str, Any], owner_segment: str, owner_id: Optional[int],
+) -> Dict[str, Any]:
+    if not isinstance(owner_id, int):
+        return {"error": "internal", "message": "missing owner context"}
 
     query = str(args.get("query") or "").strip()
     if len(query) < 3:
@@ -1104,7 +1181,7 @@ def _execute_folder_search(args: Dict[str, Any], assistant_id: Optional[int]) ->
     limit = args.get("limit") if isinstance(args.get("limit"), int) else 10
     encoded = urllib.parse.quote(query, safe="")
     path = (
-        f"/assistants/{assistant_id}/indexed-files/search"
+        f"/{owner_segment}/{owner_id}/indexed-files/search"
         f"?query={encoded}&limit={limit}"
     )
     status, body = _http_json_with_status("GET", path)
@@ -1126,20 +1203,22 @@ def _execute_folder_search(args: Dict[str, Any], assistant_id: Optional[int]) ->
     }
 
 
-def _execute_folder_read(args: Dict[str, Any], assistant_id: Optional[int]) -> Dict[str, Any]:
-    if not isinstance(assistant_id, int):
-        return {"error": "internal", "message": "missing assistant context"}
+def _execute_folder_read(
+    args: Dict[str, Any], owner_segment: str, owner_id: Optional[int],
+) -> Dict[str, Any]:
+    if not isinstance(owner_id, int):
+        return {"error": "internal", "message": "missing owner context"}
 
     indexed_file_id = args.get("indexedFileId")
     filename_raw = args.get("filename")
 
     if isinstance(indexed_file_id, int):
-        path = f"/assistants/{assistant_id}/indexed-files/{indexed_file_id}/content"
+        path = f"/{owner_segment}/{owner_id}/indexed-files/{indexed_file_id}/content"
     elif isinstance(filename_raw, str) and filename_raw.strip():
         # urllib.parse.quote keeps slashes by default; force quoting all chars
         # so the filename arrives intact even when it contains spaces or '#'.
         encoded = urllib.parse.quote(filename_raw.strip(), safe="")
-        path = f"/assistants/{assistant_id}/indexed-files/by-filename?filename={encoded}"
+        path = f"/{owner_segment}/{owner_id}/indexed-files/by-filename?filename={encoded}"
     else:
         return {"error": "bad_request", "message": "indexedFileId or filename required"}
 
@@ -1156,11 +1235,12 @@ def _execute_folder_read(args: Dict[str, Any], assistant_id: Optional[int]) -> D
 
 def _execute_folder_write(
     args: Dict[str, Any],
-    assistant_id: Optional[int],
+    owner_segment: str,
+    owner_id: Optional[int],
     job_id: Optional[int],
 ) -> Dict[str, Any]:
-    if not isinstance(assistant_id, int):
-        return {"error": "internal", "message": "missing assistant context"}
+    if not isinstance(owner_id, int):
+        return {"error": "internal", "message": "missing owner context"}
 
     filename_raw = str(args.get("filename") or "")
     content = args.get("content")
@@ -1218,7 +1298,7 @@ def _execute_folder_write(
     # create with no destructive side-effect, regardless of `overwrite`.
     status, body = _http_json_with_status(
         "POST",
-        f"/assistants/{assistant_id}/indexed-files",
+        f"/{owner_segment}/{owner_id}/indexed-files",
         body_payload,
     )
 
@@ -1244,7 +1324,7 @@ def _execute_folder_write(
             else:
                 payload["contentBase64"] = body_payload["contentBase64"]
             _post_tool_event(
-                assistant_id, job_id, "folder_write", filename,
+                owner_segment, owner_id, job_id, "folder_write", filename,
                 status="pending_confirmation",
                 summary=f"Pending: overwrite {filename}",
                 kind="folder_overwrite",
@@ -1267,11 +1347,23 @@ def _execute_folder_write(
 def _execute_tool(
     name: str,
     args_json: str,
-    assistant_id: Optional[int] = None,
+    kind: str = "assistant",
+    owner_segment: str = "assistants",
+    owner_id: Optional[int] = None,
     job_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Dispatch a single tool call. Returns the result as a dict (will be
-    JSON-encoded by the caller before feeding back to the model)."""
+    JSON-encoded by the caller before feeding back to the model).
+
+    Defensive: for agents, reject any tool name outside AGENT_ALLOWED_TOOLS
+    even though they are pre-filtered out of the tools list seen by the model.
+    Covers hallucinations where the model invents a tool name."""
+    if kind == "agent" and name not in AGENT_ALLOWED_TOOLS:
+        logger.warning(
+            "assistant-chat: rejected tool '%s' for agent (not in allowlist)", name,
+        )
+        return {"error": "tool_not_allowed_for_agent", "tool": name}
+
     try:
         args = json.loads(args_json) if args_json else {}
     except json.JSONDecodeError:
@@ -1293,13 +1385,13 @@ def _execute_tool(
     if name == "list_tasks":
         return _execute_list_tasks(args)
     if name == "folder_search":
-        return _execute_folder_search(args, assistant_id)
+        return _execute_folder_search(args, owner_segment, owner_id)
     if name == "folder_read":
-        return _execute_folder_read(args, assistant_id)
+        return _execute_folder_read(args, owner_segment, owner_id)
     if name == "folder_write":
-        return _execute_folder_write(args, assistant_id, job_id)
+        return _execute_folder_write(args, owner_segment, owner_id, job_id)
     if name == "folder_delete":
-        return _execute_folder_delete(args, assistant_id, job_id)
+        return _execute_folder_delete(args, owner_segment, owner_id, job_id)
     return {"error": f"Unknown tool: {name}"}
 
 
@@ -1307,7 +1399,7 @@ def _run_tool_rounds(
     llm,
     messages: List[Dict[str, Any]],
     cfg: Dict[str, Any],
-    assistant_id: Optional[int] = None,
+    payload: Dict[str, Any],
     job_id: Optional[int] = None,
 ) -> None:
     """Iterate tool-call rounds until the model produces a plain text reply or
@@ -1315,14 +1407,23 @@ def _run_tool_rounds(
     (so the UI shows 'Searching...' the instant the tool starts) — this
     function no longer returns events to the caller."""
     tool_max_tokens = int(cfg.get("tool_max_tokens", 600))
-    can_emit_live = isinstance(assistant_id, int) and isinstance(job_id, int)
+    kind = (payload.get("kind") or "assistant")
+    owner_id = _owner_id(payload)
+    owner_segment = _backend_owner_segment(payload)
+    can_emit_live = isinstance(owner_id, int) and isinstance(job_id, int)
+    tools_for_model = _tools_for_payload(payload)
+    tool_names = [t.get("function", {}).get("name") for t in tools_for_model]
+    logger.info(
+        "assistant-chat: tool round input kind=%s owner=%s/%s tools=%s",
+        kind, owner_segment, owner_id, tool_names,
+    )
     logger.info(
         "assistant-chat: tool round input — last_user=%r system_head=%r",
         next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")[:120],
         next((m.get("content") for m in messages if m.get("role") == "system"), "")[:160],
     )
     for round_idx in range(MAX_TOOL_ROUNDS):
-        msg = llm.chat_with_tools(messages, ASSISTANT_TOOLS, max_tokens=tool_max_tokens)
+        msg = llm.chat_with_tools(messages, tools_for_model, max_tokens=tool_max_tokens)
         content = _strip_thinking(msg.get("content") or "")
         tool_calls = msg.get("tool_calls") or []
         # Qwen3 often emits the call inline (<tool_call>…</tool_call>) instead
@@ -1360,9 +1461,13 @@ def _run_tool_rounds(
             # picked, before running it. The UI flips from "Thinking..." to
             # "Searching '<query>'..." immediately.
             if can_emit_live:
-                _post_tool_event(assistant_id, job_id, name, args_label, status="running")
+                _post_tool_event(
+                    owner_segment, owner_id, job_id, name, args_label,
+                    status="running",
+                )
             result = _execute_tool(
-                name, args_json, assistant_id=assistant_id, job_id=job_id,
+                name, args_json, kind=kind,
+                owner_segment=owner_segment, owner_id=owner_id, job_id=job_id,
             )
             # Per-tool result summary + extract any created entity so the
             # frontend can render a "Delete" action on the card.
@@ -1433,7 +1538,7 @@ def _run_tool_rounds(
             )
             if can_emit_live and not emitted_pending:
                 _post_tool_event(
-                    assistant_id, job_id, name, args_label,
+                    owner_segment, owner_id, job_id, name, args_label,
                     status="done", summary=summary, entity=entity,
                 )
     # Ran out of rounds. The streaming call will at least emit *something*
@@ -1452,44 +1557,52 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         params = get_llm_params("assistant-chat")
         llm = get_llm_service(**params)
 
+        kind = (payload.get("kind") or "assistant")
+        owner_id = _owner_id(payload)
+        owner_segment = _backend_owner_segment(payload)
+
         logger.info(
-            "assistant-chat: id=%s name=%s turns=%d max_tokens=%d",
-            payload.get("assistantId"),
-            payload.get("assistantName"),
+            "assistant-chat: kind=%s owner=%s/%s name=%s turns=%d max_tokens=%d",
+            kind, owner_segment, owner_id,
+            payload.get("name") or payload.get("assistantName"),
             len(messages),
             max_tokens,
         )
 
         # IDs are needed for both tool live events and streaming chunks.
-        assistant_id = payload.get("assistantId")
         job_id = payload.get("jobId")
 
-        # Tool-call phase. Only the personal assistant gets tools right now —
-        # helpers work without external context. The phase is non-streaming
+        # Tool-call phase. The personal assistant gets the full ASSISTANT_TOOLS
+        # list; agents get only the folder_* subset (filtered inside
+        # _run_tool_rounds via _tools_for_payload). The phase is non-streaming
         # because the model has to decide whether to call a tool BEFORE it
         # produces user-visible text. If a tool runs, its result gets appended
         # to `messages` and the streaming phase below sees the augmented
         # conversation as context. Tool cards are pushed LIVE to the UI via
         # POST /tool-event from inside _run_tool_rounds.
-        if payload.get("assistantSystem"):
-            logger.info("assistant-chat: entering tool phase (system assistant)")
-            _run_tool_rounds(llm, messages, cfg, assistant_id, job_id)
+        #
+        # Tool rounds are entered for: the personal assistant (assistantSystem)
+        # and any agent (always — they only see folder_*, but that's exactly
+        # what they need to do their job).
+        if payload.get("assistantSystem") or kind == "agent":
+            logger.info("assistant-chat: entering tool phase (kind=%s)", kind)
+            _run_tool_rounds(llm, messages, cfg, payload, job_id)
         else:
             logger.info(
-                "assistant-chat: skipping tool phase (assistantSystem=%r)",
-                payload.get("assistantSystem"),
+                "assistant-chat: skipping tool phase (assistantSystem=%r kind=%s)",
+                payload.get("assistantSystem"), kind,
             )
         can_stream = (
             bool(cfg.get("stream", True))
-            and isinstance(assistant_id, int)
+            and isinstance(owner_id, int)
             and isinstance(job_id, int)
         )
 
         raw_parts: List[str] = []
         if can_stream:
             logger.info(
-                "assistant-chat: streaming enabled (assistant=%s job=%s)",
-                assistant_id, job_id,
+                "assistant-chat: streaming enabled (kind=%s owner=%s/%s job=%s)",
+                kind, owner_segment, owner_id, job_id,
             )
             # Streaming state machine for <think>...</think> blocks: even with
             # `/no_think`, Qwen3 sometimes opens an empty pair at the start.
@@ -1545,22 +1658,22 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                     buffer.append(visible)
                 now_ms = time.monotonic() * 1000
                 if buffer and now_ms - last_flush_ms >= STREAM_FLUSH_INTERVAL_MS:
-                    _post_stream_chunk(assistant_id, job_id, "".join(buffer))
+                    _post_stream_chunk(owner_segment, owner_id, job_id, "".join(buffer))
                     chunks_sent += 1
                     buffer.clear()
                     last_flush_ms = now_ms
             if buffer:
-                _post_stream_chunk(assistant_id, job_id, "".join(buffer))
+                _post_stream_chunk(owner_segment, owner_id, job_id, "".join(buffer))
                 chunks_sent += 1
             # Final marker so the UI can stop the caret immediately, even
             # though memory extraction below may still take a beat.
-            _post_stream_chunk(assistant_id, job_id, "", done=True)
+            _post_stream_chunk(owner_segment, owner_id, job_id, "", done=True)
             raw = "".join(raw_parts)
             logger.info("assistant-chat: stream done, %d chunks sent", chunks_sent)
         else:
             logger.warning(
-                "assistant-chat: streaming disabled (assistant=%r job=%r stream_cfg=%r)",
-                assistant_id, job_id, cfg.get("stream"),
+                "assistant-chat: streaming disabled (kind=%s owner=%s/%s job=%r stream_cfg=%r)",
+                kind, owner_segment, owner_id, job_id, cfg.get("stream"),
             )
             raw = llm.chat(messages, max_tokens=max_tokens) or ""
 
@@ -1574,10 +1687,9 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         # _run_tool_rounds via POST /tool-event so the UI sees them in real
         # time, not at job completion.
 
-        # Memory management: second JSON-mode call that decides
-        # save / forget / none by looking at the user's message and existing
-        # memory. Backend reacts by persisting or deleting.
-        if payload.get("extractMemory"):
+        # Memory management is only relevant for the personal assistant.
+        # Agents have no memory; skip the entire block.
+        if kind == "assistant" and payload.get("extractMemory"):
             user_message = _last_user_message(payload)
             if user_message:
                 action = _extract_memory_action(
