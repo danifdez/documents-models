@@ -379,6 +379,112 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_calendar_event",
+            "description": (
+                "Create a calendar event (one-shot or recurring), optionally with an alarm. "
+                "Use it when the user describes something with a date/time (an appointment, a "
+                "recurring reminder, a one-off alert). Anything with a date goes here — "
+                "tasks without a date go to create_task.\n\n"
+                "RRULE examples (RFC 5545):\n"
+                "  'every day for 7 days at 10pm' -> FREQ=DAILY;COUNT=7;BYHOUR=22;BYMINUTE=0\n"
+                "  'every 3 days' -> FREQ=DAILY;INTERVAL=3\n"
+                "  'every monday' -> FREQ=WEEKLY;BYDAY=MO\n"
+                "  'first friday of every month' -> FREQ=MONTHLY;BYDAY=1FR\n"
+                "  'every year on may 18' -> FREQ=YEARLY;BYMONTH=5;BYMONTHDAY=18\n"
+                "Omit recurrenceRule for one-shot events. Include alarm only when the user "
+                "asks to be reminded/alerted/notified."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short, concrete. Stored as-is — not translated.",
+                    },
+                    "startAt": {
+                        "type": "string",
+                        "description": "ISO 8601 with TZ offset, e.g. 2026-05-20T22:00:00+02:00.",
+                    },
+                    "endAt": {
+                        "type": "string",
+                        "description": "ISO 8601. Omit if it's a point in time, not a span.",
+                    },
+                    "recurrenceRule": {
+                        "type": "string",
+                        "description": "Valid RRULE without 'RRULE:' prefix. Omit for one-shot.",
+                    },
+                    "alarm": {
+                        "type": "object",
+                        "description": "Optional reminder. Omit if the user did not ask to be alerted.",
+                        "properties": {
+                            "offsetMinutes": {
+                                "type": "integer",
+                                "description": "0=at start; negative=before. Default 0 if alarm is present without explicit offset.",
+                            },
+                            "label": {"type": "string"},
+                        },
+                        "required": ["offsetMinutes"],
+                    },
+                    "projectId": {
+                        "type": "integer",
+                        "description": "Project id; omit if general.",
+                    },
+                },
+                "required": ["title", "startAt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_calendar_event",
+            "description": (
+                "Update an existing calendar event. Identify it by eventId (preferred) "
+                "or by 'match' (approximate title). Any field is optional; send only "
+                "those that change. To clear a field send null (alarm: null to remove "
+                "the alarm; recurrenceRule: null to stop the recurrence). Cannot edit "
+                "a single occurrence — only the whole event."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "eventId": {"type": "integer"},
+                    "match": {
+                        "type": "string",
+                        "description": "Approximate title match if eventId unknown.",
+                    },
+                    "title": {"type": "string"},
+                    "startAt": {"type": "string"},
+                    "endAt": {"type": "string"},
+                    "recurrenceRule": {"type": ["string", "null"]},
+                    "alarm": {"type": ["object", "null"]},
+                    "projectId": {"type": ["integer", "null"]},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_calendar_event",
+            "description": (
+                "Delete a calendar event entirely (stops all future occurrences and "
+                "alarms). Identify by eventId (preferred) or 'match' (approximate "
+                "title). To skip a single occurrence, edit the event instead — there "
+                "is no per-occurrence override."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "eventId": {"type": "integer"},
+                    "match": {"type": "string"},
+                },
+            },
+        },
+    },
 ]
 # Tools an agent is allowed to call. Strictly limited to its own working
 # folder (Cambio #5 / #6). The personal assistant gets the full ASSISTANT_TOOLS
@@ -510,13 +616,26 @@ Decide the `action`:
   exists in the existing memory (don't duplicate). Also use `none` if the
   user is only asking something without providing new info.
 
+NEVER save (always `none`):
+- Requests to be reminded/notified/alerted about something with a date or time
+  ("remind me to take the pill at 10pm", "notify me every Monday to check email",
+  "alert me 30 min before the meeting"). Those belong to the calendar, not memory.
+- One-off appointments or events stated as future obligations ("meeting Thursday
+  at 14h", "dinner with Marta tomorrow"). Those also belong to the calendar.
+- Anything the user said to be done (an action to perform), even if no time is
+  given — that's a task, not a memory.
+
 How to decide the `type` when action=save:
 
-- event: episodes or occurrences with a concrete moment (past or future).
-  e.g.: "Friday at 10 I have a dentist appointment", "yesterday I signed the contract".
+- event: episodes already past or rare landmark moments worth remembering as
+  context (a birth, a move, a marriage). NOT future appointments or recurring
+  reminders — those go to the calendar.
+  e.g.: "yesterday I signed the contract", "I got married in 2018".
 
-- instruction: how the user wants YOU (the assistant) to act/speak.
-  e.g.: "always answer me in Spanish", "no bullet points".
+- instruction: STABLE preferences about how the assistant should speak/format/
+  behave across all interactions. NOT a one-off "do X for me" request and NOT a
+  request to be reminded about something.
+  e.g.: "always answer me in Spanish", "no bullet points", "use formal tone".
 
 - fact: EVERYTHING ELSE — stable knowledge about the user or their environment.
   Includes personal data, where they live, relationships, tastes, tools, links.
@@ -1016,6 +1135,163 @@ def _execute_create_task(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _normalize_alarm(value: Any) -> Optional[Dict[str, Any]]:
+    """Coerce an LLM-provided alarm into the AlarmDescriptor shape, or return
+    None to signal absence. Returns the sentinel string 'invalid' if it cannot
+    be made valid."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return "invalid"  # type: ignore[return-value]
+    offset = value.get("offsetMinutes")
+    if isinstance(offset, bool) or not isinstance(offset, int):
+        return "invalid"  # type: ignore[return-value]
+    if offset < -10080 or offset > 0:
+        return "invalid"  # type: ignore[return-value]
+    out: Dict[str, Any] = {"offsetMinutes": offset}
+    label = value.get("label")
+    if isinstance(label, str) and label.strip():
+        out["label"] = label.strip()[:100]
+    return out
+
+
+def _build_calendar_payload(args: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Map LLM tool args → backend create/update payload. Returns (payload, err)."""
+    payload: Dict[str, Any] = {}
+    if "title" in args:
+        title = str(args.get("title") or "").strip()
+        if not title:
+            return None, "title required"
+        payload["title"] = title[:200]
+    if "startAt" in args:
+        start = str(args.get("startAt") or "").strip()
+        if not start:
+            return None, "startAt required"
+        payload["startDate"] = start
+    if "endAt" in args and args.get("endAt") is not None:
+        payload["endDate"] = str(args.get("endAt"))
+    if "recurrenceRule" in args:
+        rr = args.get("recurrenceRule")
+        if rr is None:
+            payload["recurrenceRule"] = None
+        else:
+            rr_s = str(rr).strip()
+            if not rr_s:
+                payload["recurrenceRule"] = None
+            elif not rr_s.startswith("FREQ="):
+                return None, "recurrenceRule must start with 'FREQ='"
+            else:
+                payload["recurrenceRule"] = rr_s
+    if "alarm" in args:
+        normalized = _normalize_alarm(args.get("alarm"))
+        if normalized == "invalid":
+            return None, "alarm.offsetMinutes must be integer in [-10080, 0]"
+        payload["alarm"] = normalized
+    if isinstance(args.get("projectId"), int):
+        payload["projectId"] = args["projectId"]
+    return payload, None
+
+
+def _execute_create_calendar_event(args: Dict[str, Any]) -> Dict[str, Any]:
+    if not str(args.get("title") or "").strip():
+        return {"error": "title required"}
+    if not str(args.get("startAt") or "").strip():
+        return {"error": "startAt required"}
+    payload, err = _build_calendar_payload(args)
+    if err:
+        return {"error": err}
+    status, body = _http_json_with_status("POST", "/calendar-events", payload)
+    if status >= 400 or not isinstance(body, dict) or "id" not in body:
+        detail = body.get("message") if isinstance(body, dict) else None
+        return {"error": "could not create event", "detail": detail, "status": status}
+    return {
+        "ok": True,
+        "event": {
+            "id": body["id"],
+            "title": body.get("title"),
+            "startDate": body.get("startDate"),
+            "recurrenceRule": body.get("recurrenceRule"),
+            "alarm": body.get("alarm"),
+        },
+    }
+
+
+def _resolve_calendar_event(args: Dict[str, Any]) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+    """Resolve a target event id. Returns (eventId, errorPayload). If eventId is
+    set, errorPayload is None. If errorPayload is set, the caller forwards it to
+    the model."""
+    explicit = args.get("eventId")
+    if isinstance(explicit, int):
+        return explicit, None
+    match = str(args.get("match") or "").strip()
+    if not match:
+        return None, {"error": "missing_identifier", "hint": "Provide eventId or match."}
+    needle = match.lower()
+    events = _http_json("GET", "/calendar-events")
+    if not isinstance(events, list):
+        return None, {"error": "lookup_failed"}
+    candidates: List[Dict[str, Any]] = []
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        title = str(e.get("title") or "")
+        if needle in title.lower():
+            candidates.append({
+                "id": e.get("id"),
+                "title": title,
+                "startDate": e.get("startDate"),
+            })
+    if not candidates:
+        return None, {"error": "not_found", "match": match}
+    if len(candidates) > 1:
+        return None, {
+            "error": "ambiguous",
+            "candidates": candidates[:10],
+            "hint": "Ask the user which event, then retry with eventId.",
+        }
+    return candidates[0]["id"], None
+
+
+def _execute_update_calendar_event(args: Dict[str, Any]) -> Dict[str, Any]:
+    event_id, err = _resolve_calendar_event(args)
+    if err is not None:
+        return err
+    # Strip resolution keys before mapping.
+    payload_args = {k: v for k, v in args.items() if k not in ("eventId", "match")}
+    if not payload_args:
+        return {"error": "nothing_to_update"}
+    payload, build_err = _build_calendar_payload(payload_args)
+    if build_err:
+        return {"error": build_err}
+    status, body = _http_json_with_status("PATCH", f"/calendar-events/{event_id}", payload)
+    if status >= 400 or not isinstance(body, dict) or "id" not in body:
+        detail = body.get("message") if isinstance(body, dict) else None
+        return {"error": "could not update event", "detail": detail, "status": status}
+    return {
+        "ok": True,
+        "event": {
+            "id": body["id"],
+            "title": body.get("title"),
+            "startDate": body.get("startDate"),
+            "recurrenceRule": body.get("recurrenceRule"),
+            "alarm": body.get("alarm"),
+        },
+    }
+
+
+def _execute_delete_calendar_event(args: Dict[str, Any]) -> Dict[str, Any]:
+    event_id, err = _resolve_calendar_event(args)
+    if err is not None:
+        return err
+    status, body = _http_json_with_status("DELETE", f"/calendar-events/{event_id}")
+    if status >= 400:
+        detail = body.get("message") if isinstance(body, dict) else None
+        return {"deleted": False, "error": "could not delete event", "detail": detail, "status": status}
+    if isinstance(body, dict) and body.get("deleted") is False:
+        return {"deleted": False, "error": "not_found", "eventId": event_id}
+    return {"deleted": True, "eventId": event_id}
+
+
 def _execute_get_resource_content(args: Dict[str, Any]) -> Dict[str, Any]:
     rid = args.get("resourceId")
     if not isinstance(rid, int):
@@ -1376,6 +1652,12 @@ def _execute_tool(
         return _execute_create_note(args)
     if name == "create_task":
         return _execute_create_task(args)
+    if name == "create_calendar_event":
+        return _execute_create_calendar_event(args)
+    if name == "update_calendar_event":
+        return _execute_update_calendar_event(args)
+    if name == "delete_calendar_event":
+        return _execute_delete_calendar_event(args)
     if name == "get_resource_content":
         return _execute_get_resource_content(args)
     if name == "list_projects":
@@ -1493,6 +1775,16 @@ def _run_tool_rounds(
                     task = result["task"]
                     summary = f"Task: {task.get('title') or ''}"
                     entity = {"kind": "task", "id": task.get("id"), "title": task.get("title")}
+                elif name == "create_calendar_event" and isinstance(result.get("event"), dict):
+                    ev = result["event"]
+                    summary = f"Event: {ev.get('title') or ''}"
+                    entity = {"kind": "calendarEvent", "id": ev.get("id"), "title": ev.get("title")}
+                elif name == "update_calendar_event" and isinstance(result.get("event"), dict):
+                    ev = result["event"]
+                    summary = f"Updated: {ev.get('title') or ''}"
+                    entity = {"kind": "calendarEvent", "id": ev.get("id"), "title": ev.get("title")}
+                elif name == "delete_calendar_event" and result.get("deleted") is True:
+                    summary = f"Deleted event #{result.get('eventId')}"
                 elif name == "get_resource_content":
                     n = len(result.get("content") or "")
                     summary = f"{n} chars read" + (" (truncated)" if result.get("truncated") else "")
