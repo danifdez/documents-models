@@ -382,6 +382,61 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "update_task",
+            "description": (
+                "Update an existing task. Identify it by taskId (preferred, when "
+                "you saw it in a previous list_tasks call) or by titleQuery "
+                "(approximate title match). Send only the fields that change. "
+                "To mark a task as done set status='completed'. To re-open a "
+                "completed task set status='pending'. To clear the description "
+                "or project send null. If titleQuery is ambiguous you'll receive "
+                "candidates — ask the user which one and retry with taskId."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "taskId": {"type": "integer"},
+                    "titleQuery": {
+                        "type": "string",
+                        "description": "Approximate title match if taskId unknown.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "completed"],
+                    },
+                    "title": {"type": "string"},
+                    "description": {"type": ["string", "null"]},
+                    "projectId": {"type": ["integer", "null"]},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_task",
+            "description": (
+                "Delete a task entirely. Identify it by taskId (preferred) or "
+                "titleQuery (approximate title match). This tool ALWAYS shows a "
+                "confirmation card to the user before the task is actually "
+                "deleted: never delete without explicit user approval in the "
+                "card. If titleQuery is ambiguous you'll receive a list of "
+                "candidates — ask the user which one. Use update_task with "
+                "status='completed' instead if the user just wants to mark it "
+                "as done."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "taskId": {"type": "integer"},
+                    "titleQuery": {"type": "string"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_calendar_event",
             "description": (
                 "Create a calendar event (one-shot or recurring), optionally with an alarm. "
@@ -1371,6 +1426,122 @@ def _execute_list_tasks(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"tasks": tasks[:50]}
 
 
+def _resolve_user_task(args: Dict[str, Any]) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+    """Resolve a target task id. Explicit taskId wins; otherwise titleQuery
+    does a case-insensitive substring search over GET /user-tasks. Returns
+    (taskId, errorPayload) — errorPayload is forwarded to the model on
+    missing identifier, lookup failure, not_found, or ambiguous match."""
+    explicit = args.get("taskId")
+    if isinstance(explicit, int):
+        return explicit, None
+    query = str(args.get("titleQuery") or "").strip()
+    if not query:
+        return None, {"error": "missing_identifier", "hint": "Provide taskId or titleQuery."}
+    needle = query.lower()
+    tasks = _http_json("GET", "/user-tasks")
+    if not isinstance(tasks, list):
+        return None, {"error": "lookup_failed"}
+    candidates: List[Dict[str, Any]] = []
+    for t in tasks:
+        if not isinstance(t, dict):
+            continue
+        title = str(t.get("title") or "")
+        if needle in title.lower():
+            candidates.append({
+                "id": t.get("id"),
+                "title": title,
+                "status": t.get("status"),
+            })
+    if not candidates:
+        return None, {"error": "not_found", "titleQuery": query}
+    if len(candidates) > 1:
+        return None, {
+            "error": "ambiguous",
+            "candidates": candidates[:10],
+            "hint": "Ask the user which task, then retry with taskId.",
+        }
+    return candidates[0]["id"], None
+
+
+def _execute_update_task(args: Dict[str, Any]) -> Dict[str, Any]:
+    task_id, err = _resolve_user_task(args)
+    if err is not None:
+        return err
+    # Build the PATCH body iterating only the fields explicitly present —
+    # distinguish "not sent" (skip) from "sent as null" (clear).
+    payload: Dict[str, Any] = {}
+    if "status" in args:
+        status = args.get("status")
+        if status not in ("pending", "completed"):
+            return {"error": "invalid_status",
+                    "hint": "status must be 'pending' or 'completed'."}
+        payload["status"] = status
+    if "title" in args:
+        title = str(args.get("title") or "").strip()
+        if not title:
+            return {"error": "title_required"}
+        payload["title"] = title[:200]
+    if "description" in args:
+        desc = args.get("description")
+        payload["description"] = None if desc is None else str(desc)
+    if "projectId" in args:
+        pid = args.get("projectId")
+        if pid is not None and not isinstance(pid, int):
+            return {"error": "invalid_projectId"}
+        payload["projectId"] = pid
+    if not payload:
+        return {"error": "nothing_to_update"}
+    status_code, body = _http_json_with_status(
+        "PATCH", f"/user-tasks/{task_id}", payload,
+    )
+    if status_code >= 400 or not isinstance(body, dict) or "id" not in body:
+        detail = body.get("message") if isinstance(body, dict) else None
+        return {"error": "could not update task",
+                "detail": detail, "status": status_code}
+    return {
+        "ok": True,
+        "task": {
+            "id": body["id"],
+            "title": body.get("title"),
+            "status": body.get("status"),
+        },
+        "changed": list(payload.keys()),
+    }
+
+
+def _execute_delete_task(
+    args: Dict[str, Any],
+    owner_segment: str,
+    owner_id: Optional[int],
+    job_id: Optional[int],
+) -> Dict[str, Any]:
+    task_id, err = _resolve_user_task(args)
+    if err is not None:
+        return err
+    # Always GET to obtain a human-readable title for the confirmation card —
+    # the resolver may have skipped the network round-trip on explicit taskId.
+    task = _http_json("GET", f"/user-tasks/{task_id}")
+    if not isinstance(task, dict) or "id" not in task:
+        return {"error": "not_found", "taskId": task_id}
+    title = task.get("title") or f"#{task_id}"
+
+    if isinstance(job_id, int) and isinstance(owner_id, int):
+        _post_tool_event(
+            owner_segment, owner_id, job_id, "delete_task", title,
+            status="pending_confirmation",
+            summary=f"Pending: delete {title}",
+            kind="task_delete",
+            payload={"taskId": task_id, "title": title},
+            confirm_label="Confirm delete",
+            cancel_label="Cancel",
+        )
+
+    return {
+        "ok": True,
+        "pendingConfirmation": True,
+        "taskId": task_id,
+        "title": title,
+    }
 
 
 def _resolve_folder_target(
@@ -1666,6 +1837,10 @@ def _execute_tool(
         return _execute_list_notes(args)
     if name == "list_tasks":
         return _execute_list_tasks(args)
+    if name == "update_task":
+        return _execute_update_task(args)
+    if name == "delete_task":
+        return _execute_delete_task(args, owner_segment, owner_id, job_id)
     if name == "folder_search":
         return _execute_folder_search(args, owner_segment, owner_id)
     if name == "folder_read":
@@ -1774,6 +1949,21 @@ def _run_tool_rounds(
                 elif name == "create_task" and isinstance(result.get("task"), dict):
                     task = result["task"]
                     summary = f"Task: {task.get('title') or ''}"
+                    entity = {"kind": "task", "id": task.get("id"), "title": task.get("title")}
+                elif name == "update_task" and isinstance(result.get("task"), dict):
+                    task = result["task"]
+                    changed = result.get("changed") or []
+                    if "status" in changed:
+                        verb = "Done" if task.get("status") == "completed" else "Re-opened"
+                        summary = f"{verb}: {task.get('title') or ''}"
+                    elif "title" in changed:
+                        summary = f"Renamed: {task.get('title') or ''}"
+                    elif "description" in changed:
+                        summary = f"Description updated: {task.get('title') or ''}"
+                    elif "projectId" in changed:
+                        summary = f"Project changed: {task.get('title') or ''}"
+                    else:
+                        summary = f"Updated: {task.get('title') or ''}"
                     entity = {"kind": "task", "id": task.get("id"), "title": task.get("title")}
                 elif name == "create_calendar_event" and isinstance(result.get("event"), dict):
                     ev = result["event"]
