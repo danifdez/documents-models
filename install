@@ -102,7 +102,7 @@ cfg['qdrant']['host'] = '$QD_HOST'
 cfg['qdrant']['port'] = int('$QD_PORT')
 cfg['qdrant']['collection'] = '$QD_COLL'
 
-cfg['storage']['documents_dir'] = '$STORAGE'
+cfg.setdefault('storage', {})['documents_dir'] = '$STORAGE'
 
 # If Qdrant disabled, disable embeddings
 if not cfg['qdrant']['enabled']:

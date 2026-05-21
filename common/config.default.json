@@ -20,6 +20,9 @@
     "user": "neo4j",
     "password": "example123"
   },
+  "storage": {
+    "documents_dir": "../documents"
+  },
   "llm_defaults": {
     "model_dir": "models",
     "n_ctx": 32768,
@@ -43,5 +46,11 @@
     "disable_embeddings": false,
     "background_hours_start": 2,
     "background_hours_end": 6
+  },
+  "features": {
+    "entities": true,
+    "datasets": true,
+    "canvas": true,
+    "rag": true
   }
 }

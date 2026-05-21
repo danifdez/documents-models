@@ -17,7 +17,7 @@
     "enabled": true,
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
-    "capabilities": ["llm"],
+    "capabilities": ["llm", "embeddings"],
     "max_tokens": 1000,
     "max_items": 5,
     "min_words": 3,
@@ -26,6 +26,7 @@
     "chunk_max_retries": 2,
     "dedupe_similarity_threshold": 0.85,
     "refine_enabled": true,
+    "refine_max_tokens": 800,
     "refine_chunk_size": 30,
     "refine_overselect": 3,
     "relevance_filter_enabled": true,
@@ -37,6 +38,36 @@
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm", "embeddings"]
+  },
+  "assistant-chat": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 8192,
+    "n_gpu_layers": -1,
+    "max_tokens": 1000,
+    "history_turns": 16
+  },
+  "workspace-research-agent": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 8192,
+    "n_gpu_layers": -1,
+    "max_tokens": 600,
+    "max_rounds": 3
+  },
+  "folder-assistant-agent": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 8192,
+    "n_gpu_layers": -1,
+    "max_tokens": 800,
+    "max_rounds": 3
   },
   "embedding": {
     "enabled": true,
