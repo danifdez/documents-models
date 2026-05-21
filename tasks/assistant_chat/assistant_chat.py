@@ -34,6 +34,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import urllib.error
@@ -69,10 +70,17 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "search_workspace",
             "description": (
-                "Search content in the user's workspace (notes, files, "
-                "tasks, knowledge base, canvases). Use it when the "
-                "user asks about something that might be saved or when "
-                "you need context about existing projects/notes/files."
+                "Search the user's workspace (notes, tasks, calendar events, "
+                "indexed resources) and return a compact list of hits "
+                "(collection, id, name). Use it for one-shot lookups by "
+                "keyword or title — e.g. 'do I have a note titled X?', "
+                "'find the task about Y'. If the question requires combining "
+                "facts from several hits or reading full content, prefer "
+                "workspace_research instead — its summary is cheaper for your "
+                "context than pulling every hit.\n\n"
+                "Pairs well with: get_resource_content (read a hit's full "
+                "text by id), list_notes / list_tasks / list_projects (when "
+                "the user wants an enumeration rather than a search)."
             ),
             "parameters": {
                 "type": "object",
@@ -91,10 +99,13 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "create_note",
             "description": (
-                "Create a note in the workspace. Use it when the user "
-                "explicitly asks to jot down/note something as a note (e.g. "
-                "'jot down a note about X', 'create a note titled Y'). DO NOT use "
-                "for pending tasks — for that use create_task."
+                "Create a workspace note with a title and body. Use it when "
+                "the user explicitly asks to jot something down as a note "
+                "('jot down a note about X', 'create a note titled Y'). "
+                "DO NOT use for pending tasks (use create_task) or for files "
+                "in the assistant folder (use folder_write).\n\n"
+                "Pairs well with: list_projects when you need a projectId to "
+                "attach the note to a project."
             ),
             "parameters": {
                 "type": "object",
@@ -121,9 +132,13 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "create_task",
             "description": (
-                "Create a pending task. Use it when the user asks you to "
-                "remind them to do something or to jot down a task (e.g. "
-                "'remind me about X', 'add task Y', 'I have to do Z')."
+                "Create a pending to-do task (no date). Use it when the user "
+                "wants to remember to do something without a specific time "
+                "('remind me to call the bank', 'add task buy bread', "
+                "'I have to do Z'). For anything with a date or time, use "
+                "create_calendar_event instead — that's the only path that "
+                "schedules alarms.\n\n"
+                "Pairs well with: list_projects to resolve a projectId."
             ),
             "parameters": {
                 "type": "object",
@@ -150,10 +165,15 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "get_resource_content",
             "description": (
-                "Read the full content of a file/document in the "
-                "workspace. Combine it with search_workspace: first you search, "
-                "obtain the resource id, then read it with this tool if "
-                "you need to know its content in order to answer."
+                "Read the full text of a single indexed resource by id. Use "
+                "it when you already have a resourceId (from a prior "
+                "search_workspace) and need its content to answer. If you "
+                "need to read or summarise several resources, prefer "
+                "workspace_research — it does the chaining internally and "
+                "returns one compact summary instead of inflating your "
+                "context with raw text.\n\n"
+                "Pairs well with: search_workspace (which yields the "
+                "resourceId you pass in here)."
             ),
             "parameters": {
                 "type": "object",
@@ -172,9 +192,13 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "list_projects",
             "description": (
-                "List the user's projects with their id and name. Useful "
-                "when the user asks 'what projects do I have?' or as a "
-                "preliminary step to associate a note/task with a project."
+                "List the user's projects with id and name. Use it when the "
+                "user directly asks 'what projects do I have?', or as a "
+                "preliminary step when you need a projectId to attach a "
+                "note/task/event.\n\n"
+                "Pairs well with: create_note, create_task, "
+                "create_calendar_event (the resulting ids feed their "
+                "projectId argument)."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -184,9 +208,14 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "list_notes",
             "description": (
-                "List the user's notes. Useful when the user asks "
-                "'what notes do I have?' or 'show me my notes'. If filtering by "
-                "project, pass projectId."
+                "List the user's notes (id, title, short preview). Use it "
+                "when the user wants the enumeration itself ('what notes do "
+                "I have?', 'show my notes in project X'). For content-based "
+                "discovery use search_workspace (one-shot) or "
+                "workspace_research (multi-source). The preview is enough to "
+                "identify a note — you do not need get_resource_content for "
+                "a note.\n\n"
+                "Pairs well with: list_projects to filter by a project."
             ),
             "parameters": {
                 "type": "object",
@@ -205,11 +234,14 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
             "name": "folder_delete",
             "description": (
                 "Delete a file from the assistant's working folder. Identify "
-                "the file by indexedFileId (preferred) or filename. This tool "
-                "ALWAYS shows a confirmation card to the user before the file "
-                "is actually removed: never delete without explicit user "
-                "approval in the card. If the filename is ambiguous you'll "
-                "receive a list of candidates and you must ask the user."
+                "it by indexedFileId (preferred) or filename. ALWAYS shows a "
+                "confirmation card to the user: the deletion happens only "
+                "after they confirm. If the filename is ambiguous you'll "
+                "receive a list of candidates and must ask the user. Use it "
+                "directly for one-shot deletes. For chained operations "
+                "(locate-by-content then delete), consider folder_assistant.\n\n"
+                "Pairs well with: folder_search to find the file when the "
+                "user does not give an exact filename."
             ),
             "parameters": {
                 "type": "object",
@@ -231,15 +263,17 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "folder_search",
             "description": (
-                "Semantic search across the files in the assistant's working "
-                "folder. Use it when the user describes a file by content or "
-                "topic and does not remember the exact filename. Returns hits "
-                "with indexedFileId, filename and a text snippet — to read a "
-                "full result, chain with folder_read using its indexedFileId. "
-                "DO NOT confuse with search_workspace, which searches notes / "
-                "tasks / canvases in the workspace at large — different "
-                "collections. If the user mentions 'my files', 'in my folder' "
-                "or anything tied to the working folder, use folder_search."
+                "Semantic search inside the assistant's working folder. Use "
+                "it when the user describes a file by content/topic ('my "
+                "files', 'in my folder', 'the doc about X') and does not "
+                "give an exact filename. Returns hits with indexedFileId, "
+                "filename and a snippet. DO NOT confuse with "
+                "search_workspace, which covers notes/tasks/resources of "
+                "the wider workspace. For multi-step folder operations "
+                "(search → read → edit), consider folder_assistant.\n\n"
+                "Pairs well with: folder_read (read a hit's full content), "
+                "folder_write with overwrite=true (modify a hit), "
+                "folder_delete (delete a hit)."
             ),
             "parameters": {
                 "type": "object",
@@ -262,14 +296,16 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "folder_read",
             "description": (
-                "Read a file from the assistant's working folder. Use it when "
-                "the user asks to summarise, modify or look at an existing "
-                "file. Identify the file by indexedFileId (preferred, when you "
+                "Read the full content of a file in the assistant's working "
+                "folder. Identify it by indexedFileId (preferred, when you "
                 "saw it in a previous folder_search or folder_write call) or "
-                "by filename. If the filename is ambiguous you'll get a list "
-                "of candidates — ask the user which one. For non-text files "
-                "(PDF, etc.) you receive the extracted text rather than the "
-                "binary; the derivedFromExtraction flag is set so you know."
+                "by filename. For non-text files (PDF, etc.) you receive the "
+                "extracted text; derivedFromExtraction is set so you know. "
+                "Use it for a single read-and-answer. If the goal is "
+                "read-and-modify, prefer folder_assistant — it absorbs the "
+                "file content internally so it does not flood your context.\n\n"
+                "Pairs well with: folder_search (yields the indexedFileId), "
+                "folder_write with overwrite=true (modify after reading)."
             ),
             "parameters": {
                 "type": "object",
@@ -292,6 +328,14 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
             "name": "folder_write",
             "description": (
                 "Create or overwrite a file in the assistant's working folder. "
+                "Use it directly when the new content is already in hand — "
+                "either provided by the user verbatim, or composed by you "
+                "from the conversation. For tasks that require reading the "
+                "existing file or searching for it first, prefer "
+                "folder_assistant.\n\n"
+                "Pairs well with: folder_search to verify a file exists "
+                "before creating, folder_read to inspect the existing "
+                "content before overwriting.\n\n"
                 "The content you must emit depends on the filename's extension:\n"
                 "\n"
                 "  TEXT (.md, .markdown, .txt, .csv, .tsv, .json, .xml, .yaml, "
@@ -359,9 +403,13 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "list_tasks",
             "description": (
-                "List the user's pending tasks. Use it when the "
-                "user asks 'what tasks do I have?', 'what's pending', "
-                "etc. If filtering by project, pass projectId."
+                "List the user's tasks (id, title, status, projectId). Use "
+                "it when the user asks 'what tasks do I have?', 'what's "
+                "pending', or as a preliminary step to find a taskId for "
+                "update_task / delete_task. Pass status='pending' or "
+                "'completed' to filter; pass projectId to narrow by project.\n\n"
+                "Pairs well with: update_task (mark done, rename), "
+                "delete_task (with confirmation card)."
             ),
             "parameters": {
                 "type": "object",
@@ -384,13 +432,14 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "update_task",
             "description": (
-                "Update an existing task. Identify it by taskId (preferred, when "
-                "you saw it in a previous list_tasks call) or by titleQuery "
-                "(approximate title match). Send only the fields that change. "
-                "To mark a task as done set status='completed'. To re-open a "
-                "completed task set status='pending'. To clear the description "
-                "or project send null. If titleQuery is ambiguous you'll receive "
-                "candidates — ask the user which one and retry with taskId."
+                "Update an existing task: mark done, re-open, rename, change "
+                "description, move to/clear a project. Identify it by taskId "
+                "(preferred, from a previous list_tasks) or titleQuery "
+                "(approximate match). Send only the fields that change. To "
+                "clear a description or project, send null. If titleQuery is "
+                "ambiguous you receive candidates — ask the user and retry "
+                "with taskId.\n\n"
+                "Pairs well with: list_tasks when you do not have the taskId."
             ),
             "parameters": {
                 "type": "object",
@@ -417,13 +466,12 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
             "name": "delete_task",
             "description": (
                 "Delete a task entirely. Identify it by taskId (preferred) or "
-                "titleQuery (approximate title match). This tool ALWAYS shows a "
-                "confirmation card to the user before the task is actually "
-                "deleted: never delete without explicit user approval in the "
-                "card. If titleQuery is ambiguous you'll receive a list of "
-                "candidates — ask the user which one. Use update_task with "
-                "status='completed' instead if the user just wants to mark it "
-                "as done."
+                "titleQuery (approximate match). ALWAYS shows a confirmation "
+                "card to the user before deletion. Use update_task with "
+                "status='completed' instead if the user only wants to mark "
+                "the task as done.\n\n"
+                "Pairs well with: list_tasks to confirm the candidate before "
+                "deleting."
             ),
             "parameters": {
                 "type": "object",
@@ -439,18 +487,20 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "create_calendar_event",
             "description": (
-                "Create a calendar event (one-shot or recurring), optionally with an alarm. "
-                "Use it when the user describes something with a date/time (an appointment, a "
-                "recurring reminder, a one-off alert). Anything with a date goes here — "
-                "tasks without a date go to create_task.\n\n"
+                "Create a calendar event (one-shot or recurring), optionally "
+                "with an alarm. Use it for anything with a date or time: "
+                "appointments, recurring reminders, one-off alerts. Without a "
+                "date the user wants a task, not an event — use create_task. "
+                "Include alarm only when the user asks to be reminded/alerted/"
+                "notified.\n\n"
+                "Pairs well with: list_projects to resolve a projectId.\n\n"
                 "RRULE examples (RFC 5545):\n"
                 "  'every day for 7 days at 10pm' -> FREQ=DAILY;COUNT=7;BYHOUR=22;BYMINUTE=0\n"
                 "  'every 3 days' -> FREQ=DAILY;INTERVAL=3\n"
                 "  'every monday' -> FREQ=WEEKLY;BYDAY=MO\n"
                 "  'first friday of every month' -> FREQ=MONTHLY;BYDAY=1FR\n"
                 "  'every year on may 18' -> FREQ=YEARLY;BYMONTH=5;BYMONTHDAY=18\n"
-                "Omit recurrenceRule for one-shot events. Include alarm only when the user "
-                "asks to be reminded/alerted/notified."
+                "Omit recurrenceRule for one-shot events."
             ),
             "parameters": {
                 "type": "object",
@@ -497,11 +547,14 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "update_calendar_event",
             "description": (
-                "Update an existing calendar event. Identify it by eventId (preferred) "
-                "or by 'match' (approximate title). Any field is optional; send only "
-                "those that change. To clear a field send null (alarm: null to remove "
-                "the alarm; recurrenceRule: null to stop the recurrence). Cannot edit "
-                "a single occurrence — only the whole event."
+                "Update an existing calendar event. Identify it by eventId "
+                "(preferred) or 'match' (approximate title). Any field is "
+                "optional; send only those that change. To clear a field "
+                "send null (alarm: null to remove, recurrenceRule: null to "
+                "stop the recurrence). Cannot edit a single occurrence — "
+                "only the whole event.\n\n"
+                "Pairs well with: search_workspace when you do not have the "
+                "eventId."
             ),
             "parameters": {
                 "type": "object",
@@ -526,10 +579,12 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "delete_calendar_event",
             "description": (
-                "Delete a calendar event entirely (stops all future occurrences and "
-                "alarms). Identify by eventId (preferred) or 'match' (approximate "
-                "title). To skip a single occurrence, edit the event instead — there "
-                "is no per-occurrence override."
+                "Delete a calendar event entirely (stops all future "
+                "occurrences and alarms). Identify by eventId (preferred) or "
+                "'match' (approximate title). There is no per-occurrence "
+                "override — to skip a single occurrence, edit the event.\n\n"
+                "Pairs well with: search_workspace when you do not have the "
+                "eventId."
             ),
             "parameters": {
                 "type": "object",
@@ -537,6 +592,88 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                     "eventId": {"type": "integer"},
                     "match": {"type": "string"},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_research",
+            "description": (
+                "Delegate a research question about the user's workspace "
+                "(notes, tasks, calendar events, indexed resources) to a "
+                "specialised subagent. The subagent combines search_workspace, "
+                "list_* and get_resource_content internally and returns a "
+                "compact summary — you do NOT see the raw hits or file "
+                "contents, only the answer.\n\n"
+                "When to use it: questions whose answer is spread across "
+                "several notes / tasks / resources, or that need the full "
+                "content of one or more resources. Examples: 'what do I know "
+                "about X?', 'summarise my notes on Y', 'find the conditions "
+                "of contract Z'.\n\n"
+                "When NOT to use it: direct one-shot questions a single leaf "
+                "tool resolves cleanly. 'what tasks do I have?' → list_tasks. "
+                "'do I have a note titled X?' → search_workspace. Subagents "
+                "add latency; reserve them for cases where the parent "
+                "context would otherwise inflate with raw results.\n\n"
+                "Pairs well with: leaf actions you call AFTER the summary "
+                "(create_task, create_note, create_calendar_event, "
+                "update_task) using ids the subagent returned."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Research question in natural language. Be "
+                            "specific — the subagent has no other context."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "folder_assistant",
+            "description": (
+                "Delegate a task on the assistant's working folder to a "
+                "subagent specialised in folder operations. The subagent "
+                "combines folder_search, folder_read, folder_write and "
+                "folder_delete internally and returns a compact summary of "
+                "what was done (or what is awaiting user confirmation).\n\n"
+                "When to use it: multi-step folder operations where the "
+                "parent would otherwise pull large file contents into its "
+                "context. Examples: 'modify the README adding section X', "
+                "'create a shopping list using items from yesterday's "
+                "notes', 'find the contract and add a clause about Y'.\n\n"
+                "When NOT to use it: a single, direct folder action where "
+                "the inputs are already in hand. 'Write a file called X "
+                "with content Y' (the user provided the content) → "
+                "folder_write. 'Delete the file todo.md' → folder_delete. "
+                "Subagents add latency; reserve them for search + read + "
+                "write/delete combined.\n\n"
+                "Pairs well with: workspace_research when the file content "
+                "needs facts from notes/tasks (workspace_research first, "
+                "then folder_assistant with the facts in the task)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language description of the folder "
+                            "operation. The subagent has no other context — "
+                            "be explicit about which file, what change, and "
+                            "any content the user provided."
+                        ),
+                    },
+                },
+                "required": ["task"],
             },
         },
     },
@@ -554,8 +691,38 @@ AGENT_ALLOWED_TOOLS = {
 }
 
 
+@dataclass(frozen=True)
+class SubagentSpec:
+    """Configuration of a subagent the main assistant can invoke as a tool.
+
+    A subagent is NOT a separate job. It runs synchronously inside the tool
+    executor of the parent: a fresh chat_with_tools loop, scoped tools,
+    scoped system prompt, returns a single text summary to the parent.
+    """
+    name: str                        # tool name registered in ASSISTANT_TOOLS
+    config_key: str                  # tasks.json entry for max_tokens, n_ctx, model
+    system_prompt: str               # subagent's own system prompt (English)
+    tool_names: frozenset            # subset of ASSISTANT_TOOLS available to it
+    input_field: str = "query"       # name of the JSON property holding the input
+    max_rounds: int = 3              # internal MAX_TOOL_ROUNDS for this subagent
+    fallback_max_tokens: int = 600   # cap used if tasks.json doesn't override
+
+
+SUBAGENT_SPECS: Dict[str, SubagentSpec] = {}
+
+
+def _register_subagent(spec: SubagentSpec) -> None:
+    if spec.name in SUBAGENT_SPECS:
+        raise ValueError(f"duplicate subagent name {spec.name!r}")
+    SUBAGENT_SPECS[spec.name] = spec
+
+
 def _tools_for_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return the tools the model sees, filtered by the payload's kind."""
+    """Return the tools the model sees, filtered by the payload's kind.
+
+    Agents only see the 4 folder_* leaf tools (no subagents). The main
+    assistant sees the full catalog (leaf tools + subagent tools).
+    """
     if (payload.get("kind") or "assistant") == "agent":
         return [
             t for t in ASSISTANT_TOOLS
@@ -595,6 +762,139 @@ DEFAULT_AGENT_SYSTEM_PROMPT = (
     "folder, say you cannot see it and suggest the user redirect the request "
     "to their main assistant."
 )
+
+
+# Multi-tool composition orientation, injected into the system prompt of the
+# main assistant and of agents alike. Tool-agnostic: agents only see four
+# folder_* leaf tools (no subagents), but the rules (compose, chain, don't
+# repeat, stop when done) still apply. The reference to "subagent tools" is
+# benign for agents since none appear in their filtered catalog.
+MULTI_TOOL_ORIENTATION = (
+    "You have a set of tools. Some are leaf tools that perform one direct "
+    "action. Some are subagent tools that delegate a multi-step task to a "
+    "specialised subagent and return a compact summary. Use them as follows:\n"
+    "- Before answering, think about what information or actions you need. "
+    "If they live in the tools you have, call the relevant ones instead of "
+    "replying with only what you already see.\n"
+    "- For multi-step research or multi-step file operations, prefer a "
+    "subagent tool. The subagent absorbs intermediate results internally — "
+    "you receive a summary, not the raw hits or file contents. This keeps "
+    "your context clean and your responses precise.\n"
+    "- For direct one-shot actions (one leaf tool resolves it cleanly), "
+    "call the leaf directly. Subagents add latency; do not pay it when a "
+    "single tool call suffices.\n"
+    "- You may call several tools in a single response (in parallel) or "
+    "chain them across rounds. When a tool returns an identifier or "
+    "reference that another tool needs as input, chain them in successive "
+    "rounds.\n"
+    "- Never repeat a tool call with the same arguments that already "
+    "appears in the conversation — the result is in the history, use it "
+    "directly.\n"
+    "- Once you have gathered enough information or completed all "
+    "requested actions, reply to the user and stop emitting tool_calls.\n"
+    "- If a tool returns an error, decide whether to retry with different "
+    "arguments, ask the user for clarification, or explain what could not "
+    "be done. Do not repeat the identical failing call.\n"
+    "- If the request is ambiguous or a required piece of information is "
+    "missing and no tool can recover it, ask the user before acting.\n"
+    "- Each tool's description states what it does, when to use it, and "
+    "which tools it typically pairs with — rely on those descriptions to "
+    "choose."
+)
+
+
+WORKSPACE_RESEARCH_PROMPT = (
+    "You are a workspace research subagent. The user's main assistant has "
+    "delegated a research question to you. Your job: gather the information "
+    "needed to answer the question by combining the tools you have, then "
+    "return a compact summary the main assistant can use.\n\n"
+    "Tools you have:\n"
+    "- search_workspace: lexical search across notes, tasks, calendar "
+    "events and indexed resources.\n"
+    "- get_resource_content: read the full text of an indexed resource "
+    "by id.\n"
+    "- list_notes / list_tasks / list_projects: enumerate items of one "
+    "kind.\n\n"
+    "Rules:\n"
+    "- Plan in your head, then act. Use as many tool calls as needed, no "
+    "more.\n"
+    "- Chain calls when the output of one feeds the next (e.g. "
+    "search_workspace returns a resourceId → get_resource_content).\n"
+    "- Stop calling tools as soon as you have enough to answer.\n"
+    "- Return a SHORT text summary (≤200 words). Lead with the answer; "
+    "cite ids of notes/tasks/resources only if the main assistant will "
+    "need them downstream.\n"
+    "- Do not invent. If nothing relevant is found, say so explicitly.\n"
+    "- No preamble ('I searched for…'). Reply as if you already knew."
+)
+
+
+FOLDER_ASSISTANT_PROMPT = (
+    "You are a folder operations subagent. The user's main assistant has "
+    "delegated a task involving the assistant's working folder. Your job: "
+    "carry out the task by combining the folder tools you have, and return "
+    "a compact summary of what was done (or what is awaiting "
+    "confirmation).\n\n"
+    "Tools you have:\n"
+    "- folder_search: semantic search to locate a file by content/topic.\n"
+    "- folder_read: read the full content of a file by id or filename.\n"
+    "- folder_write: create or overwrite a file (text, markdown→pdf/docx/"
+    "odt, csv→xlsx). overwrite=true requires user confirmation (the card "
+    "is shown automatically; you don't ask).\n"
+    "- folder_delete: delete a file. Always shows a confirmation card.\n\n"
+    "Rules:\n"
+    "- For a 'modify file X' task, chain folder_read → reason over the "
+    "content → folder_write with overwrite=true and the new content. Do "
+    "NOT overwrite with overwrite=false if the file already exists.\n"
+    "- For 'create file' tasks, call folder_write directly with "
+    "overwrite=false. If you receive file_exists, do not retry with "
+    "overwrite=true unless the user already agreed — return a summary "
+    "asking for confirmation instead.\n"
+    "- For 'delete file' tasks, call folder_delete. The confirmation card "
+    "is shown to the user; do not call any other tool afterwards.\n"
+    "- Stop calling tools once the operation is done or once a "
+    "confirmation card has been emitted.\n"
+    "- Return a SHORT summary (≤120 words). State exactly what happened: "
+    "which file, what action, success or awaiting confirmation. Mention "
+    "the new filename or id if relevant.\n"
+    "- Do not invent. Do not include the full file content in the reply; "
+    "only the action description.\n"
+    "- No preamble. Reply as 'Wrote X', 'Modified Y, added Z', 'Awaiting "
+    "confirmation to overwrite X', etc."
+)
+
+
+_register_subagent(SubagentSpec(
+    name="workspace_research",
+    config_key="workspace-research-agent",
+    system_prompt=WORKSPACE_RESEARCH_PROMPT,
+    tool_names=frozenset({
+        "search_workspace",
+        "get_resource_content",
+        "list_notes",
+        "list_tasks",
+        "list_projects",
+    }),
+    input_field="query",
+    max_rounds=3,
+    fallback_max_tokens=600,
+))
+
+
+_register_subagent(SubagentSpec(
+    name="folder_assistant",
+    config_key="folder-assistant-agent",
+    system_prompt=FOLDER_ASSISTANT_PROMPT,
+    tool_names=frozenset({
+        "folder_search",
+        "folder_read",
+        "folder_write",
+        "folder_delete",
+    }),
+    input_field="task",
+    max_rounds=3,
+    fallback_max_tokens=800,
+))
 
 
 # Flush a partial chunk to the backend roughly every N ms, regardless of how
@@ -885,6 +1185,17 @@ def _build_messages(payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[s
     folder_scope = (payload.get("folderScope") or "").strip()
     memory_snippets = payload.get("memorySnippets") or [] if kind == "assistant" else []
     conversation = payload.get("conversation") or []
+
+    # Multi-tool composition orientation. Concatenated into the same system
+    # message (a second system message tends to be ignored), between the
+    # assistant/agent persona and the persistent memory block. Applies to
+    # both kinds: agents only see leaf folder_* tools, but the same rules on
+    # composition, chaining and stopping still apply.
+    system_prompt = (
+        f"{system_prompt}\n\n{MULTI_TOOL_ORIENTATION}"
+        if system_prompt
+        else MULTI_TOOL_ORIENTATION
+    )
 
     # Persistent user memory only applies to the personal assistant. Agents
     # don't have memory; skip the injection entirely (and the prompt section
@@ -1798,6 +2109,7 @@ def _execute_tool(
     owner_segment: str = "assistants",
     owner_id: Optional[int] = None,
     job_id: Optional[int] = None,
+    payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Dispatch a single tool call. Returns the result as a dict (will be
     JSON-encoded by the caller before feeding back to the model).
@@ -1810,6 +2122,24 @@ def _execute_tool(
             "assistant-chat: rejected tool '%s' for agent (not in allowlist)", name,
         )
         return {"error": "tool_not_allowed_for_agent", "tool": name}
+
+    # Subagent dispatch: a tool name registered in SUBAGENT_SPECS triggers a
+    # fresh chat_with_tools loop inside the parent's call stack, scoped to
+    # the subagent's tools and system prompt. The parent only sees the final
+    # summary the subagent returns.
+    if name in SUBAGENT_SPECS:
+        spec = SUBAGENT_SPECS[name]
+        try:
+            sub_args = json.loads(args_json or "{}")
+        except json.JSONDecodeError:
+            return {"error": "invalid_subagent_args"}
+        if not isinstance(sub_args, dict):
+            return {"error": "invalid_subagent_args"}
+        query_value = str(sub_args.get(spec.input_field) or "").strip()
+        if not query_value:
+            return {"error": f"missing_{spec.input_field}"}
+        summary_text = _run_subagent(spec, query_value, payload or {}, job_id)
+        return {"summary": summary_text}
 
     try:
         args = json.loads(args_json) if args_json else {}
@@ -1850,6 +2180,129 @@ def _execute_tool(
     if name == "folder_delete":
         return _execute_folder_delete(args, owner_segment, owner_id, job_id)
     return {"error": f"Unknown tool: {name}"}
+
+
+def _run_subagent(
+    spec: SubagentSpec,
+    query: str,
+    payload: Dict[str, Any],
+    job_id: Optional[int],
+) -> str:
+    """Execute a subagent loop and return its final text response.
+
+    Runs synchronously in the parent's call stack. Reuses the LLM singleton
+    (no model reload thanks to (model_path, lora_path, lora_scale) caching)
+    and emits its own logs prefixed by [sub:<name>] for correlation. Does NOT
+    emit tool-events for its internal tool calls — only the parent's emit
+    (running / done) wraps the subagent invocation. The subagent never sees
+    the parent's conversation history; it starts from its own system prompt
+    and the query it was handed. That is exactly the source of context
+    compression for the parent.
+    """
+    cfg = get_task_config(spec.config_key)
+    params = get_llm_params(spec.config_key)
+    llm = get_llm_service(**params)
+    max_tokens = int(cfg.get("max_tokens", spec.fallback_max_tokens))
+    max_rounds = int(cfg.get("max_rounds", spec.max_rounds))
+
+    # Filter ASSISTANT_TOOLS to the subagent's whitelist. Note that this
+    # excludes any other subagent by construction — subagents cannot invoke
+    # other subagents because no spec lists another subagent's name.
+    tools_for_subagent = [
+        t for t in ASSISTANT_TOOLS
+        if t.get("function", {}).get("name") in spec.tool_names
+    ]
+
+    # Mirror the parent's /no_think convention so the subagent doesn't waste
+    # tokens on visible reasoning.
+    system_content = spec.system_prompt
+    if not bool(cfg.get("enable_thinking", False)):
+        system_content = f"{system_content}\n\n/no_think"
+
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": query},
+    ]
+
+    logger.info(
+        "assistant-chat[sub:%s]: enter — query=%r tools=%s rounds=%d",
+        spec.name, query[:120], sorted(spec.tool_names), max_rounds,
+    )
+
+    kind = (payload.get("kind") or "assistant")
+    owner_segment = _backend_owner_segment(payload)
+    owner_id = _owner_id(payload)
+
+    for round_idx in range(max_rounds):
+        msg = llm.chat_with_tools(messages, tools_for_subagent, max_tokens=max_tokens)
+        content = _strip_thinking(msg.get("content") or "")
+        tool_calls = msg.get("tool_calls") or []
+        if not tool_calls and content:
+            inline = _extract_inline_tool_calls(content)
+            if inline:
+                tool_calls = inline
+        logger.info(
+            "assistant-chat[sub:%s]: round %d → tool_calls=%d content_head=%r",
+            spec.name, round_idx, len(tool_calls), content[:120],
+        )
+        if not tool_calls:
+            logger.info("assistant-chat[sub:%s]: exit (text reply)", spec.name)
+            return content or ""
+
+        messages.append({
+            "role": "assistant",
+            "content": msg.get("content") or None,
+            "tool_calls": tool_calls,
+        })
+        for call in tool_calls:
+            fn = call.get("function") or {}
+            tname = str(fn.get("name") or "")
+            args_json = fn.get("arguments") or "{}"
+            if tname not in spec.tool_names:
+                result: Dict[str, Any] = {
+                    "error": "tool_not_in_subagent_scope",
+                    "tool": tname,
+                }
+            else:
+                result = _execute_tool(
+                    tname, args_json, kind=kind,
+                    owner_segment=owner_segment, owner_id=owner_id,
+                    job_id=job_id, payload=payload,
+                )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.get("id") or "",
+                "name": tname,
+                "content": json.dumps(result, ensure_ascii=False),
+            })
+            if isinstance(result, dict) and result.get("pendingConfirmation"):
+                # Pending confirmation surfaced by an inner tool: the UI
+                # already shows the card. The subagent must yield control
+                # back to the parent so it can respond to the user.
+                logger.info(
+                    "assistant-chat[sub:%s]: pending confirmation from tool=%s, ending",
+                    spec.name, tname,
+                )
+                return (
+                    f"Awaiting user confirmation for {tname}. "
+                    f"A confirmation card has been shown to the user."
+                )
+
+    # Out of rounds: coerce a final text reply with whatever the subagent
+    # gathered. No retries from here.
+    logger.info(
+        "assistant-chat[sub:%s]: rounds exhausted, forcing final text",
+        spec.name,
+    )
+    messages.append({
+        "role": "user",
+        "content": (
+            "You have exhausted your tool budget. Reply now with what you "
+            "found so far, in ≤200 words. Do not call any more tools."
+        ),
+    })
+    final = llm.chat(messages, max_tokens=max_tokens) or ""
+    return _strip_thinking(final)
 
 
 def _run_tool_rounds(
@@ -1925,12 +2378,16 @@ def _run_tool_rounds(
             result = _execute_tool(
                 name, args_json, kind=kind,
                 owner_segment=owner_segment, owner_id=owner_id, job_id=job_id,
+                payload=payload,
             )
             # Per-tool result summary + extract any created entity so the
             # frontend can render a "Delete" action on the card.
             entity: Optional[Dict[str, Any]] = None
             if isinstance(result, dict):
-                if name == "search_workspace":
+                if name in SUBAGENT_SPECS and isinstance(result.get("summary"), str):
+                    text = result["summary"]
+                    summary = text[:200] + ("…" if len(text) > 200 else "")
+                elif name == "search_workspace":
                     hits = len(result.get("results") or [])
                     summary = f"{hits} results"
                 elif name == "list_projects":
