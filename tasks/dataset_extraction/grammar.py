@@ -9,7 +9,7 @@ that constrains the LLM output to:
       ...
     }
 
-`null` is admitted everywhere a value can go (hard rule from cambio-10:
+`null` is admitted everywhere a value can go:
 the model must declare "not found in source" with null, not invent).
 """
 
@@ -31,7 +31,8 @@ def _value_rule(field: dict) -> str:
         options = field.get("options") or []
         if not options:
             return "string | null-lit"
-        alternatives = " | ".join(f"\"\\\"{_escape_literal(o)}\\\"\"" for o in options)
+        alternatives = " | ".join(
+            f"\"\\\"{_escape_literal(o)}\\\"\"" for o in options)
         return f"({alternatives}) | null-lit"
     # text, date, datetime, time, and any unknown type -> free string with null sentinel
     return "string | null-lit"
@@ -60,7 +61,8 @@ def build_grammar(fields_to_extract: List[dict]) -> str:
             f"\"\\\"_page\\\":\" ws (integer | null-lit) ws \"}}\""
         )
 
-    body = ' ws "," ws '.join(f"{rname.split(' ')[0]}" for rname in (f"field-{i}" for i in range(len(fields_to_extract))))
+    body = ' ws "," ws '.join(f"{rname.split(' ')[0]}" for rname in (
+        f"field-{i}" for i in range(len(fields_to_extract))))
     root = f"root ::= \"{{\" ws {body} ws \"}}\""
 
     primitives = """

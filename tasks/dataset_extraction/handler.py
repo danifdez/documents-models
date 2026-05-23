@@ -1,4 +1,4 @@
-"""Dataset extraction worker — pipeline for cambio-10.
+"""Dataset extraction worker.
 
 Job type: `dataset.extract-row`.
 
@@ -171,7 +171,8 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
             "promptVersion": PROMPT_VERSION,
         }
 
-    model_name = model_override or cfg.get("model") or get_llm_defaults().get("model")
+    model_name = model_override or cfg.get(
+        "model") or get_llm_defaults().get("model")
     if not model_name:
         return {
             "data": None,

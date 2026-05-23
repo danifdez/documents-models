@@ -1,9 +1,7 @@
 """Prompt template for dataset.extract-row.
 
 PROMPT_VERSION is persisted with every CellAnchor produced. Bump it
-manually whenever the prompt body changes — the cambio-10 design treats
-the prompt as data, not code, so callers can re-run extractions and
-audit which prompt produced which cell.
+manually whenever the prompt body changes
 """
 
 from typing import List, Optional
