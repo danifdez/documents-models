@@ -75,6 +75,27 @@
     "model": "BAAI/bge-small-en-v1.5",
     "capabilities": ["embeddings"]
   },
+  "memory-embedding": {
+    "enabled": true,
+    "type": "sentence-transformer",
+    "model": "intfloat/multilingual-e5-small",
+    "capabilities": ["embeddings"]
+  },
+  "memory-ingest": {
+    "enabled": true,
+    "type": "embedding-job",
+    "capabilities": ["embeddings"]
+  },
+  "memory-search": {
+    "enabled": true,
+    "type": "embedding-job",
+    "capabilities": ["embeddings"]
+  },
+  "memory-delete-vectors": {
+    "enabled": true,
+    "type": "embedding-job",
+    "capabilities": ["embeddings"]
+  },
   "summarize": {
     "enabled": true,
     "type": "llm",
@@ -249,5 +270,25 @@
     "enabled": true,
     "type": "utility",
     "capabilities": []
+  },
+  "dataset.extract-row": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 16384,
+    "max_tokens": 2048,
+    "temperature": 0.1,
+    "seed": 42
+  },
+  "dataset.propose-columns": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 16384,
+    "max_tokens": 1500,
+    "temperature": 0.2,
+    "seed": 42
   }
 }

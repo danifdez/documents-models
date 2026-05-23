@@ -7,7 +7,7 @@ from qdrant_client.models import (
 from typing import List, Optional
 from config import (
     QDRANT_HOST, QDRANT_PORT, QDRANT_URL,
-    QDRANT_COLLECTION, QDRANT_FOLDER_COLLECTION,
+    QDRANT_COLLECTION, QDRANT_FOLDER_COLLECTION, QDRANT_MEMORY_COLLECTION,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +132,7 @@ class Rag:
 
 _rag_database: Optional[Rag] = None
 _folder_rag_database: Optional[Rag] = None
+_memory_rag_database: Optional[Rag] = None
 
 
 def get_rag() -> Rag:
@@ -155,3 +156,22 @@ def get_folder_rag() -> Rag:
             payload_indexes=["assistant_id", "source_id"],
         )
     return _folder_rag_database
+
+
+def get_memory_rag() -> Rag:
+    """Assistant personal-memory collection. Isolated from `rag_docs` and
+    `assistant_folder_files`: the per-user facts/events/instructions live
+    in their own collection so a buggy workspace search cannot leak
+    them, and conversely the user's domestic memory does not contaminate
+    workspace RAG results.
+
+    Filterable by `assistant_id`. Points use stable ids of the form
+    `memory_<memoryId>` so updates upsert in place.
+    """
+    global _memory_rag_database
+    if _memory_rag_database is None:
+        _memory_rag_database = Rag(
+            collection_name=QDRANT_MEMORY_COLLECTION,
+            payload_indexes=["assistant_id"],
+        )
+    return _memory_rag_database

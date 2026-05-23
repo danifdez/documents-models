@@ -35,6 +35,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import urllib.error
@@ -120,7 +121,12 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                     },
                     "projectId": {
                         "type": "integer",
-                        "description": "ID of the project to save it under. Omit for a general note.",
+                        "description": (
+                            "DO NOT set this field unless you have called list_projects "
+                            "earlier in this conversation AND the user explicitly named "
+                            "one of the projects from that result. Never guess a value. "
+                            "If no project is mentioned, OMIT this parameter entirely."
+                        ),
                     },
                 },
                 "required": ["title", "body"],
@@ -153,7 +159,12 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                     },
                     "projectId": {
                         "type": "integer",
-                        "description": "ID of the project the task belongs to. Omit if general.",
+                        "description": (
+                            "DO NOT set this field unless you have called list_projects "
+                            "earlier in this conversation AND the user explicitly named "
+                            "one of the projects from that result. Never guess a value. "
+                            "If no project is mentioned, OMIT this parameter entirely."
+                        ),
                     },
                 },
                 "required": ["title"],
@@ -485,6 +496,58 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "set_task_reminder",
+            "description": (
+                "Set or update a one-shot reminder on an existing task. "
+                "Identify by taskId (preferred) or titleQuery (approximate "
+                "match). The reminder fires once at remindAt; the task stays "
+                "pending until the user marks it done. remindAt must be ISO "
+                "8601 with timezone offset; do not send naive datetimes.\n\n"
+                "If the user describes a RECURRING reminder ('remind me every "
+                "3 days to water the plants'), DO NOT use this tool — create "
+                "a recurring calendar event with trackCompletion=true via "
+                "create_calendar_event instead. Tasks are single-shot only.\n\n"
+                "Pairs well with: list_tasks when the user references the "
+                "task by name and ambiguity is possible."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "taskId": {"type": "integer"},
+                    "titleQuery": {"type": "string"},
+                    "remindAt": {
+                        "type": "string",
+                        "description": "ISO 8601 with TZ offset, e.g. 2026-05-23T09:00:00+02:00.",
+                    },
+                },
+                "required": ["remindAt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clear_task_reminder",
+            "description": (
+                "Remove the reminder from a task (sets reminderAt=null). The "
+                "task stays pending. Identify by taskId or titleQuery. Use "
+                "this when the user explicitly says they no longer want the "
+                "reminder, NOT when they finished the task — for the latter "
+                "use update_task with status='completed', which already "
+                "clears the reminder automatically."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "taskId": {"type": "integer"},
+                    "titleQuery": {"type": "string"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_calendar_event",
             "description": (
                 "Create a calendar event (one-shot or recurring), optionally "
@@ -535,7 +598,12 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                     },
                     "projectId": {
                         "type": "integer",
-                        "description": "Project id; omit if general.",
+                        "description": (
+                            "DO NOT set this field unless you have called list_projects "
+                            "earlier in this conversation AND the user explicitly named "
+                            "one of the projects from that result. Never guess a value. "
+                            "If no project is mentioned, OMIT this parameter entirely."
+                        ),
                     },
                 },
                 "required": ["title", "startAt"],
@@ -592,6 +660,45 @@ ASSISTANT_TOOLS: List[Dict[str, Any]] = [
                     "eventId": {"type": "integer"},
                     "match": {"type": "string"},
                 },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_event_occurrence_done",
+            "description": (
+                "Mark a single occurrence of a trackable calendar event as "
+                "done. Identify the event by eventId (preferred) or 'match' "
+                "(approximate title substring). The event MUST have "
+                "trackCompletion=true; if not, the tool returns "
+                "event_not_trackable and you should tell the user to enable "
+                "it from the event editor first. Provide occurrenceDate as "
+                "the ISO 8601 timestamp of the specific occurrence (with "
+                "timezone offset, e.g. 2026-05-22T20:00:00Z or "
+                "2026-05-22T22:00:00+02:00). For one-shot events the "
+                "occurrenceDate equals the event's startDate.\n\n"
+                "Pairs well with: search_workspace when the user references "
+                "the event by name and the eventId is unknown.\n\n"
+                "Idempotent: marking the same occurrence twice is a no-op."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "eventId": {"type": "integer"},
+                    "match": {
+                        "type": "string",
+                        "description": "Approximate title match if eventId unknown.",
+                    },
+                    "occurrenceDate": {
+                        "type": "string",
+                        "description": (
+                            "ISO 8601 with timezone offset. Examples: "
+                            "2026-05-22T20:00:00Z, 2026-05-22T22:00:00+02:00."
+                        ),
+                    },
+                },
+                "required": ["occurrenceDate"],
             },
         },
     },
@@ -943,62 +1050,96 @@ def _post_stream_chunk(
 MEMORY_TYPES = {"fact", "event", "instruction"}
 
 # Structured extraction/management prompt. Called on every turn of the
-# personal assistant. The LLM decides among three actions — `save` (save a
-# new memory), `forget` (forget an existing one by id) or `none` (nothing
-# to do) — and returns ONE JSON with that decision.
+# personal assistant. The LLM decides among four actions — `save` (save a
+# new memory), `forget` (forget an existing one by id), `replace` (correct
+# the value of an existing memory by id) or `none` (nothing to do) — and
+# returns ONE JSON with that decision.
 EXTRACT_MEMORY_PROMPT = """You are a memory manager. Read the user's message and the existing memory, and return ONE single JSON deciding what to do.
 
 EXACT schema:
 {{
-  "action": "save | forget | none",
-  "name": "short title if action=save (3-8 words), otherwise \\"\\"",
-  "type": "fact | event | instruction if action=save, otherwise \\"fact\\"",
-  "body": "the fact to remember if action=save, otherwise \\"\\"",
-  "forget_id": <number> if action=forget; null otherwise
+  "action": "save | forget | replace | none",
+  "name": "short title (3-8 words) if action=save or replace, otherwise \\"\\"",
+  "type": "fact | event | instruction if action=save or replace, otherwise \\"fact\\"",
+  "body": "the fact to remember if action=save or replace, otherwise \\"\\"",
+  "forget_id": <number> if action=forget; null otherwise,
+  "replace_id": <number> if action=replace; null otherwise
 }}
 
-Decide the `action`:
+Decision table — pick exactly one:
 
-- save: the message contains NEW information worth persisting and NOT
-  already covered by existing memory. Fill in name/type/body.
+- The concept is NEW (not present in the existing memory) → `save`.
+- The concept EXISTS with the SAME value (memory is already correct) → `none`.
+- The concept EXISTS but the user is providing a DIFFERENT value, or
+  explicitly correcting ("actually it's X", "I was wrong, it's Y",
+  "no, the correct is Z") → `replace`, with `replace_id` pointing to
+  the matching memory id.
+- The user explicitly asks to forget/delete/remove a memory ("forget
+  that X", "I no longer Y", "I am no longer allergic to Z") without
+  providing a new value → `forget`, with `forget_id` pointing to the
+  matching memory id.
+- Greetings, questions, chit-chat, or anything without new information → `none`.
 
-- forget: the user explicitly asks to forget/delete/remove a memory
-  ("forget that X", "I no longer live in Y", "delete the dentist thing", "forget that I
-  like coffee", etc.). Identify the most relevant existing entry from the
-  list and return its `id` in `forget_id`. If there's no clear match, use `none`.
-
-- none: greetings, questions, chit-chat, or anything whose information ALREADY
-  exists in the existing memory (don't duplicate). Also use `none` if the
-  user is only asking something without providing new info.
-
-NEVER save (always `none`):
+NEVER save/replace (always `none`):
 - Requests to be reminded/notified/alerted about something with a date or time
-  ("remind me to take the pill at 10pm", "notify me every Monday to check email",
-  "alert me 30 min before the meeting"). Those belong to the calendar, not memory.
+  ("remind me to take the pill at 10pm", "notify me every Monday"). Those
+  belong to the calendar, not memory.
 - One-off appointments or events stated as future obligations ("meeting Thursday
   at 14h", "dinner with Marta tomorrow"). Those also belong to the calendar.
 - Anything the user said to be done (an action to perform), even if no time is
   given — that's a task, not a memory.
 
-How to decide the `type` when action=save:
+How to pick `replace` over `save`:
+- Memories tagged (high) in the listing are SEMANTICALLY similar to the user's
+  message. Look there first when deciding whether the concept already exists.
+- (medium) entries are weaker candidates — only pick them if you are confident
+  they are the same concept.
+- (recent) entries are NOT semantically related; they appear in the listing
+  for general context, not as candidates for `replace`.
+
+How to decide `type` when action=save or replace:
 
 - event: episodes already past or rare landmark moments worth remembering as
   context (a birth, a move, a marriage). NOT future appointments or recurring
-  reminders — those go to the calendar.
+  reminders.
   e.g.: "yesterday I signed the contract", "I got married in 2018".
 
 - instruction: STABLE preferences about how the assistant should speak/format/
-  behave across all interactions. NOT a one-off "do X for me" request and NOT a
-  request to be reminded about something.
+  behave across all interactions. NOT a one-off "do X for me" request.
   e.g.: "always answer me in Spanish", "no bullet points", "use formal tone".
 
 - fact: EVERYTHING ELSE — stable knowledge about the user or their environment.
   Includes personal data, where they live, relationships, tastes, tools, links.
   e.g.: "I live in Barcelona", "I don't like coffee", "my GitHub is github.com/x".
 
+Examples:
+
+USER: "my birthday is May 4th, not April 5th"
+EXISTING MEMORY:
+- id=17 (fact, high) birthday: April 5
+→ {{"action":"replace","name":"birthday","type":"fact","body":"May 4","replace_id":17,"forget_id":null}}
+
+USER: "I now live in Madrid"
+EXISTING MEMORY:
+- id=12 (fact, high) address: c/ Pez 3, Barcelona
+→ {{"action":"replace","name":"address","type":"fact","body":"Madrid","replace_id":12,"forget_id":null}}
+
+USER: "I'm no longer allergic to nuts"
+EXISTING MEMORY:
+- id=33 (fact, high) allergies: nuts
+→ {{"action":"forget","name":"","type":"fact","body":"","forget_id":33,"replace_id":null}}
+
+USER: "I work as a backend engineer"
+EXISTING MEMORY:
+- (no high or medium hits)
+→ {{"action":"save","name":"profession","type":"fact","body":"backend engineer","replace_id":null,"forget_id":null}}
+
+USER: "remind me to take the pill at 10pm"
+EXISTING MEMORY: (anything)
+→ {{"action":"none","name":"","type":"fact","body":"","replace_id":null,"forget_id":null}}
+
 Rules:
 - Do not invent anything not in the message.
-- If the fact is already in existing memory (even worded differently), use `none`.
 - Do not add text outside the JSON.
 
 EXISTING MEMORY (may be empty):
@@ -1046,8 +1187,9 @@ def _parse_json_object(text: str) -> Optional[Dict[str, Any]]:
 
 def _format_memory_for_prompt(snippets: List[Dict[str, Any]]) -> str:
     """Render existing memory as a numbered list with ids — the LLM uses these
-    ids to point at entries to forget, and the dedup check compares against
-    the bodies shown here."""
+    ids to point at entries to forget or replace. The `relevance` hint
+    (high/medium/recent) helps the model decide whether a candidate is
+    semantically related to the user's message."""
     lines: List[str] = []
     for s in snippets:
         if not isinstance(s, dict):
@@ -1056,9 +1198,10 @@ def _format_memory_for_prompt(snippets: List[Dict[str, Any]]) -> str:
         name = (s.get("name") or "").strip()
         type_ = (s.get("type") or "other").strip()
         body = (s.get("body") or "").strip()
+        relevance = (s.get("relevance") or "recent").strip().lower()
         if mid is None or not name or not body:
             continue
-        lines.append(f"- id={mid} ({type_}) {name}: {body}")
+        lines.append(f"- id={mid} ({type_}, {relevance}) {name}: {body}")
     return "\n".join(lines) if lines else "(no memory yet)"
 
 
@@ -1113,6 +1256,29 @@ def _extract_memory_action(
         if not name or not body:
             return None
         return {"action": "save", "save": {"name": name[:120], "type": type_, "body": body}}
+
+    if action == "replace":
+        name = str(obj.get("name") or "").strip()
+        body = str(obj.get("body") or "").strip()
+        type_ = str(obj.get("type") or "fact").strip().lower()
+        if type_ not in MEMORY_TYPES:
+            type_ = "fact"
+        try:
+            replace_id = int(obj.get("replace_id"))
+        except (TypeError, ValueError):
+            logger.info("assistant-chat: replace without valid replace_id")
+            return None
+        known_ids = {s.get("id") for s in memory_snippets if isinstance(s, dict)}
+        if replace_id not in known_ids:
+            logger.info("assistant-chat: replace_id %r is not in known memory", replace_id)
+            return None
+        if not name or not body:
+            return None
+        return {
+            "action": "replace",
+            "replace_id": replace_id,
+            "save": {"name": name[:120], "type": type_, "body": body},
+        }
 
     if action == "forget":
         try:
@@ -1658,6 +1824,46 @@ def _execute_delete_calendar_event(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"deleted": True, "eventId": event_id}
 
 
+def _execute_mark_event_occurrence_done(args: Dict[str, Any]) -> Dict[str, Any]:
+    event_id, err = _resolve_calendar_event(args)
+    if err is not None:
+        return err
+    occurrence_date = args.get("occurrenceDate")
+    if not isinstance(occurrence_date, str) or not occurrence_date.strip():
+        return {"error": "missing_occurrence_date"}
+    try:
+        parsed = datetime.fromisoformat(occurrence_date.replace("Z", "+00:00"))
+    except ValueError:
+        return {"error": "invalid_occurrence_date"}
+    if parsed.tzinfo is None:
+        return {
+            "error": "occurrence_date_naive",
+            "hint": "Include timezone offset (Z or ±HH:MM).",
+        }
+    encoded = urllib.parse.quote(occurrence_date, safe="")
+    status, body = _http_json_with_status(
+        "POST", f"/calendar-events/{event_id}/occurrences/{encoded}/complete"
+    )
+    if status == 204:
+        return {"ok": True, "eventId": event_id, "occurrenceDate": occurrence_date}
+    if status == 400:
+        detail = ""
+        code = ""
+        if isinstance(body, dict):
+            code = str(body.get("error") or "").strip()
+            detail = str(body.get("message") or body.get("error") or "").strip()
+        if code == "event_not_trackable" or "trackable" in detail.lower():
+            return {
+                "error": "event_not_trackable",
+                "eventId": event_id,
+                "hint": "Enable 'I want to mark it as done' on the event first.",
+            }
+        return {"error": "bad_request", "detail": detail or body}
+    if status == 404:
+        return {"error": "event_not_found", "eventId": event_id}
+    return {"error": "http_error", "status": status, "detail": body}
+
+
 def _execute_get_resource_content(args: Dict[str, Any]) -> Dict[str, Any]:
     rid = args.get("resourceId")
     if not isinstance(rid, int):
@@ -1853,6 +2059,67 @@ def _execute_delete_task(
         "taskId": task_id,
         "title": title,
     }
+
+
+def _execute_set_task_reminder(args: Dict[str, Any]) -> Dict[str, Any]:
+    task_id, err = _resolve_user_task(args)
+    if err is not None:
+        return err
+    remind_at = args.get("remindAt")
+    if not isinstance(remind_at, str) or not remind_at.strip():
+        return {"error": "missing_remind_at"}
+    try:
+        parsed = datetime.fromisoformat(remind_at.replace("Z", "+00:00"))
+    except ValueError:
+        return {"error": "invalid_remind_at"}
+    if parsed.tzinfo is None:
+        return {
+            "error": "remind_at_naive",
+            "hint": "Include timezone offset (Z or ±HH:MM).",
+        }
+    # Reject past timestamps in the tool — the backend would accept them but
+    # the scheduler would immediately classify them as lost, which is rarely
+    # what the user wants.
+    if parsed < datetime.now(parsed.tzinfo):
+        return {"error": "remind_at_in_past", "hint": "Pick a future timestamp."}
+
+    status, body = _http_json_with_status(
+        "PATCH", f"/user-tasks/{task_id}", {"reminderAt": remind_at},
+    )
+    if status == 200 and isinstance(body, dict) and "id" in body:
+        return {
+            "ok": True,
+            "task": {
+                "id": body["id"],
+                "title": body.get("title"),
+                "reminderAt": body.get("reminderAt"),
+            },
+        }
+    if status == 404:
+        return {"error": "task_not_found", "taskId": task_id}
+    return {"error": "http_error", "status": status, "detail": body}
+
+
+def _execute_clear_task_reminder(args: Dict[str, Any]) -> Dict[str, Any]:
+    task_id, err = _resolve_user_task(args)
+    if err is not None:
+        return err
+    status, body = _http_json_with_status(
+        "PATCH", f"/user-tasks/{task_id}", {"reminderAt": None},
+    )
+    if status == 200 and isinstance(body, dict) and "id" in body:
+        return {
+            "ok": True,
+            "task": {
+                "id": body["id"],
+                "title": body.get("title"),
+                "reminderAt": None,
+            },
+        }
+    if status == 404:
+        return {"error": "task_not_found", "taskId": task_id}
+    return {"error": "http_error", "status": status, "detail": body}
+
 
 
 def _resolve_folder_target(
@@ -2159,6 +2426,8 @@ def _execute_tool(
         return _execute_update_calendar_event(args)
     if name == "delete_calendar_event":
         return _execute_delete_calendar_event(args)
+    if name == "mark_event_occurrence_done":
+        return _execute_mark_event_occurrence_done(args)
     if name == "get_resource_content":
         return _execute_get_resource_content(args)
     if name == "list_projects":
@@ -2171,6 +2440,10 @@ def _execute_tool(
         return _execute_update_task(args)
     if name == "delete_task":
         return _execute_delete_task(args, owner_segment, owner_id, job_id)
+    if name == "set_task_reminder":
+        return _execute_set_task_reminder(args)
+    if name == "clear_task_reminder":
+        return _execute_clear_task_reminder(args)
     if name == "folder_search":
         return _execute_folder_search(args, owner_segment, owner_id)
     if name == "folder_read":
@@ -2432,6 +2705,14 @@ def _run_tool_rounds(
                     entity = {"kind": "calendarEvent", "id": ev.get("id"), "title": ev.get("title")}
                 elif name == "delete_calendar_event" and result.get("deleted") is True:
                     summary = f"Deleted event #{result.get('eventId')}"
+                elif name == "mark_event_occurrence_done" and result.get("ok"):
+                    summary = f"Done: occurrence {result.get('occurrenceDate')}"
+                elif name == "set_task_reminder" and result.get("ok"):
+                    task = result.get("task") or {}
+                    summary = f"Reminder set: {task.get('title') or ''} at {task.get('reminderAt') or ''}"
+                elif name == "clear_task_reminder" and result.get("ok"):
+                    task = result.get("task") or {}
+                    summary = f"Reminder cleared: {task.get('title') or ''}"
                 elif name == "get_resource_content":
                     n = len(result.get("content") or "")
                     summary = f"{n} chars read" + (" (truncated)" if result.get("truncated") else "")

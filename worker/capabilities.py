@@ -18,6 +18,8 @@ TASK_FEATURE_MAP = {
     "summary": "datasets",
     "query": "datasets",
     "chart": "datasets",
+    "dataset.extract-row": "datasets",
+    "dataset.propose-columns": "datasets",
     "image-generate": "canvas",
     "image-edit": "canvas",
     "ingest-content": "rag",

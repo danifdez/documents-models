@@ -1,7 +1,7 @@
 import os
-from typing import Any, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
-from llama_cpp import Llama
+from llama_cpp import Llama, LlamaGrammar
 
 
 class LLMService:
@@ -40,16 +40,48 @@ class LLMService:
 
         self.llm = Llama(**kwargs)
 
-    def generate(self, prompt: str, max_tokens: int = 1000) -> str:
-        """Simple completion. Returns the generated text."""
-        response = self.llm(prompt, max_tokens=max_tokens, echo=False)
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        grammar: Optional[str] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+    ) -> str:
+        """Simple completion. Returns the generated text.
+
+        When `grammar` is provided (a GBNF string), the output is constrained
+        to match it — used by structured-extraction tasks to guarantee valid
+        JSON. `temperature` and `seed` are forwarded when set; otherwise
+        llama-cpp's defaults apply.
+        """
+        kwargs: Dict[str, Any] = {"max_tokens": max_tokens, "echo": False}
+        if grammar is not None:
+            kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if seed is not None:
+            kwargs["seed"] = seed
+        response = self.llm(prompt, **kwargs)
         return response["choices"][0]["text"].strip()
 
-    def chat(self, messages: list, max_tokens: int = 1000) -> str:
+    def chat(
+        self,
+        messages: list,
+        max_tokens: int = 1000,
+        grammar: Optional[str] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+    ) -> str:
         """Chat completion. Returns the assistant message content."""
-        resp = self.llm.create_chat_completion(
-            messages=messages, max_tokens=max_tokens
-        )
+        kwargs: Dict[str, Any] = {"messages": messages, "max_tokens": max_tokens}
+        if grammar is not None:
+            kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if seed is not None:
+            kwargs["seed"] = seed
+        resp = self.llm.create_chat_completion(**kwargs)
         choice = resp["choices"][0]
         if "message" in choice and "content" in choice["message"]:
             return choice["message"]["content"].strip()
