@@ -1045,9 +1045,11 @@ def _post_stream_chunk(
 # Valid types for a memory entry. Mirrors the backend enum.
 # Three canonical categories (semantic / episodic / procedural in cognitive
 # science): `fact` covers stable knowledge about the user or the world
-# (includes preferences, data, identity, tools, links); `event` are
-# episodes with a concrete moment in time; `instruction` is how the assistant should behave.
-MEMORY_TYPES = {"fact", "event", "instruction"}
+# (includes preferences, data, identity, tools, links); `episode` is a
+# narrative memory of something that happened or that the assistant should
+# know contextually (does NOT replace the calendar — things that need an
+# alarm/slot go there); `instruction` is how the assistant should behave.
+MEMORY_TYPES = {"fact", "episode", "instruction"}
 
 # Structured extraction/management prompt. Called on every turn of the
 # personal assistant. The LLM decides among four actions — `save` (save a
@@ -1060,7 +1062,7 @@ EXACT schema:
 {{
   "action": "save | forget | replace | none",
   "name": "short title (3-8 words) if action=save or replace, otherwise \\"\\"",
-  "type": "fact | event | instruction if action=save or replace, otherwise \\"fact\\"",
+  "type": "fact | episode | instruction if action=save or replace, otherwise \\"fact\\"",
   "body": "the fact to remember if action=save or replace, otherwise \\"\\"",
   "forget_id": <number> if action=forget; null otherwise,
   "replace_id": <number> if action=replace; null otherwise
@@ -1099,10 +1101,14 @@ How to pick `replace` over `save`:
 
 How to decide `type` when action=save or replace:
 
-- event: episodes already past or rare landmark moments worth remembering as
-  context (a birth, a move, a marriage). NOT future appointments or recurring
-  reminders.
-  e.g.: "yesterday I signed the contract", "I got married in 2018".
+- episode: a narrative memory the assistant should know contextually —
+  past events, landmark moments (a birth, a move, a marriage), or future
+  contextual info that does NOT need an alarm or calendar slot
+  ("I'll be on vacation June 5-8, don't propose meetings then"). Anything
+  that needs a reminder goes to the calendar via create_calendar_event,
+  not here.
+  e.g.: "yesterday I signed the contract", "I got married in 2018",
+  "I'm in Madrid the first week of June".
 
 - instruction: STABLE preferences about how the assistant should speak/format/
   behave across all interactions. NOT a one-off "do X for me" request.
