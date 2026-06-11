@@ -23,6 +23,7 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from database.neo4j_db import get_neo4j
+from services.grammars import RELATIONSHIPS_GBNF
 from services.llm_service import get_llm_service
 from services.model_config import get_llm_defaults, get_llm_params, get_task_config
 from services.prompts import get_prompt
@@ -94,15 +95,26 @@ def _deduplicate(relationships: list) -> list:
 
 def _extract_from_chunk(chunk: str, entities_str: str, prompt_template: str,
                          llm_service, max_tokens: int) -> str:
-    """Run LLM on a single chunk and return the raw response text."""
+    """Run LLM on a single chunk and return the raw response text.
+
+    Output is grammar-constrained to a JSON array of triples and sampled at
+    temperature 0: extraction should be deterministic and always parseable.
+    """
     prompt = prompt_template.format(entities=entities_str, text=chunk)
     try:
         return llm_service.chat(
             [{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
+            grammar=RELATIONSHIPS_GBNF,
+            temperature=0.0,
         )
     except Exception:
-        return llm_service.generate(prompt, max_tokens=max_tokens)
+        return llm_service.generate(
+            prompt,
+            max_tokens=max_tokens,
+            grammar=RELATIONSHIPS_GBNF,
+            temperature=0.0,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

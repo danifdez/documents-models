@@ -1236,12 +1236,13 @@ def _extract_memory_action(
     # between {save, forget, none} and detecting duplicates requires reasoning.
     # Configurable via `memory_extract_thinking`.
     extract_thinking = bool(cfg.get("memory_extract_thinking", True))
-    messages: List[Dict[str, str]] = []
-    if not extract_thinking:
-        messages.append({"role": "system", "content": "/no_think"})
-    messages.append({"role": "user", "content": prompt})
+    messages: List[Dict[str, str]] = [{"role": "user", "content": prompt}]
     try:
-        raw = llm.chat(messages, max_tokens=int(cfg.get("memory_extract_max_tokens", 600))) or ""
+        raw = llm.chat(
+            messages,
+            max_tokens=int(cfg.get("memory_extract_max_tokens", 600)),
+            allow_thinking=extract_thinking,
+        ) or ""
     except Exception:
         logger.exception("assistant-chat: memory extraction failed")
         return None
@@ -2580,7 +2581,7 @@ def _run_subagent(
             "found so far, in ≤200 words. Do not call any more tools."
         ),
     })
-    final = llm.chat(messages, max_tokens=max_tokens) or ""
+    final = llm.chat(messages, max_tokens=max_tokens, allow_thinking=True) or ""
     return _strip_thinking(final)
 
 
@@ -2901,7 +2902,7 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "assistant-chat: streaming disabled (kind=%s owner=%s/%s job=%r stream_cfg=%r)",
                 kind, owner_segment, owner_id, job_id, cfg.get("stream"),
             )
-            raw = llm.chat(messages, max_tokens=max_tokens) or ""
+            raw = llm.chat(messages, max_tokens=max_tokens, allow_thinking=True) or ""
 
         reply = _strip_thinking(raw)
         if not reply:

@@ -1,7 +1,17 @@
 import os
+import re
 from typing import Any, Dict, Iterator, List, Optional
 
 from llama_cpp import Llama, LlamaGrammar
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def strip_thinking(text: str) -> str:
+    """Remove Qwen3 <think>...</think> blocks from a model response."""
+    if not text or "<think>" not in text:
+        return text
+    return _THINK_RE.sub("", text).strip()
 
 
 class LLMService:
@@ -47,13 +57,15 @@ class LLMService:
         grammar: Optional[str] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
+        allow_thinking: bool = False,
     ) -> str:
         """Simple completion. Returns the generated text.
 
         When `grammar` is provided (a GBNF string), the output is constrained
         to match it — used by structured-extraction tasks to guarantee valid
         JSON. `temperature` and `seed` are forwarded when set; otherwise
-        llama-cpp's defaults apply.
+        llama-cpp's defaults apply. Unless `allow_thinking` is set, any
+        <think> blocks are stripped from the result.
         """
         kwargs: Dict[str, Any] = {"max_tokens": max_tokens, "echo": False}
         if grammar is not None:
@@ -63,7 +75,8 @@ class LLMService:
         if seed is not None:
             kwargs["seed"] = seed
         response = self.llm(prompt, **kwargs)
-        return response["choices"][0]["text"].strip()
+        text = response["choices"][0]["text"].strip()
+        return text if allow_thinking else strip_thinking(text)
 
     def chat(
         self,
@@ -72,8 +85,18 @@ class LLMService:
         grammar: Optional[str] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
+        allow_thinking: bool = False,
     ) -> str:
-        """Chat completion. Returns the assistant message content."""
+        """Chat completion. Returns the assistant message content.
+
+        Thinking is suppressed by default: a `/no_think` system message is
+        appended (Qwen3 soft switch) and any <think> blocks are stripped, so
+        the reasoning budget isn't spent inside `max_tokens`. Callers that
+        want the model to reason (and handle stripping themselves) pass
+        `allow_thinking=True`.
+        """
+        if not allow_thinking:
+            messages = list(messages) + [{"role": "system", "content": "/no_think"}]
         kwargs: Dict[str, Any] = {"messages": messages, "max_tokens": max_tokens}
         if grammar is not None:
             kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
@@ -84,8 +107,10 @@ class LLMService:
         resp = self.llm.create_chat_completion(**kwargs)
         choice = resp["choices"][0]
         if "message" in choice and "content" in choice["message"]:
-            return choice["message"]["content"].strip()
-        return choice.get("text", "").strip()
+            text = choice["message"]["content"].strip()
+        else:
+            text = choice.get("text", "").strip()
+        return text if allow_thinking else strip_thinking(text)
 
     def chat_with_tools(
         self,

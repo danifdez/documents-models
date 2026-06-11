@@ -9,6 +9,7 @@ from agent.parse import parse_decision
 from agent.prompt import render_messages
 from agent.tools.base import TOOL_REGISTRY
 from agent.types import AgentDefinition, StepOutcome, ToolContext
+from services.grammars import AGENT_DECISION_GBNF, AGENT_FINISH_GBNF
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,40 @@ def _finalize(
     return StepOutcome.FINISHED
 
 
+def _force_finish(
+    job: Dict[str, Any],
+    state: Dict[str, Any],
+    agent_def: AgentDefinition,
+    db,
+) -> StepOutcome:
+    """Step budget exhausted: make one last grammar-constrained call asking
+    the model to synthesize a final result from the transcript, instead of
+    returning a raw transcript fragment to the caller."""
+    transcript = state.get("transcript") or []
+    fallback = {"partial": transcript[-1] if transcript else {}}
+    if not agent_def.model:
+        return _finalize(job, state, db, reason="max_steps", result=fallback)
+    try:
+        messages = render_messages(agent_def, state)
+        messages.append({
+            "role": "user",
+            "content": (
+                "You have exhausted your step budget. Do not request any more "
+                "tools. Emit the finish JSON now with the best result you can "
+                "produce from the transcript so far."
+            ),
+        })
+        llm = get_llm_for_spec(agent_def.model)
+        raw = llm.chat(messages, max_tokens=600, grammar=AGENT_FINISH_GBNF, temperature=0.0)
+        decision = parse_decision(raw)
+        if decision and "finish" in decision:
+            result = decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]}
+            return _finalize(job, state, db, reason="max_steps_forced", result=result)
+    except Exception:
+        logger.exception("Forced finish failed for agent job %s", job["id"])
+    return _finalize(job, state, db, reason="max_steps", result=fallback)
+
+
 def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOutcome:
     """Execute exactly one agent step against the given Job row."""
     state: Dict[str, Any] = job.get("agent_state") or _init_state(agent_def, job.get("payload"))
@@ -60,7 +95,7 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
         state.pop("waiting_for_child", None)
 
     if iteration >= max_steps:
-        return _finalize(job, state, db, reason="max_steps", result={"partial": state.get("transcript", [])[-1] if state.get("transcript") else {}})
+        return _force_finish(job, state, agent_def, db)
 
     if not agent_def.model:
         logger.error("Agent %s has no model configured", agent_def.name)
@@ -69,7 +104,7 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
 
     messages = render_messages(agent_def, state)
     llm = get_llm_for_spec(agent_def.model)
-    raw = llm.chat(messages, max_tokens=600)
+    raw = llm.chat(messages, max_tokens=600, grammar=AGENT_DECISION_GBNF, temperature=0.0)
     decision = parse_decision(raw)
 
     if decision is None:
@@ -92,7 +127,19 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
     thought = decision.get("thought")
     spec = TOOL_REGISTRY.get(tool_name) if tool_name else None
 
-    if spec is None:
+    transcript = state.get("transcript") or []
+    last = transcript[-1] if transcript else None
+
+    if last and last.get("tool") == tool_name and last.get("args") == args:
+        # Don't burn a real tool execution on a stuck model; feed the loop
+        # back as an observation so the next step changes course.
+        observation = {
+            "error": (
+                "You repeated the exact same tool call as the previous step. "
+                "Choose a different action, change the arguments, or finish."
+            )
+        }
+    elif spec is None:
         observation = {"error": f"Unknown or unspecified tool: {tool_name}"}
     elif spec.name not in agent_def.tools:
         observation = {"error": f"Tool '{spec.name}' is not available to agent '{agent_def.name}'"}

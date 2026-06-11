@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import dateparser
 import spacy
 
+from services.grammars import DATE_RESOLUTION_GBNF
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -206,17 +207,22 @@ def _llm_fallback(
         'Do not include any other text.'
     )
     try:
-        response = llm.chat([{"role": "user", "content": prompt}], max_tokens=120)
+        response = llm.chat(
+            [{"role": "user", "content": prompt}],
+            max_tokens=120,
+            grammar=DATE_RESOLUTION_GBNF,
+            temperature=0.0,
+        )
     except Exception:
         logger.exception("LLM fallback chat failed")
         return None
 
-    match = re.search(r"\{.*\}", response, re.DOTALL)
-    if not match:
-        return None
     try:
-        parsed = json.loads(match.group(0))
+        parsed = json.loads(response)
     except json.JSONDecodeError:
+        # Grammar-constrained output should always be valid JSON; only an
+        # empty/aborted generation lands here.
+        logger.warning("date-extraction fallback returned unparseable output: %r", response[:200])
         return None
 
     if parsed.get("unresolved"):

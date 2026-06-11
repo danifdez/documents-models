@@ -176,7 +176,7 @@ def _refine_chunk(
     except (KeyError, IndexError):
         return items
     try:
-        generated = llm_service.generate(prompt, max_tokens=max_tokens)
+        generated = llm_service.generate(prompt, max_tokens=max_tokens, temperature=0.0)
     except Exception as e:
         logger.warning("Refine LLM call failed: %s", e)
         return items
@@ -246,7 +246,7 @@ def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any])
     max_tokens = int(cfg.get("max_tokens", 1000))
     try:
         prompt = prompt_template.format(target_lang=target_lang, text=safe)
-        generated = llm_service.generate(prompt, max_tokens=max_tokens)
+        generated = llm_service.generate(prompt, max_tokens=max_tokens, temperature=0.0)
     except Exception as e:
         logger.warning("key-point chunk extraction failed: %s", e)
         return []
