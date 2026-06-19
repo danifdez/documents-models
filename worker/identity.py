@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import uuid
 import threading
 import time
@@ -9,7 +10,19 @@ from services.model_config import get_worker_config
 
 logger = logging.getLogger(__name__)
 
-WORKER_ID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.worker_id')
+
+def _default_data_dir() -> str:
+    # In a PyInstaller bundle the source tree lives inside the archive, so a path
+    # relative to __file__ (…/worker/..) can't be resolved on disk. Persist next
+    # to the executable, which is writable in standalone.
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+
+
+# MODELS_DATA_DIR points at a writable location for the persisted worker id.
+_DATA_DIR = os.environ.get('MODELS_DATA_DIR') or _default_data_dir()
+WORKER_ID_FILE = os.path.join(_DATA_DIR, '.worker_id')
 
 
 def _load_or_create_worker_id() -> str:
@@ -22,6 +35,7 @@ def _load_or_create_worker_id() -> str:
             return f.read().strip()
     except FileNotFoundError:
         new_id = str(uuid.uuid4())
+        os.makedirs(os.path.dirname(WORKER_ID_FILE) or '.', exist_ok=True)
         with open(WORKER_ID_FILE, 'w') as f:
             f.write(new_id)
         return new_id

@@ -12,24 +12,49 @@ import json
 import logging
 import os
 import shutil
+import sys
 
 logger = logging.getLogger(__name__)
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..'))
+# When packaged with PyInstaller (standalone), bundled data files (common/,
+# config/, tasks/*) live under sys._MEIPASS; in a dev checkout they sit next to
+# this module's parent directory.
+_FROZEN = getattr(sys, 'frozen', False)
+if _FROZEN:
+    _PROJECT_DIR = sys._MEIPASS  # type: ignore[attr-defined]
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..'))
+
 _CONFIG_DIR = os.path.join(_PROJECT_DIR, 'config')
-
-_CONFIG_FILE = os.path.join(_CONFIG_DIR, 'config.json')
 _CONFIG_DEFAULT = os.path.join(_PROJECT_DIR, 'common', 'config.default.json')
-
-_TASKS_FILE = os.path.join(_CONFIG_DIR, 'tasks.json')
 _TASKS_DEFAULT = os.path.join(_PROJECT_DIR, 'common', 'tasks.default.json')
+
+# The active config/tasks can be redirected to writable files outside the bundle.
+# Standalone writes config there with the embedded services' dynamic ports + the
+# chosen profile's feature flags; both are deep-merged on top of the defaults.
+_CONFIG_FILE = os.environ.get('MODELS_CONFIG_PATH') or os.path.join(_CONFIG_DIR, 'config.json')
+_TASKS_FILE = os.environ.get('MODELS_TASKS_PATH') or os.path.join(_CONFIG_DIR, 'tasks.json')
 
 _config = None
 _tasks = None
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override onto a copy of base."""
+    result = dict(base)
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def _ensure_file(target: str, default: str, label: str) -> None:
+    # In a frozen bundle the data dir is read-only; never try to write there.
+    if _FROZEN:
+        return
     if not os.path.exists(target):
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.exists(default):
@@ -51,8 +76,8 @@ def _load_config() -> dict:
     if _config is not None:
         return _config
     _ensure_file(_CONFIG_FILE, _CONFIG_DEFAULT, 'config/config.json')
-    _config = _load_json(_CONFIG_FILE)
-    logger.info("Loaded config from %s", _CONFIG_FILE)
+    _config = _deep_merge(_load_json(_CONFIG_DEFAULT), _load_json(_CONFIG_FILE))
+    logger.info("Loaded config from %s (merged over defaults)", _CONFIG_FILE)
     return _config
 
 
@@ -61,8 +86,8 @@ def _load_tasks() -> dict:
     if _tasks is not None:
         return _tasks
     _ensure_file(_TASKS_FILE, _TASKS_DEFAULT, 'config/tasks.json')
-    _tasks = _load_json(_TASKS_FILE)
-    logger.info("Loaded tasks from %s", _TASKS_FILE)
+    _tasks = _deep_merge(_load_json(_TASKS_DEFAULT), _load_json(_TASKS_FILE))
+    logger.info("Loaded tasks from %s (merged over defaults)", _TASKS_FILE)
     return _tasks
 
 

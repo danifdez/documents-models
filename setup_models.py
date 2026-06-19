@@ -11,8 +11,26 @@ Outputs progress lines in the format: PROGRESS:<component>:<percent>
 import json
 import os
 import sys
+import threading
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Relative time/size weight per model, so the single "ai-models" bar climbs in
+# proportion to how long each download really takes. The GGUF LLM dwarfs the rest.
+STEP_WEIGHTS = {
+    "embeddings": 0.15,
+    "spacy": 0.05,
+    "summarization": 1.0,
+    "whisper": 0.5,
+    "llm": 5.7,
+}
+
+
+def _model_dir():
+    """Writable dir for downloaded GGUF models. In standalone the bundle dir is
+    read-only, so MODELS_MODEL_DIR points at a writable location the worker also
+    reads (via llm_defaults.model_dir)."""
+    return os.environ.get("MODELS_MODEL_DIR") or os.path.join(SCRIPT_DIR, "models")
 
 
 def load_tasks():
@@ -70,27 +88,37 @@ def setup():
     # LoRA adapters are placed manually; warn if configured but missing
     check_lora_files(tasks)
 
-    total = len(steps)
-    for i, (name, model, fn) in enumerate(steps):
-        pct = int((i / total) * 100)
-        progress(name, pct)
+    # Map each step onto a slice of the global 0-100 bar, sized by its weight, so
+    # the bar advances smoothly (and crawls through the long GGUF download)
+    # instead of jumping in equal chunks.
+    total_w = sum(STEP_WEIGHTS.get(name, 0.3) for name, _, _ in steps) or 1
+    acc = 0.0
+    for name, model, fn in steps:
+        w = STEP_WEIGHTS.get(name, 0.3)
+        start, span = acc / total_w * 100, w / total_w * 100
+
+        def report(local, _s=start, _sp=span):
+            progress("ai-models", int(_s + _sp * max(0, min(100, local)) / 100))
+
+        report(0)
         print(f"Downloading {name}: {model}", flush=True)
         try:
-            fn(model)
+            fn(model, report)
             print(f"OK {name}: {model}", flush=True)
         except Exception as e:
             print(f"WARNING: Failed to download {name} ({model}): {e}", file=sys.stderr, flush=True)
+        acc += w
 
-    progress("done", 100)
+    progress("ai-models", 100)
     print("All models downloaded.", flush=True)
 
 
-def download_embedding(model_name):
+def download_embedding(model_name, report=None):
     from sentence_transformers import SentenceTransformer
     SentenceTransformer(model_name)
 
 
-def download_spacy(model_name):
+def download_spacy(model_name, report=None):
     import spacy
     try:
         spacy.load(model_name)
@@ -100,20 +128,20 @@ def download_spacy(model_name):
         spacy.load(model_name)
 
 
-def download_seq2seq(model_name):
+def download_seq2seq(model_name, report=None):
     from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
     AutoTokenizer.from_pretrained(model_name)
     AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 
-def download_whisper(model_size):
+def download_whisper(model_size, report=None):
     from faster_whisper import WhisperModel
     WhisperModel(model_size, device="cpu", compute_type="int8")
 
 
 def check_lora_files(tasks):
     """Warn if any LLM task references a lora_model/lora_path that is not present on disk."""
-    model_dir = os.path.join(SCRIPT_DIR, "models")
+    model_dir = _model_dir()
     for task_name, task in tasks.items():
         if task.get("type") != "llm" or not task.get("enabled", False):
             continue
@@ -130,25 +158,67 @@ def check_lora_files(tasks):
             )
 
 
-def download_gguf(model_filename):
-    """Download GGUF model from HuggingFace Hub."""
+def _dir_size(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def download_gguf(model_filename, report=None):
+    """Download GGUF model from HuggingFace Hub.
+
+    This is by far the longest step (~5.7 GB), so a background thread watches the
+    download dir growing against the known file size and reports sub-progress —
+    otherwise the bar would sit frozen here for minutes.
+    """
     repo_id = "Qwen/Qwen3-8B-GGUF"
 
     try:
         from huggingface_hub import hf_hub_download
-        model_dir = os.path.join(SCRIPT_DIR, "models")
-        os.makedirs(model_dir, exist_ok=True)
-        dest = os.path.join(model_dir, model_filename)
-        if os.path.exists(dest):
-            print(f"  LLM already exists: {dest}", flush=True)
-            return
-        hf_hub_download(
-            repo_id=repo_id,
-            filename=model_filename,
-            local_dir=model_dir,
-        )
     except ImportError:
         print("  huggingface_hub not available, skipping GGUF download", file=sys.stderr, flush=True)
+        return
+
+    model_dir = _model_dir()
+    os.makedirs(model_dir, exist_ok=True)
+    dest = os.path.join(model_dir, model_filename)
+    if os.path.exists(dest):
+        print(f"  LLM already exists: {dest}", flush=True)
+        if report:
+            report(100)
+        return
+
+    total_size = None
+    try:
+        from huggingface_hub import get_hf_file_metadata, hf_hub_url
+        total_size = get_hf_file_metadata(hf_hub_url(repo_id=repo_id, filename=model_filename)).size
+    except Exception:
+        pass  # progress will stay coarse, but the download still runs
+
+    base = _dir_size(model_dir)
+    stop = threading.Event()
+
+    def _monitor():
+        while not stop.wait(1.0):
+            if report and total_size:
+                downloaded = max(0, _dir_size(model_dir) - base)
+                report(min(99, int(downloaded / total_size * 100)))
+
+    monitor = threading.Thread(target=_monitor, daemon=True)
+    if report and total_size:
+        monitor.start()
+    try:
+        hf_hub_download(repo_id=repo_id, filename=model_filename, local_dir=model_dir)
+    finally:
+        stop.set()
+        monitor.join(timeout=2)
+    if report:
+        report(100)
 
 
 if __name__ == "__main__":

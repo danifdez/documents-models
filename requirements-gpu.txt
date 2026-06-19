@@ -1,5 +1,6 @@
+# llama-cpp-python is intentionally NOT here: its PyPI (CPU) and cu126 (CUDA)
+# wheels share a version, so an --extra-index-url lets pip pick the CPU one. The
+# build installs it separately with the CUDA index as primary (see build-release).
 --extra-index-url https://download.pytorch.org/whl/cu126
---extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu126
 torch
-llama-cpp-python
 cupy-cuda12x

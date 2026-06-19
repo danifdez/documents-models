@@ -33,7 +33,7 @@ try:
     if HAS_CUDA:
         GPU_NAME = torch.cuda.get_device_name(0)
         VRAM_GB = round(
-            torch.cuda.get_device_properties(0).total_mem / (1024 ** 3), 1
+            torch.cuda.get_device_properties(0).total_memory / (1024 ** 3), 1
         )
 except ImportError:
     pass

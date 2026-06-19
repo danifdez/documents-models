@@ -51,6 +51,10 @@
     "entities": true,
     "datasets": true,
     "canvas": true,
-    "rag": true
+    "rag": true,
+    "relationships": true,
+    "assistants": true,
+    "timelines": true,
+    "images": false
   }
 }

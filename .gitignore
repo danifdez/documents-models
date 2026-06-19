@@ -4,3 +4,5 @@ models/
 .venv/
 .worker_id
 config/
+build/
+dist/
