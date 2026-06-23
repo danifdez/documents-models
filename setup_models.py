@@ -63,11 +63,17 @@ def setup():
         model = entity_task.get("model", "en_core_web_sm")
         steps.append(("spacy", model, download_spacy))
 
-    # Summarization model
+    # Summarization model — only seq2seq HF repos here; GGUF/LLM summarizers are
+    # handled by the GGUF step below (download_seq2seq would treat the .gguf
+    # filename as a repo_id and 401).
     summarize_task = tasks.get("summarize", {})
-    if summarize_task.get("enabled", False):
-        model = summarize_task.get("model", "facebook/mbart-large-50-one-to-many-mmt")
-        steps.append(("summarization", model, download_seq2seq))
+    summarize_model = summarize_task.get("model", "facebook/mbart-large-50-one-to-many-mmt")
+    if (
+        summarize_task.get("enabled", False)
+        and summarize_task.get("type") != "llm"
+        and not summarize_model.endswith(".gguf")
+    ):
+        steps.append(("summarization", summarize_model, download_seq2seq))
 
     # Whisper (transcription)
     transcribe_task = tasks.get("transcribe", {})
@@ -76,7 +82,7 @@ def setup():
         steps.append(("whisper", model, download_whisper))
 
     # LLM (GGUF) — download from HuggingFace
-    llm_tasks = ["keywords", "key-point", "ask"]
+    llm_tasks = ["keywords", "key-point", "ask", "summarize"]
     for task_name in llm_tasks:
         task = tasks.get(task_name, {})
         if task.get("enabled", False) and task.get("type") == "llm":

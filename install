@@ -310,14 +310,17 @@ if tasks.get('embedding', {}).get('enabled', False):
     SentenceTransformer(model)
     print(f'  ✓ {model}', flush=True)
 
-# Summarization model
-if tasks.get('summarize', {}).get('enabled', False):
-    model = tasks['summarize'].get('model', 'facebook/mbart-large-50-one-to-many-mmt')
-    print(f'  Downloading summarization model: {model}', flush=True)
+# Summarization model — only seq2seq HF repos here; GGUF/LLM summarizers are
+# handled by the generic GGUF loop below (transformers would treat the .gguf
+# filename as a repo_id and 401).
+summarize = tasks.get('summarize', {})
+summarize_model = summarize.get('model', 'facebook/mbart-large-50-one-to-many-mmt')
+if summarize.get('enabled', False) and summarize.get('type') != 'llm' and not summarize_model.endswith('.gguf'):
+    print(f'  Downloading summarization model: {summarize_model}', flush=True)
     from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-    AutoTokenizer.from_pretrained(model)
-    AutoModelForSeq2SeqLM.from_pretrained(model)
-    print(f'  ✓ {model}', flush=True)
+    AutoTokenizer.from_pretrained(summarize_model)
+    AutoModelForSeq2SeqLM.from_pretrained(summarize_model)
+    print(f'  ✓ {summarize_model}', flush=True)
 
 # Whisper model (transcription)
 if tasks.get('transcribe', {}).get('enabled', False):
