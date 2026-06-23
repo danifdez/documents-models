@@ -2,7 +2,13 @@ import os
 import re
 from typing import Any, Dict, Iterator, List, Optional
 
+import logging
+
 from llama_cpp import Llama, LlamaGrammar
+
+from services.model_config import get_inference_sampling
+
+logger = logging.getLogger(__name__)
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -31,6 +37,11 @@ class LLMService:
         self.lora_path = lora_path
         self.lora_scale = lora_scale
 
+        self.sampling = get_inference_sampling(model_path)
+        logger.info(
+            "LLM sampling for %s: %s", os.path.basename(model_path), self.sampling
+        )
+
         kwargs = {
             "model_path": model_path,
             "n_ctx": n_ctx,
@@ -48,7 +59,43 @@ class LLMService:
             kwargs["lora_path"] = lora_path
             kwargs["lora_scale"] = lora_scale
 
-        self.llm = Llama(**kwargs)
+        try:
+            self.llm = Llama(**kwargs)
+        except Exception as e:
+            logger.error("llama_cpp failed to load model %s: %s", model_path, e)
+            # If a GPU-backed load was attempted, retry on CPU (n_gpu_layers=0)
+            if kwargs.get("n_gpu_layers", 0) != 0:
+                logger.info("Retrying model load on CPU (n_gpu_layers=0) for %s", model_path)
+                kwargs["n_gpu_layers"] = 0
+                try:
+                    self.llm = Llama(**kwargs)
+                except Exception as e2:
+                    logger.error("CPU fallback also failed for model %s: %s", model_path, e2)
+                    raise RuntimeError(f"llama_cpp failed to load model {model_path}: {e2}") from e2
+            else:
+                raise RuntimeError(f"llama_cpp failed to load model {model_path}: {e}") from e
+
+    def _sampling_kwargs(self, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Map the resolved per-model sampling defaults to llama-cpp-python kwargs.
+
+        Config keys use `repetition_penalty`; llama-cpp-python expects `repeat_penalty`.
+        Any non-None value in `overrides` (e.g. a caller-supplied temperature) wins over
+        the model default for that parameter.
+        """
+        s = self.sampling
+        kwargs: Dict[str, Any] = {
+            "temperature": s.get("temperature"),
+            "top_p": s.get("top_p"),
+            "top_k": s.get("top_k"),
+            "min_p": s.get("min_p"),
+            "repeat_penalty": s.get("repetition_penalty"),
+        }
+        if "presence_penalty" in s:
+            kwargs["presence_penalty"] = s["presence_penalty"]
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        if overrides:
+            kwargs.update({k: v for k, v in overrides.items() if v is not None})
+        return kwargs
 
     def generate(
         self,
@@ -68,12 +115,9 @@ class LLMService:
         <think> blocks are stripped from the result.
         """
         kwargs: Dict[str, Any] = {"max_tokens": max_tokens, "echo": False}
+        kwargs.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
         if grammar is not None:
             kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        if seed is not None:
-            kwargs["seed"] = seed
         response = self.llm(prompt, **kwargs)
         text = response["choices"][0]["text"].strip()
         return text if allow_thinking else strip_thinking(text)
@@ -98,12 +142,9 @@ class LLMService:
         if not allow_thinking:
             messages = list(messages) + [{"role": "system", "content": "/no_think"}]
         kwargs: Dict[str, Any] = {"messages": messages, "max_tokens": max_tokens}
+        kwargs.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
         if grammar is not None:
             kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        if seed is not None:
-            kwargs["seed"] = seed
         resp = self.llm.create_chat_completion(**kwargs)
         choice = resp["choices"][0]
         if "message" in choice and "content" in choice["message"]:
@@ -134,6 +175,7 @@ class LLMService:
             tools=tools,
             tool_choice=tool_choice,
             max_tokens=max_tokens,
+            **self._sampling_kwargs(),
         )
         choice = resp["choices"][0]
         return choice.get("message") or {}
@@ -144,7 +186,8 @@ class LLMService:
         full reply if they need it. Each yielded value is a (possibly empty)
         string; consumers should ignore empties."""
         stream = self.llm.create_chat_completion(
-            messages=messages, max_tokens=max_tokens, stream=True
+            messages=messages, max_tokens=max_tokens, stream=True,
+            **self._sampling_kwargs(),
         )
         for chunk in stream:
             try:

@@ -105,7 +105,10 @@ def setup():
         try:
             fn(model, report)
             print(f"OK {name}: {model}", flush=True)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
+            # SystemExit too: spaCy's download fallback shells out to pip/uv and
+            # raises SystemExit on failure, which would otherwise abort the whole
+            # --setup (and the profile install) over a single optional model.
             print(f"WARNING: Failed to download {name} ({model}): {e}", file=sys.stderr, flush=True)
         acc += w
 

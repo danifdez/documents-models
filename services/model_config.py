@@ -29,6 +29,7 @@ else:
 _CONFIG_DIR = os.path.join(_PROJECT_DIR, 'config')
 _CONFIG_DEFAULT = os.path.join(_PROJECT_DIR, 'common', 'config.default.json')
 _TASKS_DEFAULT = os.path.join(_PROJECT_DIR, 'common', 'tasks.default.json')
+_INFERENCE_DEFAULTS_FILE = os.path.join(_PROJECT_DIR, 'common', 'inference_defaults.json')
 
 # The active config/tasks can be redirected to writable files outside the bundle.
 # Standalone writes config there with the embedded services' dynamic ports + the
@@ -38,6 +39,18 @@ _TASKS_FILE = os.environ.get('MODELS_TASKS_PATH') or os.path.join(_CONFIG_DIR, '
 
 _config = None
 _tasks = None
+_inference_defaults = None
+
+# Used when the model filename matches no family pattern. Conservative, low-variance
+# sampling so an unrecognised model still gets sane values instead of llama.cpp's
+# generic defaults (which are tuned for none of our models in particular).
+_INFERENCE_GLOBAL_FALLBACK = {
+    'temperature': 0.7,
+    'top_p': 0.95,
+    'top_k': 0,
+    'min_p': 0.01,
+    'repetition_penalty': 1.0,
+}
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -145,6 +158,44 @@ def get_all_task_requirements() -> dict:
     return {name: t.get('capabilities', []) for name, t in tasks.items()}
 
 
+def _load_inference_defaults() -> dict:
+    global _inference_defaults
+    if _inference_defaults is not None:
+        return _inference_defaults
+    _inference_defaults = _load_json(_INFERENCE_DEFAULTS_FILE)
+    return _inference_defaults
+
+
+def get_inference_sampling(model_name: str | None) -> dict:
+    """Resolve per-model sampling defaults by family, longest-match-first.
+
+    `model_name` may be a full path or a filename (e.g. "Qwen3-8B-Q5_K_M.gguf"); only
+    the lowercased basename is matched against the family patterns.
+
+    Returns a dict with temperature/top_p/top_k/min_p/repetition_penalty (and
+    presence_penalty when the family defines it). top_k is normalized: the configs use
+    -1 as a 'disabled' marker, which becomes 0 here (llama.cpp reads top_k <= 0 as off).
+    """
+    data = _load_inference_defaults()
+    families = data.get('families', {})
+    patterns = data.get('patterns', [])
+
+    key = os.path.basename(model_name or '').lower()
+    params = None
+    for pattern in patterns:  # patterns are pre-ordered longest-match-first
+        if pattern in key:
+            params = families.get(pattern)
+            if params:
+                break
+
+    resolved = dict(params or data.get('global_fallback') or _INFERENCE_GLOBAL_FALLBACK)
+    try:
+        resolved['top_k'] = max(0, int(resolved.get('top_k', 0)))
+    except (TypeError, ValueError):
+        resolved['top_k'] = 0
+    return resolved
+
+
 def get_llm_params(task_name: str, model_name: str | None = None) -> dict:
     """Get full LLM parameters for a task, merging task overrides with defaults.
 
@@ -184,8 +235,9 @@ def get_llm_params(task_name: str, model_name: str | None = None) -> dict:
 
 def reload_config():
     """Force reload all config from disk."""
-    global _config, _tasks
+    global _config, _tasks, _inference_defaults
     _config = None
     _tasks = None
+    _inference_defaults = None
     _load_config()
     _load_tasks()
