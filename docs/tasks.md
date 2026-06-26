@@ -24,8 +24,6 @@ These tasks work with unstructured text, documents, and natural language.
 | [ingest-content](./tasks/ingest-content.md) | Index document content into the vector database for semantic search |
 | [document-extraction](./tasks/document-extraction.md) | Extract and parse text content from uploaded files (PDF, Word, HTML, audio, etc.) |
 | [transcribe](./tasks/transcribe.md) | Transcribe speech from audio and video files using faster-whisper |
-| [image-generate](./tasks/image-generate.md) | Generate images from text prompts using local Stable Diffusion models |
-| [image-edit](./tasks/image-edit.md) | Edit existing images using img2img diffusion guided by a text prompt |
 
 ---
 

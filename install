@@ -330,16 +330,6 @@ if tasks.get('transcribe', {}).get('enabled', False):
     WhisperModel(model_size, device='cpu', compute_type='int8')
     print(f'  ✓ whisper {model_size}', flush=True)
 
-# Diffusion model (image generation)
-has_cuda = '$HAS_CUDA' == '1'
-if has_cuda and tasks.get('image-generate', {}).get('enabled', False):
-    model = tasks['image-generate'].get('model', 'stabilityai/stable-diffusion-xl-base-1.0')
-    print(f'  Downloading diffusion model: {model}', flush=True)
-    import torch
-    from diffusers import AutoPipelineForText2Image
-    AutoPipelineForText2Image.from_pretrained(model, torch_dtype=torch.float16, variant='fp16')
-    print(f'  ✓ {model}', flush=True)
-
 # LLM (GGUF) model — into <project>/models/, matching services/model_config.py
 import os
 gguf_files = set()

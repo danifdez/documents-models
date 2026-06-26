@@ -54,7 +54,6 @@
     "rag": true,
     "relationships": true,
     "assistants": true,
-    "timelines": true,
-    "images": false
+    "timelines": true
   }
 }
