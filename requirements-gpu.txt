@@ -2,5 +2,5 @@
 # wheels share a version, so an --extra-index-url lets pip pick the CPU one. The
 # build installs it separately with the CUDA index as primary (see build-release).
 --extra-index-url https://download.pytorch.org/whl/cu126
-torch
-cupy-cuda12x
+torch==2.12.1
+cupy-cuda12x==14.1.1
