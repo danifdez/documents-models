@@ -132,7 +132,7 @@ Common fields for all tasks:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `enabled` | yes | `true`/`false` — whether this task is active |
-| `type` | yes | Model type: `llm`, `sentence-transformer`, `seq2seq`, `spacy`, `translation`, `rag`, `pipeline`, `utility` |
+| `type` | yes | Model type: `llm`, `sentence-transformer`, `seq2seq`, `translation`, `rag`, `pipeline`, `utility` |
 | `capabilities` | yes | Required worker capabilities (`["llm"]`, `["embeddings"]`, `["llm", "embeddings"]`, or `[]`) |
 | `model` | no | Model name or path |
 

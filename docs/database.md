@@ -87,7 +87,7 @@ The default Qdrant collection (configurable via `QDRANT_COLLECTION` env var) sto
 
 | Property | Value |
 |----------|-------|
-| **Vector size** | 384 (BAAI/bge-small-en-v1.5 output dimension) |
+| **Vector size** | 384 (intfloat/multilingual-e5-small output dimension) |
 | **Distance metric** | Cosine similarity |
 | **Auto-creation** | Collection is created automatically if it does not exist |
 | **Payload indexes** | `project_id` (keyword), `source_id` (keyword) — created automatically for efficient filtering |

@@ -21,7 +21,7 @@ the jobs they are able to handle.
 - **Language detection** — Identifies the language of a document or text sample.
 - **Summarization** — Generates concise summaries with cross-lingual support (source and target language can differ).
 - **Translation** — Translates text between language pairs using Helsinki-NLP OPUS models.
-- **Entity extraction** — Detects people, organizations, locations and other named entities using spaCy.
+- **Entity extraction** — Detects people, organizations, locations and other named entities using the local Qwen LLM (multilingual, GBNF-constrained JSON output), extracting entities in the document's original language.
 - **Keyword extraction** — Extracts the most relevant keywords and topic phrases from a document.
 - **Key point extraction** — Produces a short list of key takeaways from long documents.
 - **Dataset statistics** — Computes descriptive statistics (mean, std, top values, etc.) for structured datasets.
@@ -49,10 +49,10 @@ the jobs they are able to handle.
 
 | Capability | Model |
 |------------|-------|
-| Embeddings | `BAAI/bge-small-en-v1.5` (384-dim, sentence-transformers) |
+| Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) — one shared service for all collections |
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
-| NER | spaCy (model configured in `tasks.json`, default: `en_core_web_sm`) |
+| NER | Local Qwen LLM (multilingual, GBNF-constrained JSON), model configured in `tasks.json` |
 | LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Qwen3-8B) |
 
 All models are downloaded automatically: most from Hugging Face on first use, and the base GGUF LLM

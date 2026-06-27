@@ -73,25 +73,6 @@ def get_gpu_layers() -> int:
     return -1 if HAS_CUDA else 0
 
 
-def get_spacy_model() -> str:
-    """Return the best available spaCy model name.
-
-    Respects the ``SPACY_MODEL`` env var when set.
-    With GPU uses the transformer model; on CPU tries lg then sm.
-    """
-    env_val = os.getenv("SPACY_MODEL")
-    if env_val is not None:
-        return env_val
-    if HAS_CUDA:
-        return "en_core_web_trf"
-    try:
-        import spacy
-        spacy.load("en_core_web_lg")
-        return "en_core_web_lg"
-    except Exception:
-        return "en_core_web_sm"
-
-
 def log_hardware_summary() -> None:
     """Print a hardware summary block to stdout and the logger."""
     lines = [
@@ -110,7 +91,6 @@ def log_hardware_summary() -> None:
         f"  Device:          {get_device()}",
         f"  LLM GPU layers:  {get_gpu_layers()}",
         f"  LLM threads:     {get_optimal_threads()}",
-        f"  spaCy model:     {get_spacy_model()}",
         "=" * 50,
     ]
     summary = "\n".join(lines)

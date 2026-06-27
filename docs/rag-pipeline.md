@@ -15,7 +15,7 @@ The Retrieval-Augmented Generation (RAG) system enables semantic search and AI-p
                    ┌────────────┼────────────┐
                    │            │            │
               Clean HTML    Chunk Text   Encode Chunks
-              (text.py)  (semantic_chunk) (BAAI model)
+              (text.py)  (semantic_chunk)  (e5 model)
                    │            │            │
                    └────────────┼────────────┘
                                 │
@@ -79,7 +79,7 @@ Default values (configurable via env vars):
 
 Each chunk is encoded using the `EmbeddingService` singleton (`services/embedding_service.py`):
 
-- **Model**: configured in `config/tasks.json` (default: `BAAI/bge-small-en-v1.5`)
+- **Model**: configured in `config/tasks.json` (default: `intfloat/multilingual-e5-small`, multilingual)
 - **Dimensions**: 384
 - **Normalization**: L2-normalized (`normalize_embeddings=True`)
 - Batch encoding for efficiency

@@ -7,9 +7,8 @@ _PARAGRAPH_TAGS = {"p", "li", "blockquote", "pre"}
 _HTML_TAG_RE = re.compile(r'<[a-zA-Z/!?]')
 
 # Defenses against pathological inputs (data URIs, base64 blobs, minified
-# payloads). Any LLM-facing or NER-facing pipeline should pre-process its
-# input through `strip_dense_blobs` so a single inline blob can't blow the
-# context window or the spaCy memory budget.
+# payloads). Any LLM-facing pipeline should pre-process its input through
+# `strip_dense_blobs` so a single inline blob can't blow the context window.
 _DATA_URI_RE = re.compile(
     r"data:[a-zA-Z0-9+./;=-]*;base64,[A-Za-z0-9+/=\s]+",
     re.MULTILINE,

@@ -20,7 +20,7 @@ Given a text string, this task returns a fixed-size vector of floating point num
 }
 ```
 
-The `results` field contains a list of floating point numbers representing the embedding vector. The vector length depends on the configured embedding model (typically 384 dimensions for `BAAI/bge-small-en-v1.5`).
+The `results` field contains a list of floating point numbers representing the embedding vector. The vector length depends on the configured embedding model (typically 384 dimensions for `intfloat/multilingual-e5-small`).
 
 ### Example
 

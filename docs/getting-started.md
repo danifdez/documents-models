@@ -8,7 +8,7 @@
 
 ### System Dependencies
 
-The following system packages are needed for compiling native extensions (llama-cpp-python, Docling, spaCy):
+The following system packages are needed for compiling native extensions (llama-cpp-python, Docling):
 
 ```bash
 build-essential cmake ninja-build python3-dev git
@@ -31,7 +31,7 @@ cd models
 chmod +x install && ./install
 ```
 
-The script creates `config/tasks.json` from defaults (prompting for database, Qdrant, and storage settings), sets up the venv, installs CPU/GPU dependencies (if CUDA is detected), and downloads spaCy models. After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
+The script creates `config/tasks.json` from defaults (prompting for database, Qdrant, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
 
 ## Running the service
 
@@ -48,8 +48,7 @@ The service uses several AI models. Most are downloaded automatically from Huggi
 
 | Model | Purpose | Downloaded By |
 |-------|---------|---------------|
-| spaCy model (see `tasks.json`) | NER | `python -m spacy download <model>` (Docker build runs this for the default model) |
-| `BAAI/bge-small-en-v1.5` | Text embeddings (384-dim) | sentence-transformers (auto on first request) |
+| `intfloat/multilingual-e5-small` | Text embeddings (384-dim, multilingual) | sentence-transformers (auto on first request) |
 | `facebook/mbart-large-50-one-to-many-mmt` | Summarization | Hugging Face transformers (auto on first request) |
 | `Helsinki-NLP/opus-mt-{src}-{tgt}` | Translation (per language pair) | Hugging Face transformers (auto on first request) |
 | GGUF LLM (see `tasks.json`, default: Qwen3-8B) | Key points, keywords, Q&A | Auto-downloaded from `Qwen/Qwen3-8B-GGUF` into `models/` by `install` / `setup_models.py` |

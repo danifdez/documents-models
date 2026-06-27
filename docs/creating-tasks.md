@@ -60,7 +60,7 @@ Add an entry under the `"tasks"` section:
 
 Fields:
 - **enabled**: `true`/`false` - whether this task is active
-- **type**: model type category (`"llm"`, `"sentence-transformer"`, `"seq2seq"`, `"spacy"`, `"utility"`, etc.)
+- **type**: model type category (`"llm"`, `"sentence-transformer"`, `"seq2seq"`, `"translation"`, `"rag"`, `"pipeline"`, `"utility"`)
 - **capabilities**: list of required worker capabilities. Use `["llm"]` if the task needs an LLM, `["embeddings"]` for embedding models, or `[]` for no special requirements
 - **model**: model name/path (for tasks that load a model)
 - Additional task-specific parameters can be added freely

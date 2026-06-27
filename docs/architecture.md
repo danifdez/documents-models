@@ -95,7 +95,7 @@ models/
 │   ├── dataset_stats/          # Dataset statistics computation
 │   ├── detect_language/        # Language detection
 │   ├── embedding/              # Text-to-vector conversion
-│   ├── entities/               # Named entity extraction (spaCy)
+│   ├── entities/               # Named entity extraction (local Qwen LLM)
 │   ├── extraction/             # Document extraction pipeline
 │   │   ├── extractor.py        # Format router
 │   │   └── processors/         # Per-format processors (PDF, DOC, HTML, TXT)

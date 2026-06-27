@@ -66,19 +66,18 @@ Translates a list of texts from a source language to a target language.
 
 **Job type:** `entity-extraction`
 **File:** `tasks/entities/entities.py`
-**Model:** spaCy model configured in `config/tasks.json` (default: `en_core_web_sm`; set to `en_core_web_trf` for transformer-based NER)
+**Model:** local Qwen LLM (GGUF) configured in `config/tasks.json`
 
-Extracts named entities (persons, organizations, locations, etc.) from text.
+Extracts named entities (persons, organizations, locations, etc.) from text using the local Qwen LLM. Output is constrained with a GBNF grammar so the model returns well-formed JSON. The extraction is multilingual — entities are returned in the document's original language, with no translation required.
 
 **Processing steps:**
 
-1. The spaCy model is loaded globally at module import (not per-request).
-2. Input texts are normalized — both strings and `{text}` dicts are accepted.
-3. Texts are processed in batches of 32 via `nlp.pipe()`.
-4. Entities are filtered:
+1. Input texts are normalized — both strings and `{text}` dicts are accepted.
+2. The Qwen LLM is prompted to list named entities, with GBNF-constrained JSON output.
+3. Entities are filtered:
    - Excluded types: CARDINAL, DATE, MONEY, ORDINAL, PERCENT, QUANTITY, TIME
    - Minimum length: 2 characters
-5. Duplicates are removed while preserving discovery order.
+4. Duplicates are removed while preserving discovery order.
 
 **Recognized entity types** (after filtering):
 

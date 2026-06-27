@@ -5,25 +5,35 @@ from services.model_config import get_task_config
 
 
 class EmbeddingService:
-    """Centralized embedding service"""
+    """Centralized, multilingual embedding service.
+
+    Single service for every collection (workspace RAG, assistant folder files
+    and personal memory): they all share the same E5 model and the same 384-dim
+    Qdrant geometry. E5 is asymmetric — passages and queries get distinct
+    prefixes (``passage:`` / ``query:``) — so symmetric callers (e.g. dedupe by
+    cosine similarity) must compare ``encode`` against ``encode``, never against
+    ``encode_query``.
+    """
 
     def __init__(self):
         task_config = get_task_config("embedding")
-        self.model_name = task_config.get("model", "BAAI/bge-small-en-v1.5")
+        self.model_name = task_config.get("model", "intfloat/multilingual-e5-small")
         self.device = get_device()
         self.model = SentenceTransformer(self.model_name, device=self.device)
 
     def encode(self, texts: List[str], normalize_embeddings: bool = True):
-        """Encode texts to embeddings"""
-        return self.model.encode(texts, normalize_embeddings=normalize_embeddings)
+        """Encode passages (documents) with the E5 passage prefix."""
+        prefixed = [f"passage: {t}" for t in texts]
+        return self.model.encode(prefixed, normalize_embeddings=normalize_embeddings)
 
     def encode_single(self, text: str, normalize_embeddings: bool = True):
-        """Encode a single text to embedding"""
-        return self.model.encode([text], normalize_embeddings=normalize_embeddings)[0]
+        """Encode a single passage."""
+        prefixed = f"passage: {text}"
+        return self.model.encode([prefixed], normalize_embeddings=normalize_embeddings)[0]
 
     def encode_query(self, text: str, normalize_embeddings: bool = True):
-        """Encode a query with BGE instruction prefix for asymmetric retrieval."""
-        prefixed = "Represent this sentence: " + text
+        """Encode a search query (E5 asymmetric prefix)."""
+        prefixed = f"query: {text}"
         return self.model.encode([prefixed], normalize_embeddings=normalize_embeddings)[0]
 
 

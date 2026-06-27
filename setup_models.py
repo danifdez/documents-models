@@ -19,7 +19,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # proportion to how long each download really takes. The GGUF LLM dwarfs the rest.
 STEP_WEIGHTS = {
     "embeddings": 0.15,
-    "spacy": 0.05,
     "summarization": 1.0,
     "whisper": 0.5,
     "llm": 5.7,
@@ -54,14 +53,8 @@ def setup():
     # Embedding model (always needed for RAG/search)
     embedding_task = tasks.get("embedding", {})
     if embedding_task.get("enabled", False):
-        model = embedding_task.get("model", "BAAI/bge-small-en-v1.5")
+        model = embedding_task.get("model", "intfloat/multilingual-e5-small")
         steps.append(("embeddings", model, download_embedding))
-
-    # spaCy NER model
-    entity_task = tasks.get("entity-extraction", {})
-    if entity_task.get("enabled", False):
-        model = entity_task.get("model", "en_core_web_sm")
-        steps.append(("spacy", model, download_spacy))
 
     # Summarization model — only seq2seq HF repos here; GGUF/LLM summarizers are
     # handled by the GGUF step below (download_seq2seq would treat the .gguf
@@ -112,9 +105,9 @@ def setup():
             fn(model, report)
             print(f"OK {name}: {model}", flush=True)
         except (Exception, SystemExit) as e:
-            # SystemExit too: spaCy's download fallback shells out to pip/uv and
-            # raises SystemExit on failure, which would otherwise abort the whole
-            # --setup (and the profile install) over a single optional model.
+            # SystemExit too: a downloader that shells out (pip/uv) can raise it
+            # on failure, which would otherwise abort the whole --setup (and the
+            # profile install) over a single optional model.
             print(f"WARNING: Failed to download {name} ({model}): {e}", file=sys.stderr, flush=True)
         acc += w
 
@@ -127,14 +120,6 @@ def download_embedding(model_name, report=None):
     SentenceTransformer(model_name)
 
 
-def download_spacy(model_name, report=None):
-    import spacy
-    try:
-        spacy.load(model_name)
-    except OSError:
-        from spacy.cli import download
-        download(model_name)
-        spacy.load(model_name)
 
 
 def download_seq2seq(model_name, report=None):

@@ -200,8 +200,7 @@ def get_llm_params(task_name: str, model_name: str | None = None) -> dict:
     """Get full LLM parameters for a task, merging task overrides with defaults.
 
     If `model_name` is provided, it overrides the task's `model` field — useful when
-    the task's primary model is not an LLM (e.g. spaCy) and an LLM fallback needs a
-    different model from the same task config.
+    a task needs a specific LLM from its config that differs from the `model` field.
     """
     defaults = get_llm_defaults()
     task = get_task_config(task_name)

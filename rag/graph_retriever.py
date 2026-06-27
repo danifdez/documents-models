@@ -9,29 +9,18 @@ logger = logging.getLogger(__name__)
 class GraphRetriever:
     """Retrieves entity relationships from Neo4j to enrich RAG context.
 
-    Uses spaCy NER on the query to identify entity names, then queries
-    Neo4j for relationships in their neighborhood.
+    Uses the shared multilingual LLM NER on the query to identify entity names,
+    then queries Neo4j for relationships in their neighborhood.
     """
 
-    def __init__(self):
-        self._nlp = None
-
-    def _get_nlp(self):
-        if self._nlp is None:
-            try:
-                import spacy
-                self._nlp = spacy.load("en_core_web_sm")
-            except Exception as e:
-                logger.warning("Could not load spaCy model for graph retrieval: %s", e)
-        return self._nlp
-
     def _extract_entity_names(self, text: str) -> list:
-        """Extract entity names from text using spaCy NER."""
-        nlp = self._get_nlp()
-        if not nlp:
+        """Extract entity names from the query via the shared LLM extractor."""
+        try:
+            from tasks.entities.entities import extract_entity_names
+            return extract_entity_names(text)
+        except Exception as e:
+            logger.warning("Could not extract entities for graph retrieval: %s", e)
             return []
-        doc = nlp(text)
-        return list({ent.text for ent in doc.ents if len(ent.text) >= 2})
 
     def run(self, ctx: RAGContext) -> RAGContext:
         if not NEO4J_ENABLED:

@@ -1,9 +1,9 @@
 """Job handlers for the assistant personal-memory collection.
 
 Separate from `tasks/ingest/ingest.py` and `tasks/indexed_file/indexed_file.py`
-because the storage scope is different (assistant memory entries, multilingual,
-in their own Qdrant collection `memory_vectors`) and the embedding model is
-different (E5 multilingual instead of BGE English).
+because the storage scope is different (assistant memory entries in their own
+Qdrant collection `memory_vectors`). The embedding model is the shared,
+multilingual `EmbeddingService` — same as every other collection.
 """
 
 import logging
@@ -11,7 +11,7 @@ import logging
 from qdrant_client.models import PointStruct
 from utils.job_registry import job_handler
 from database.rag import get_memory_rag
-from services.memory_embedding_service import get_memory_embedding_service
+from services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def ingest_memory(payload: dict) -> dict:
         return {"success": True, "memoryId": memory_id, "skipped": "empty"}
 
     text = f"{name}: {body}"
-    embedding = get_memory_embedding_service().encode_single(text)
+    embedding = get_embedding_service().encode_single(text)
     point = PointStruct(
         id=_point_id(memory_id),
         vector=embedding.tolist(),
@@ -96,7 +96,7 @@ def search_memory(payload: dict) -> dict:
     limit = int(payload.get("limit") or 8)
     limit = max(1, min(limit, 32))  # clamp
 
-    embedding = get_memory_embedding_service().encode_query(query)
+    embedding = get_embedding_service().encode_query(query)
     hits = get_memory_rag().query_points(
         query_vector=embedding.tolist(),
         limit=limit,

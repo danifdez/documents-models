@@ -276,23 +276,6 @@ else
   info "The service will run on CPU. This is fully supported but slower for ML tasks."
 fi
 
-# ── Install spaCy models ──
-SPACY_VERSION=$($PYTHON -c "import spacy; print('.'.join(spacy.__version__.split('.')[:2]))")
-SPACY_MODELS_URL="https://github.com/explosion/spacy-models/releases/download"
-
-info "Installing spaCy language models (spaCy $SPACY_VERSION)..."
-pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_sm-${SPACY_VERSION}.0/en_core_web_sm-${SPACY_VERSION}.0.tar.gz" -q
-ok "spaCy en_core_web_sm installed"
-
-if [ "$HAS_CUDA" -eq 1 ]; then
-  info "Installing spaCy transformer model (GPU)..."
-  pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_trf-${SPACY_VERSION}.0/en_core_web_trf-${SPACY_VERSION}.0.tar.gz" -q
-  ok "spaCy en_core_web_trf installed"
-else
-  info "Installing spaCy large model (CPU)..."
-  pip install --no-cache-dir "${SPACY_MODELS_URL}/en_core_web_lg-${SPACY_VERSION}.0/en_core_web_lg-${SPACY_VERSION}.0.tar.gz" -q 2>/dev/null && ok "spaCy en_core_web_lg installed" || warn "en_core_web_lg not available, using en_core_web_sm"
-fi
-
 # ── Pre-download HuggingFace models ──
 info "Pre-downloading models (this may take a while on first run)..."
 
@@ -304,7 +287,7 @@ with open('config/tasks.json') as f:
 
 # Embedding model
 if tasks.get('embedding', {}).get('enabled', False):
-    model = tasks['embedding'].get('model', 'BAAI/bge-small-en-v1.5')
+    model = tasks['embedding'].get('model', 'intfloat/multilingual-e5-small')
     print(f'  Downloading embedding model: {model}', flush=True)
     from sentence_transformers import SentenceTransformer
     SentenceTransformer(model)

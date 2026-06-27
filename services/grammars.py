@@ -21,11 +21,30 @@ ws     ::= ([ \t\n] ws)?
 # Any single JSON value (the equivalent of "just give me valid JSON").
 JSON_VALUE_GBNF = "root ::= ws value\n" + _JSON_COMMON
 
+# A JSON array of strings (e.g. verbatim date expressions / candidate spans).
+STRING_ARRAY_GBNF = (
+    r"""
+root ::= ws "[" ws ( string ( "," ws string )* )? "]" ws
+"""
+    + _JSON_COMMON
+)
+
 # relationship-extraction: array of {subject, predicate, object} triples.
 RELATIONSHIPS_GBNF = (
     r"""
 root ::= ws "[" ws ( rel ( "," ws rel )* )? "]" ws
 rel  ::= "{" ws "\"subject\"" ws ":" ws string "," ws "\"predicate\"" ws ":" ws string "," ws "\"object\"" ws ":" ws string "}" ws
+"""
+    + _JSON_COMMON
+)
+
+# entity-extraction: array of {word, entity} where entity is one of the
+# standardized NER labels the backend knows how to map.
+ENTITIES_GBNF = (
+    r"""
+root  ::= ws "[" ws ( ent ( "," ws ent )* )? "]" ws
+ent   ::= "{" ws "\"word\"" ws ":" ws string "," ws "\"entity\"" ws ":" ws label ws "}" ws
+label ::= "\"PERSON\"" | "\"ORG\"" | "\"GPE\"" | "\"LOC\"" | "\"NORP\"" | "\"EVENT\"" | "\"FAC\"" | "\"PRODUCT\"" | "\"WORK_OF_ART\"" | "\"LANGUAGE\"" | "\"LAW\""
 """
     + _JSON_COMMON
 )

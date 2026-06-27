@@ -10,13 +10,13 @@ The models service processes 13 job types, each registered via the `@job_handler
 | `detect-language` | `detect_language()` | `tasks/detect_language/detect_language.py` | langdetect |
 | `summarize` | `summarize_text()` | `tasks/summarize/summarize.py` | mBART-50 |
 | `translate` | `translate()` | `tasks/translate/translate.py` | Helsinki-NLP/OPUS |
-| `entity-extraction` | `entities()` | `tasks/entities/entities.py` | spaCy en_core_web_trf |
-| `ingest-content` | `ingest()` | `tasks/ingest/ingest.py` | BAAI/bge-small-en-v1.5 |
-| `search` | `search_snippets()` | `tasks/search/search.py` | BAAI/bge-small-en-v1.5 |
-| `ask` | `ask_question()` | `tasks/ask/ask.py` | Mistral-7B + BAAI embeddings |
+| `entity-extraction` | `entities()` | `tasks/entities/entities.py` | Local Qwen LLM (GBNF-constrained JSON) |
+| `ingest-content` | `ingest()` | `tasks/ingest/ingest.py` | intfloat/multilingual-e5-small |
+| `search` | `search_snippets()` | `tasks/search/search.py` | intfloat/multilingual-e5-small |
+| `ask` | `ask_question()` | `tasks/ask/ask.py` | Mistral-7B + multilingual-e5 embeddings |
 | `key-point` | `key_points()` | `tasks/key_points/key_points.py` | Mistral-7B (with heuristic fallback) |
 | `keywords` | `keywords()` | `tasks/keywords/keywords.py` | Mistral-7B (with heuristic fallback) |
-| `embedding` | `create_embedding()` | `tasks/embedding/embedding.py` | BAAI/bge-small-en-v1.5 |
+| `embedding` | `create_embedding()` | `tasks/embedding/embedding.py` | intfloat/multilingual-e5-small |
 
 ---
 
@@ -154,7 +154,7 @@ Translates a list of texts between language pairs.
 
 ## entity-extraction
 
-Extracts named entities from text using transformer-based NER.
+Extracts named entities from text using the local Qwen LLM.
 
 **Input:**
 
@@ -179,8 +179,8 @@ Extracts named entities from text using transformer-based NER.
 }
 ```
 
-- Uses spaCy `en_core_web_trf` (transformer-based, loaded globally).
-- Texts are processed in batches of 32 via `nlp.pipe()`.
+- Uses the local Qwen LLM (configured in `tasks.json`) with GBNF-constrained output to return well-formed JSON.
+- Multilingual: entities are extracted in the document's original language (no translation required).
 - Filters out numerical/temporal entity types: CARDINAL, DATE, MONEY, ORDINAL, PERCENT, QUANTITY, TIME.
 - Entities shorter than 2 characters are excluded.
 - Duplicates are removed while preserving order.
@@ -220,7 +220,7 @@ The `sourceType` field controls how `source_id` is built:
 
 - Cleans HTML and extracts text from block elements.
 - Splits text into semantic chunks (target: `RAG_CHUNK_TARGET_WORDS` words, max: `RAG_CHUNK_MAX_WORDS`, overlap: `RAG_CHUNK_OVERLAP_WORDS`).
-- Encodes each chunk with BAAI/bge-small-en-v1.5 (L2-normalized).
+- Encodes each chunk with intfloat/multilingual-e5-small (L2-normalized).
 - Stores embeddings in Qdrant with metadata: `text`, `source_id`, `source_type`, `project_id`, `part_number`, `total_chunks`.
 
 See [RAG Pipeline](./rag-pipeline.md) for details.
@@ -412,7 +412,7 @@ Generates a vector embedding for a single text input.
 }
 ```
 
-- Uses BAAI/bge-small-en-v1.5 (384-dimensional, L2-normalized).
+- Uses intfloat/multilingual-e5-small (384-dimensional, L2-normalized).
 - Returns the embedding as a list of floats.
 
 ---

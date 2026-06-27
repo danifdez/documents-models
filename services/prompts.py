@@ -20,6 +20,7 @@ _TASK_DIR_MAP = {
     "key-point": "key_points",
     "detect-language": "detect_language",
     "entity-extraction": "entities",
+    "date-extraction": "dates",
     "document-extraction": "extraction",
     "ingest-content": "ingest",
     "delete-vectors": "ingest",
