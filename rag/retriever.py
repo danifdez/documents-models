@@ -4,7 +4,7 @@ from rag.types import RAGContext, RetrievedChunk
 
 
 class Retriever:
-    """Vector search module. Encodes the query and retrieves similar chunks from Qdrant."""
+    """Vector search module. Encodes the query and retrieves similar chunks from pgvector."""
 
     def run(self, ctx: RAGContext) -> RAGContext:
         embedding_service = get_embedding_service()

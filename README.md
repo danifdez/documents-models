@@ -28,7 +28,7 @@ the jobs they are able to handle.
 
 ### Semantic search and RAG
 
-- **Ingestion** — Chunks document content and stores vector embeddings in Qdrant for later retrieval.
+- **Ingestion** — Chunks document content and stores vector embeddings in PostgreSQL (pgvector) for later retrieval.
 - **Semantic search** — Finds the most relevant document fragments for a given query using cosine similarity.
 - **Question answering (RAG)** — Retrieves relevant context and generates grounded answers using Mistral-7B.
 
@@ -49,7 +49,7 @@ the jobs they are able to handle.
 
 | Capability | Model |
 |------------|-------|
-| Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) — one shared service for all collections |
+| Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) — one shared service for all vector tables |
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
 | NER | Local Qwen LLM (multilingual, GBNF-constrained JSON), model configured in `tasks.json` |
@@ -65,8 +65,7 @@ of the base GGUF. Adapter files are placed manually. See [docs/configuration.md]
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL (shared with the backend)
-- Qdrant vector database (optional — can be disabled during install)
+- PostgreSQL with the `vector` (pgvector) extension (shared with the backend) — also stores embeddings; the tables are created by a backend migration
 - Docker (optional, recommended)
 
 GPU acceleration (CUDA 12.6) is supported but not required. CPU-only workers handle all tasks except

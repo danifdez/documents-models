@@ -7,11 +7,10 @@
     "password": "example",
     "jobs_table": "jobs"
   },
-  "qdrant": {
-    "enabled": true,
-    "host": "localhost",
-    "port": 6333,
-    "collection": "rag_docs"
+  "vectors": {
+    "rag_table": "rag_chunks",
+    "folder_table": "indexed_file_chunks",
+    "memory_table": "memory_vectors"
   },
   "neo4j": {
     "enabled": true,

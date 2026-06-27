@@ -7,7 +7,7 @@ langdetect
 transformers<5
 protobuf
 sentencepiece
-qdrant-client
+pgvector
 neo4j
 torch
 llama-cpp-python

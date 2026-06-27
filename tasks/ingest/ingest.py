@@ -1,8 +1,7 @@
 import uuid
 from services.text import semantic_chunk_text, clean_html_text
 from utils.job_registry import job_handler
-from qdrant_client.models import PointStruct
-from database.rag import get_rag
+from database.rag import get_rag, PointStruct
 from services.embedding_service import get_embedding_service
 
 
@@ -33,7 +32,7 @@ def ingest(payload) -> dict:
     project_id = str(payload["projectId"]) if payload.get("projectId") else None
 
     # Always delete old vectors for this source before re-ingesting
-    database.delete_by_source(source_id)
+    database.delete_by_column("source_id", source_id)
 
     clean_content = clean_html_text(payload["content"])
 
@@ -75,5 +74,5 @@ def delete_vectors(payload) -> dict:
         return {"error": "sourceId is required"}
 
     database = get_rag()
-    database.delete_by_source(source_id)
+    database.delete_by_column("source_id", source_id)
     return {"success": True}

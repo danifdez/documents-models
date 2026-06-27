@@ -2,7 +2,7 @@
 
 Configuration is split into two JSON files inside `config/`:
 
-- **`config/config.json`** — General settings (database, Qdrant, storage, LLM defaults, RAG, worker)
+- **`config/config.json`** — General settings (database, vector tables, storage, LLM defaults, RAG, worker)
 - **`config/tasks.json`** — Per-task configuration (models, capabilities, parameters, enabled/disabled)
 
 Both are auto-created from `common/config.default.json` and `common/tasks.default.json` during installation. Edit them directly to change any setting.
@@ -24,18 +24,19 @@ Per-task overrides can also be placed in `config/tasks/<task-name>/`.
 }
 ```
 
-### Qdrant
+### Vectors
+
+Embeddings are stored in PostgreSQL (pgvector) — there is no separate vector service. This block only configures the table names used by the worker; the extension and the tables are created by the backend migration `CreateVectorTables`.
 
 ```json
-"qdrant": {
-  "enabled": true,
-  "host": "localhost",
-  "port": 6333,
-  "collection": "rag_docs"
+"vectors": {
+  "rag_chunks": "rag_chunks",
+  "indexed_file_chunks": "indexed_file_chunks",
+  "memory_vectors": "memory_vectors"
 }
 ```
 
-Set `enabled` to `false` to disable all RAG/embedding features. This automatically disables tasks that require embeddings.
+To disable all RAG/embedding features set `worker.disable_embeddings` to `true` (see [Worker](#worker)); this automatically disables tasks that require embeddings.
 
 ### Storage
 
@@ -169,6 +170,6 @@ Create `config/tasks/<task-type>/config.json` with parameter overrides. These ar
 
 ## Installation
 
-Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for database, Qdrant (optional), and storage settings.
+Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for database, vector table, and storage settings.
 
 See [creating-tasks.md](creating-tasks.md) for how to add new tasks.

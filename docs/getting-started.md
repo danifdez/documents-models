@@ -31,7 +31,7 @@ cd models
 chmod +x install && ./install
 ```
 
-The script creates `config/tasks.json` from defaults (prompting for database, Qdrant, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
+The script creates `config/tasks.json` from defaults (prompting for database, vector tables, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
 
 ## Running the service
 

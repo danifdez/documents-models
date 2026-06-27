@@ -62,19 +62,13 @@ else
   ask "PostgreSQL password" "example";     PG_PASS="$REPLY"
   echo ""
 
-  # ── Qdrant ──
-  ENABLE_QDRANT=true
-  if ask_yn "Enable Qdrant/RAG?" "yes"; then
-    printf "${BOLD}  Qdrant${NC}\n"
-    ask "Qdrant host" "localhost";         QD_HOST="$REPLY"
-    ask "Qdrant port" "6333";              QD_PORT="$REPLY"
-    ask "Qdrant collection name" "rag_docs"; QD_COLL="$REPLY"
-  else
-    ENABLE_QDRANT=false
-    QD_HOST="localhost"
-    QD_PORT="6333"
-    QD_COLL="rag_docs"
-    warn "Qdrant disabled — embedding tasks will be disabled"
+  # ── Embeddings / RAG ──
+  # Vectors live in PostgreSQL (pgvector tables created by the backend
+  # migrations); there is no separate vector service to configure.
+  ENABLE_EMBEDDINGS=true
+  if ! ask_yn "Enable RAG/embeddings?" "yes"; then
+    ENABLE_EMBEDDINGS=false
+    warn "Embeddings disabled — embedding-dependent tasks will be disabled"
   fi
   echo ""
 
@@ -97,15 +91,10 @@ cfg['database']['name'] = '$PG_DB'
 cfg['database']['user'] = '$PG_USER'
 cfg['database']['password'] = '$PG_PASS'
 
-cfg['qdrant']['enabled'] = $( [ "$ENABLE_QDRANT" = true ] && echo 'True' || echo 'False' )
-cfg['qdrant']['host'] = '$QD_HOST'
-cfg['qdrant']['port'] = int('$QD_PORT')
-cfg['qdrant']['collection'] = '$QD_COLL'
-
 cfg.setdefault('storage', {})['documents_dir'] = '$STORAGE'
 
-# If Qdrant disabled, disable embeddings
-if not cfg['qdrant']['enabled']:
+# Embeddings (pgvector) gate
+if $( [ "$ENABLE_EMBEDDINGS" = true ] && echo 'False' || echo 'True' ):
     cfg['worker']['disable_embeddings'] = True
 
 with open('config/config.json', 'w') as f:
@@ -166,8 +155,8 @@ else
 
   cp common/tasks.default.json config/tasks.json
 
-  # If Qdrant disabled, disable embedding-dependent tasks
-  if [ "$ENABLE_QDRANT" = false ]; then
+  # If embeddings disabled, disable embedding-dependent tasks
+  if [ "$ENABLE_EMBEDDINGS" = false ]; then
     python3 -c "
 import json
 

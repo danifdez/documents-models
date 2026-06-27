@@ -1,24 +1,19 @@
-"""Job handlers for the assistant personal-memory collection.
+"""Job handlers for the assistant personal-memory table.
 
 Separate from `tasks/ingest/ingest.py` and `tasks/indexed_file/indexed_file.py`
 because the storage scope is different (assistant memory entries in their own
-Qdrant collection `memory_vectors`). The embedding model is the shared,
-multilingual `EmbeddingService` — same as every other collection.
+`memory_vectors` table, 1-to-1 with `assistant_memory_entries` via FK). The
+embedding model is the shared, multilingual `EmbeddingService` — same as every
+other table.
 """
 
 import logging
 
-from qdrant_client.models import PointStruct
 from utils.job_registry import job_handler
-from database.rag import get_memory_rag
+from database.rag import get_memory_rag, PointStruct
 from services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
-
-
-def _point_id(memory_id: int) -> str:
-    """Stable Qdrant point id so update re-ingests overwrite in place."""
-    return f"memory_{int(memory_id)}"
 
 
 @job_handler("memory-ingest")
@@ -31,7 +26,7 @@ def ingest_memory(payload: dict) -> dict:
 
     Payload keys:
         - memoryId (int): required.
-        - assistantId (int): required, used as filter key in Qdrant.
+        - assistantId (int): required, stored as filter key.
         - name (str): required, concatenated for the embedding.
         - type (str): 'fact' | 'event' | 'instruction'.
         - body (str): required, concatenated for the embedding.
@@ -52,8 +47,9 @@ def ingest_memory(payload: dict) -> dict:
 
     text = f"{name}: {body}"
     embedding = get_embedding_service().encode_single(text)
+    # PK is `memory_id` (taken from payload) so a re-ingest upserts in place.
     point = PointStruct(
-        id=_point_id(memory_id),
+        id=memory_id,
         vector=embedding.tolist(),
         payload={
             "memory_id": memory_id,
@@ -121,16 +117,17 @@ def search_memory(payload: dict) -> dict:
 
 @job_handler("memory-delete-vectors")
 def delete_memory_vectors(payload: dict) -> dict:
-    """Delete memory points from Qdrant.
+    """Delete memory vectors.
 
     Two modes:
-    - Single: payload has ``memoryId`` → delete the point with id
-      ``memory_<memoryId>``. Used after ``AssistantMemoryService.remove``.
-    - Bulk: payload has ``assistantId`` (and no ``memoryId``) → delete all
-      points where ``assistant_id == <assistantId>``. Used after
-      ``AssistantMemoryService.clear`` and when an assistant is deleted.
+    - Single: payload has ``memoryId`` → delete the row with that PK. Mostly
+      redundant now (the FK to ``assistant_memory_entries`` cascades on delete),
+      kept for manual/idempotent cleanup.
+    - Bulk: payload has ``assistantId`` (and no ``memoryId``) → delete all rows
+      where ``assistant_id == <assistantId>``. Used after
+      ``AssistantMemoryService.clear``.
 
-    Idempotent: deleting a point that does not exist is a no-op.
+    Idempotent: deleting a row that does not exist is a no-op.
     """
     memory_id = payload.get("memoryId")
     assistant_id = payload.get("assistantId")
@@ -140,13 +137,13 @@ def delete_memory_vectors(payload: dict) -> dict:
             mid = int(memory_id)
         except (TypeError, ValueError):
             return {"error": "invalid memoryId"}
-        rag.delete_points([_point_id(mid)])
+        rag.delete_points([mid])
         return {"success": True, "deleted": "single", "memoryId": mid}
     if assistant_id is not None:
         try:
             aid = int(assistant_id)
         except (TypeError, ValueError):
             return {"error": "invalid assistantId"}
-        rag.delete_by_assistant(str(aid))
+        rag.delete_by_column("assistant_id", aid)
         return {"success": True, "deleted": "bulk", "assistantId": aid}
     return {"error": "memoryId or assistantId required"}

@@ -22,9 +22,9 @@
                          +-----------+-------+---------+-------+---------+
                          |                             |
                 +--------v--------+          +---------v---------+
-                |  File Storage   |          |      Qdrant       |
-                | /app/documents  |          |  Vector Database  |
-                |    _storage     |          |   (Port 6333)     |
+                |  File Storage   |          |    PostgreSQL     |
+                | /app/documents  |          | vector tables     |
+                |    _storage     |          |    (pgvector)     |
                 +-----------------+          +-------------------+
 ```
 
@@ -69,12 +69,12 @@ models/
 │   ├── config.default.json      # Default general configuration
 │   └── tasks.default.json       # Default task configuration
 ├── config/                      # User configuration (created by install, .gitignored)
-│   ├── config.json              # General settings (DB, Qdrant, storage, worker, RAG, LLM)
+│   ├── config.json              # General settings (DB, vector tables, storage, worker, RAG, LLM)
 │   ├── tasks.json               # Task settings (models, capabilities, parameters)
 │   └── tasks/                   # Per-task overrides (prompt.md, config.json)
 ├── database/
 │   ├── job.py                  # PostgreSQL job queue + worker operations (Job class)
-│   └── rag.py                  # Qdrant vector database operations (Rag class)
+│   └── rag.py                  # pgvector vector storage operations (Rag class)
 ├── rag/
 │   ├── pipeline.py             # RAGPipeline orchestrator
 │   ├── retriever.py            # Vector search stage
@@ -153,7 +153,7 @@ Each task type declares the worker capabilities it requires (`worker/capabilitie
 Database connections and model instances are created once and reused:
 
 - `get_job_database()` — PostgreSQL connection (autocommit, dict rows)
-- `get_rag()` — Qdrant client (ensures collection and indexes exist on init)
+- `get_rag()` — pgvector storage accessor (reads/writes the vector tables via psycopg)
 - `get_embedding_service()` — SentenceTransformer model (loaded on first call)
 - `get_llm_service()` — LLM instance, cached per `(model_path, lora_path, lora_scale)` tuple
 

@@ -18,15 +18,12 @@ POSTGRES_USER = _db.get("user", "postgres")
 POSTGRES_PASSWORD = _db.get("password", "example")
 JOBS_TABLE = _db.get("jobs_table", "jobs")
 
-# Qdrant Configuration
-_qd = _cfg.get("qdrant", {})
-QDRANT_ENABLED = _qd.get("enabled", True)
-QDRANT_HOST = _qd.get("host", "localhost")
-QDRANT_PORT = int(_qd.get("port", 6333))
-QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
-QDRANT_COLLECTION = _qd.get("collection", "rag_docs")
-QDRANT_FOLDER_COLLECTION = _qd.get("folder_collection", "assistant_folder_files")
-QDRANT_MEMORY_COLLECTION = _qd.get("memory_collection", "memory_vectors")
+# Vector store (pgvector) — embeddings live in PostgreSQL tables created by the
+# backend migrations. One table per scope (physically isolated, as before).
+_vec = _cfg.get("vectors", {})
+RAG_TABLE = _vec.get("rag_table", "rag_chunks")
+FOLDER_TABLE = _vec.get("folder_table", "indexed_file_chunks")
+MEMORY_TABLE = _vec.get("memory_table", "memory_vectors")
 
 # Neo4j Configuration
 _n4j = _cfg.get("neo4j", {})

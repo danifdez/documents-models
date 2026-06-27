@@ -19,8 +19,8 @@ The Retrieval-Augmented Generation (RAG) system enables semantic search and AI-p
                    │            │            │
                    └────────────┼────────────┘
                                 │
-                         Store in Qdrant
-                         (vector + metadata)
+                       Store in rag_chunks
+                       (pgvector + metadata)
                                 │
          ┌──────────────────────┼──────────────────────┐
          │                                             │
@@ -28,7 +28,7 @@ The Retrieval-Augmented Generation (RAG) system enables semantic search and AI-p
          │                                             │
    [Retriever]                                  [Retriever]
    Encode query                                 Encode question
-   Qdrant cosine search                         Qdrant cosine search
+   pgvector cosine search                       pgvector cosine search
          │                                             │
    [Reranker]                                   [Reranker]
    Deduplicate + sort                           Deduplicate + sort
@@ -86,11 +86,11 @@ Each chunk is encoded using the `EmbeddingService` singleton (`services/embeddin
 
 ### Step 4: Storage
 
-Old vectors for the source are deleted before upserting (automatic re-sync). Embeddings are stored as points in the Qdrant collection:
+Old vectors for the source are deleted before upserting (automatic re-sync). Embeddings are stored as rows in the `rag_chunks` table (PostgreSQL/pgvector):
 
-- **Point ID**: Random UUID
-- **Vector**: 384-dimensional float array
-- **Payload**:
+- **Row ID**: Random UUID
+- **Vector**: 384-dimensional `vector` column
+- **Columns**:
   - `text` — The original text chunk
   - `source_id` — Source identifier (resource ID, `doc_{id}`, or `knowledge_{id}`)
   - `source_type` — `resource`, `doc`, or `knowledge`
@@ -102,7 +102,7 @@ Old vectors for the source are deleted before upserting (automatic re-sync). Emb
 
 The search pipeline is: **Retriever → Reranker**.
 
-1. **Retriever** — Encodes the query using `encode_query()`, which applies a BGE instruction prefix (`"Represent this sentence: "`) for asymmetric retrieval. Queries Qdrant with optional `project_id` filter and `score_threshold`.
+1. **Retriever** — Encodes the query using `encode_query()`, which applies a BGE instruction prefix (`"Represent this sentence: "`) for asymmetric retrieval. Queries `rag_chunks` (pgvector cosine) with optional `project_id` filter and `score_threshold`.
 2. **Reranker** — Filters empty chunks and duplicates, then sorts by cosine score descending.
 3. Returns up to `limit` results with `text`, `score`, and full `metadata`.
 
@@ -154,6 +154,5 @@ The `LLMService` class (`services/llm_service.py`) wraps llama-cpp-python:
 | `RAG_CHUNK_TARGET_WORDS` | `150` | Target chunk size (words) |
 | `RAG_CHUNK_MAX_WORDS` | `250` | Maximum words before splitting |
 | `RAG_CHUNK_OVERLAP_WORDS` | `30` | Overlap words between consecutive chunks |
-| `QDRANT_COLLECTION` | `rag_docs` | Qdrant collection name |
 
-See [Configuration](./configuration.md) for the complete environment variable reference.
+Vector table names are configured under the `vectors` block in `config/config.json` (default workspace table: `rag_chunks`). See [Configuration](./configuration.md) for the complete reference.

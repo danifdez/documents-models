@@ -189,7 +189,7 @@ Extracts named entities from text using the local Qwen LLM.
 
 ## ingest-content
 
-Ingests HTML content into the Qdrant vector database for RAG. Always deletes existing vectors for the source before upserting, keeping data in sync on re-ingestion.
+Ingests HTML content into the workspace RAG vector table (`rag_chunks` in PostgreSQL/pgvector) for RAG. Always deletes existing vectors for the source before upserting, keeping data in sync on re-ingestion.
 
 **Input:**
 
@@ -221,7 +221,7 @@ The `sourceType` field controls how `source_id` is built:
 - Cleans HTML and extracts text from block elements.
 - Splits text into semantic chunks (target: `RAG_CHUNK_TARGET_WORDS` words, max: `RAG_CHUNK_MAX_WORDS`, overlap: `RAG_CHUNK_OVERLAP_WORDS`).
 - Encodes each chunk with intfloat/multilingual-e5-small (L2-normalized).
-- Stores embeddings in Qdrant with metadata: `text`, `source_id`, `source_type`, `project_id`, `part_number`, `total_chunks`.
+- Stores embeddings in `rag_chunks` with metadata: `text`, `source_id`, `source_type`, `project_id`, `part_number`, `total_chunks`.
 
 See [RAG Pipeline](./rag-pipeline.md) for details.
 
@@ -229,7 +229,7 @@ See [RAG Pipeline](./rag-pipeline.md) for details.
 
 ## delete-vectors
 
-Deletes all Qdrant vectors belonging to a given source.
+Deletes all vectors belonging to a given source from `rag_chunks`.
 
 **Input:**
 
@@ -247,7 +247,7 @@ Deletes all Qdrant vectors belonging to a given source.
 }
 ```
 
-- Removes all points from Qdrant where `source_id` matches the given value.
+- Removes all rows from `rag_chunks` where `source_id` matches the given value.
 - Does not require any capability (any worker can handle it).
 
 ---
@@ -289,7 +289,7 @@ Performs semantic search over ingested content.
 ```
 
 - Encodes the query with the same embedding model used for ingestion.
-- Performs cosine similarity search in Qdrant.
+- Performs cosine similarity search in `rag_chunks` (pgvector).
 - Returns up to `limit` results sorted by relevance score.
 
 ---
@@ -317,7 +317,7 @@ Answers questions using RAG (Retrieval-Augmented Generation).
 }
 ```
 
-- Encodes the question and retrieves top-k relevant chunks from Qdrant (default: 5).
+- Encodes the question and retrieves top-k relevant chunks from `rag_chunks` (default: 5).
 - Deduplicates and re-ranks chunks by score.
 - Builds a context prompt with the retrieved chunks.
 - Generates an answer with the configured LLM (max `RAG_MAX_TOKENS` tokens, default: 1000).

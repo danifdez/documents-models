@@ -1,6 +1,6 @@
 # Data Storage
 
-The models service uses two databases: **PostgreSQL** for job queue and worker management, and **Qdrant** for vector storage (semantic search and RAG).
+The models service uses **PostgreSQL** for everything: the job queue and worker management, and — via the `vector` (pgvector) extension — vector storage for semantic search and RAG.
 
 ## PostgreSQL — Job Queue
 
@@ -79,25 +79,24 @@ A singleton instance is shared across the application via `get_job_database()`.
 | `update_job_result(job_id, result)` | Write the handler's result dict as JSON |
 | `get_connection()` | Return a new independent database connection |
 
-## Qdrant — Vector Database
+## Vector Storage — pgvector
 
-### Collection: `rag_docs`
+Document embeddings live in PostgreSQL via the `vector` (pgvector) extension — there is no separate vector database. All vectors are E5 multilingual embeddings (384 dimensions, cosine distance, output of intfloat/multilingual-e5-small).
 
-The default Qdrant collection (configurable via `QDRANT_COLLECTION` env var) stores document embeddings for the RAG pipeline.
+The extension and the tables below are created by a backend TypeORM migration (`CreateVectorTables`), following the migration-first schema rule. The worker only reads and writes them. There are three tables, one per domain, kept physically separate for isolation:
 
-| Property | Value |
-|----------|-------|
-| **Vector size** | 384 (intfloat/multilingual-e5-small output dimension) |
-| **Distance metric** | Cosine similarity |
-| **Auto-creation** | Collection is created automatically if it does not exist |
-| **Payload indexes** | `project_id` (keyword), `source_id` (keyword) — created automatically for efficient filtering |
+| Table | Scope | Cleanup / filtering |
+|-------|-------|---------------------|
+| `rag_chunks` | Workspace RAG (resources, docs, knowledge). No foreign key, since sources are heterogeneous. | Deleted by `source_id` |
+| `indexed_file_chunks` | Files in the assistant's working folder. FK to `indexed_files` (`ON DELETE CASCADE`). | Filtered by the `owner_tag` column |
+| `memory_vectors` | Assistant memory, 1-to-1 with `assistant_memory_entries` (FK + `CASCADE`). PK is `memory_id`. | Upserted in place per `memory_id` |
 
-### Point Payload
+### `rag_chunks` columns
 
-Each point (vector + metadata) in the collection has the following payload structure:
-
-| Field | Type | Description |
+| Column | Type | Description |
 |-------|------|-------------|
+| `id` | UUID | Random UUID generated during ingestion |
+| `vector` | `vector(384)` | The chunk embedding |
 | `text` | string | The text chunk that was embedded |
 | `source_id` | string | Identifier for the source: numeric resource ID, `doc_{id}`, or `knowledge_{id}` |
 | `source_type` | string | Type of source: `resource`, `doc`, or `knowledge` |
@@ -105,14 +104,9 @@ Each point (vector + metadata) in the collection has the following payload struc
 | `part_number` | integer | Sequential chunk number within the source document (1-based) |
 | `total_chunks` | integer | Total number of chunks for this source |
 
-Point IDs are random UUIDs generated during ingestion.
-
 ### Connection
 
-The `Rag` class (`database/rag.py`) connects to Qdrant using `qdrant-client`:
-
-- URL is constructed from `QDRANT_HOST` and `QDRANT_PORT`, or set directly via `QDRANT_URL`.
-- On initialization, the collection and its payload indexes are created if they do not exist.
+The `Rag` class (`database/rag.py`) reads and writes these tables with `psycopg` and the `pgvector` package, reusing the PostgreSQL connection. Table names come from the `vectors` block in `config/config.json`.
 
 A singleton instance is shared across the application via `get_rag()`.
 
@@ -120,9 +114,7 @@ A singleton instance is shared across the application via `get_rag()`.
 
 | Method | Description |
 |--------|-------------|
-| `upsert_points(points)` | Insert or update points in the collection |
-| `query_points(query_vector, limit, with_payload, project_id, score_threshold)` | Find similar vectors; optionally filter by project and minimum score |
-| `delete_by_source(source_id)` | Remove all points belonging to a source (used before re-ingesting) |
-| `delete_points(point_ids)` | Remove points by their IDs |
-| `get_collection_info()` | Retrieve collection metadata and statistics |
-| `recreate_collection()` | Drop and recreate the collection (use for schema migrations) |
+| `upsert_points(points)` | Insert or update vector rows |
+| `query_points(query_vector, limit, with_payload, project_id, score_threshold)` | Find similar vectors (pgvector cosine); optionally filter by project and minimum score |
+| `delete_by_source(source_id)` | Remove all rows belonging to a source (used before re-ingesting) |
+| `delete_points(point_ids)` | Remove rows by their IDs |

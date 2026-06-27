@@ -7,9 +7,9 @@ from services.model_config import get_task_config
 class EmbeddingService:
     """Centralized, multilingual embedding service.
 
-    Single service for every collection (workspace RAG, assistant folder files
+    Single service for every table (workspace RAG, assistant folder files
     and personal memory): they all share the same E5 model and the same 384-dim
-    Qdrant geometry. E5 is asymmetric — passages and queries get distinct
+    geometry. E5 is asymmetric — passages and queries get distinct
     prefixes (``passage:`` / ``query:``) — so symmetric callers (e.g. dedupe by
     cosine similarity) must compare ``encode`` against ``encode``, never against
     ``encode_query``.
