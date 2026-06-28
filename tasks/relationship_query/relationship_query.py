@@ -1,6 +1,6 @@
 import logging
 from utils.job_registry import job_handler
-from database.neo4j_db import get_neo4j
+from database.graph_db import get_graph
 
 logger = logging.getLogger(__name__)
 
@@ -14,20 +14,20 @@ def query_relationships(payload) -> dict:
     entity_names = payload.get("entity_names") or payload.get("entityNames")
     limit = payload.get("limit", 200)
 
-    neo4j = get_neo4j()
-    if not neo4j:
-        return {"entities": [], "relationships": [], "error": "Neo4j is not enabled"}
+    graph = get_graph()
+    if not graph:
+        return {"entities": [], "relationships": [], "error": "Graph is not enabled"}
 
     try:
         if query_type == "all":
-            result = neo4j.query_all(limit=limit)
+            result = graph.query_all(limit=limit)
         elif query_type == "by-resource" and resource_id:
-            result = neo4j.query_by_resource(int(resource_id), limit=limit)
+            result = graph.query_by_resource(int(resource_id), limit=limit)
         elif query_type == "by-project" and project_id:
             rid_list = [int(r) for r in resource_ids] if resource_ids else None
-            result = neo4j.query_by_project(int(project_id), resource_ids=rid_list, limit=limit)
+            result = graph.query_by_project(int(project_id), resource_ids=rid_list, limit=limit)
         elif query_type == "neighborhood" and entity_names:
-            triples = neo4j.query_neighborhood(
+            triples = graph.query_neighborhood(
                 entity_names,
                 project_id=str(project_id) if project_id else None,
             )

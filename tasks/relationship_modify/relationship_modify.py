@@ -1,6 +1,6 @@
 import logging
 from utils.job_registry import job_handler
-from database.neo4j_db import get_neo4j
+from database.graph_db import get_graph
 
 logger = logging.getLogger(__name__)
 
@@ -15,15 +15,15 @@ def modify_relationship(payload) -> dict:
     resource_id = payload.get("resource_id") or payload.get("resourceId")
     project_id = payload.get("project_id") or payload.get("projectId")
 
-    neo4j = get_neo4j()
-    if not neo4j:
-        return {"success": False, "action": action, "error": "Neo4j is not enabled"}
+    graph = get_graph()
+    if not graph:
+        return {"success": False, "action": action, "error": "Graph is not enabled"}
 
     try:
         if action == "create":
             if not all([subject_id, predicate, object_id, resource_id]):
                 return {"success": False, "action": action, "error": "Missing required fields"}
-            neo4j.create_relationship(
+            graph.create_relationship(
                 subject_id=int(subject_id),
                 predicate=predicate,
                 object_id=int(object_id),
@@ -34,7 +34,7 @@ def modify_relationship(payload) -> dict:
         elif action == "update":
             if not all([subject_id, predicate, object_id, new_predicate, resource_id]):
                 return {"success": False, "action": action, "error": "Missing required fields"}
-            neo4j.update_relationship(
+            graph.update_relationship(
                 subject_id=int(subject_id),
                 old_predicate=predicate,
                 object_id=int(object_id),
@@ -45,7 +45,7 @@ def modify_relationship(payload) -> dict:
         elif action == "delete":
             if not all([subject_id, predicate, object_id, resource_id]):
                 return {"success": False, "action": action, "error": "Missing required fields"}
-            neo4j.delete_relationship(
+            graph.delete_relationship(
                 subject_id=int(subject_id),
                 predicate=predicate,
                 object_id=int(object_id),
@@ -55,7 +55,7 @@ def modify_relationship(payload) -> dict:
         elif action == "delete-by-resource":
             if not resource_id:
                 return {"success": False, "action": action, "error": "Missing resource_id"}
-            neo4j.delete_by_resource(int(resource_id))
+            graph.delete_by_resource(int(resource_id))
 
         else:
             return {"success": False, "action": action, "error": f"Unknown action: {action}"}

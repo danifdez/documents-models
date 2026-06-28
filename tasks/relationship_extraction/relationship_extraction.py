@@ -13,7 +13,7 @@ Mirrors the state-machine used by `summarize`, `key-point`, `keywords`, and
   payload) and returns the validated raw list.
 - Once all children finish, the dispatcher re-invokes the handler with the
   persisted state; `_phase_merge` deduplicates across chunks and persists to
-  Neo4j. **Neo4j writes only happen at merge time** so a partially failed
+  the graph. **Graph writes only happen at merge time** so a partially failed
   job never leaves an inconsistent graph.
 """
 
@@ -22,7 +22,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from database.neo4j_db import get_neo4j
+from database.graph_db import get_graph
 from services.grammars import RELATIONSHIPS_GBNF
 from services.llm_service import get_llm_service
 from services.model_config import get_llm_defaults, get_llm_params, get_task_config
@@ -140,22 +140,22 @@ def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Neo4j persistence (called only from merge phase)
+# Graph persistence (called only from merge phase)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _persist_to_neo4j(
+def _persist_to_graph(
     relationships: List[Dict[str, Any]],
     entity_map: Dict[str, Dict[str, Any]],
     resource_id,
     project_id,
 ) -> Optional[str]:
-    """Write entities and relationships to Neo4j. Returns an error string on
+    """Write entities and relationships to the graph. Returns an error string on
     failure, None on success or no-op."""
     if not relationships:
         return None
-    neo4j = get_neo4j()
-    if not neo4j:
+    graph = get_graph()
+    if not graph:
         return None
     try:
         seen_entities = set()
@@ -167,7 +167,7 @@ def _persist_to_neo4j(
                 e = entity_map.get(name)
                 if not e:
                     continue
-                neo4j.upsert_entity(
+                graph.upsert_entity(
                     entity_id=e["id"],
                     name=e["name"],
                     entity_type=e.get("type", "UNKNOWN"),
@@ -180,7 +180,7 @@ def _persist_to_neo4j(
             obj = entity_map.get(rel["object"])
             if not subject or not obj:
                 continue
-            neo4j.upsert_relationship(
+            graph.upsert_relationship(
                 subject_id=subject["id"],
                 predicate=rel["predicate"],
                 object_id=obj["id"],
@@ -191,13 +191,13 @@ def _persist_to_neo4j(
             )
 
         logger.info(
-            "Stored %d relationships for resource %s in Neo4j",
+            "Stored %d relationships for resource %s in the graph",
             len(relationships), resource_id,
         )
         return None
     except Exception as e:
-        logger.error("Failed to store relationships in Neo4j: %s", e)
-        return f"Neo4j storage failed: {e}"
+        logger.error("Failed to store relationships in the graph: %s", e)
+        return f"Graph storage failed: {e}"
 
 
 def _final_result(relationships: List[Dict[str, Any]], resource_id, error: Optional[str] = None) -> Dict[str, Any]:
@@ -307,7 +307,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
     if len(chunks) == 1:
         valid = _run_chunk_llm(chunks[0], entities_str, entity_names, prompt_template, cfg)
         deduped = _deduplicate(valid)
-        err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+        err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
         return _final_result(deduped, resource_id, error=err)
 
     # No DB ctx (unit tests / fallback): run all chunks in-process.
@@ -316,7 +316,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         for c in chunks:
             all_valid.extend(_run_chunk_llm(c, entities_str, entity_names, prompt_template, cfg))
         deduped = _deduplicate(all_valid)
-        err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+        err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
         return _final_result(deduped, resource_id, error=err)
 
     # FAN-OUT: one child per chunk.
@@ -395,7 +395,7 @@ def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, A
                     all_rels.append(rel)
 
     deduped = _deduplicate(all_rels)
-    err = _persist_to_neo4j(deduped, entity_map, resource_id, project_id)
+    err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
     return _final_result(deduped, resource_id, error=err)
 
 

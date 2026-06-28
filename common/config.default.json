@@ -12,12 +12,11 @@
     "folder_table": "indexed_file_chunks",
     "memory_table": "memory_vectors"
   },
-  "neo4j": {
+  "graph": {
     "enabled": true,
-    "host": "localhost",
-    "port": 7687,
-    "user": "neo4j",
-    "password": "example123"
+    "name": "documents",
+    "neighborhood_depth": 2,
+    "neighborhood_limit": 50
   },
   "storage": {
     "documents_dir": "../documents"

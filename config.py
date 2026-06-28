@@ -25,12 +25,14 @@ RAG_TABLE = _vec.get("rag_table", "rag_chunks")
 FOLDER_TABLE = _vec.get("folder_table", "indexed_file_chunks")
 MEMORY_TABLE = _vec.get("memory_table", "memory_vectors")
 
-# Neo4j Configuration
-_n4j = _cfg.get("neo4j", {})
-NEO4J_ENABLED = _n4j.get("enabled", False)
-NEO4J_HOST = _n4j.get("host", "localhost")
-NEO4J_PORT = int(_n4j.get("port", 7687))
-NEO4J_URI = f"bolt://{NEO4J_HOST}:{NEO4J_PORT}"
-NEO4J_USER = _n4j.get("user", "neo4j")
-NEO4J_PASSWORD = _n4j.get("password", "example123")
+# Graph Configuration (Apache AGE — openCypher over the same PostgreSQL instance)
+_graph = _cfg.get("graph", {})
+GRAPH_NAME = _graph.get("name", "documents")
+# The graph is the storage layer for the "relationships" feature, so it follows
+# that feature flag. `graph.enabled` can still force it off independently.
+_relationships_on = _cfg.get("features", {}).get("relationships", True)
+GRAPH_ENABLED = _relationships_on and _graph.get("enabled", True)
+# Multi-hop neighborhood traversal used for GraphRAG.
+GRAPH_NEIGHBORHOOD_DEPTH = int(_graph.get("neighborhood_depth", 2))
+GRAPH_NEIGHBORHOOD_LIMIT = int(_graph.get("neighborhood_limit", 50))
 

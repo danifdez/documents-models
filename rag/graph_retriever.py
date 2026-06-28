@@ -1,16 +1,17 @@
 import logging
 from rag.types import RAGContext
-from database.neo4j_db import get_neo4j
-from config import NEO4J_ENABLED
+from database.graph_db import get_graph
+from config import GRAPH_ENABLED
 
 logger = logging.getLogger(__name__)
 
 
 class GraphRetriever:
-    """Retrieves entity relationships from Neo4j to enrich RAG context.
+    """Enriches RAG context with a multi-hop walk of the entity graph (GraphRAG).
 
     Uses the shared multilingual LLM NER on the query to identify entity names,
-    then queries Neo4j for relationships in their neighborhood.
+    then traverses the relationship subgraph around them (depth from config) so
+    the LLM sees chains of related facts, not just the directly-mentioned ones.
     """
 
     def _extract_entity_names(self, text: str) -> list:
@@ -23,11 +24,11 @@ class GraphRetriever:
             return []
 
     def run(self, ctx: RAGContext) -> RAGContext:
-        if not NEO4J_ENABLED:
+        if not GRAPH_ENABLED:
             return ctx
 
-        neo4j = get_neo4j()
-        if not neo4j:
+        graph = get_graph()
+        if not graph:
             return ctx
 
         try:
@@ -35,7 +36,7 @@ class GraphRetriever:
             if not entity_names:
                 return ctx
 
-            triples = neo4j.query_neighborhood(
+            triples = graph.query_neighborhood(
                 entity_names,
                 project_id=ctx.project_id,
             )
