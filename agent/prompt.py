@@ -1,22 +1,16 @@
 """Renders the chat messages sent to the LLM at each agent step."""
 
 import json
+import os
 from typing import Any, Dict, List
 
 from agent.tools.base import TOOL_REGISTRY
 from agent.types import AgentDefinition
+from services.prompts import load_prompt
 
 
-_DECISION_INSTRUCTIONS = """At every step, emit ONE JSON object and nothing else.
-Two valid shapes:
-
-  {"thought": "<short rationale>", "tool": "<tool_name>", "args": { ... }}
-
-  {"thought": "<short rationale>", "finish": { ...your final result matching the output_schema... }}
-
-Do NOT wrap the JSON in markdown fences. Do NOT add prose around it.
-Pick exactly one tool from the list of available tools, or use "finish" when done.
-"""
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+_DECISION_INSTRUCTIONS = load_prompt(_PROMPTS_DIR, "decision_instructions.md").strip()
 
 
 def _tool_catalog(agent_def: AgentDefinition) -> str:

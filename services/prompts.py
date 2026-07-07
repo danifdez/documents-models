@@ -43,24 +43,41 @@ def _task_dir_name(task_name: str) -> str:
     return _TASK_DIR_MAP.get(task_name, task_name)
 
 
-def get_prompt(name: str) -> str:
-    """Get a prompt by task name.
+def get_prompt(name: str, filename: str = 'prompt.md') -> str:
+    """Get a task prompt by task name.
 
-    Looks up config/tasks/<name>/prompt.md first (user override);
-    falls back to tasks/<task-dir>/prompt.md (default).
+    Looks up config/tasks/<name>/<filename> first (user override);
+    falls back to tasks/<task-dir>/<filename> (default). The optional
+    `filename` lets a task keep more than one prompt (e.g. a main
+    prompt.md and a refine_prompt.md), each independently overridable.
     Returns empty string if not found in either location.
     """
-    config_path = os.path.join(_CONFIG_TASKS_DIR, name, 'prompt.md')
+    config_path = os.path.join(_CONFIG_TASKS_DIR, name, filename)
     if os.path.isfile(config_path):
-        logger.debug("Loading prompt '%s' from config/tasks/", name)
+        logger.debug("Loading prompt '%s' (%s) from config/tasks/", name, filename)
         return _read_file(config_path)
 
     task_dir = _task_dir_name(name)
-    default_path = os.path.join(_TASKS_DIR, task_dir, 'prompt.md')
+    default_path = os.path.join(_TASKS_DIR, task_dir, filename)
     if os.path.isfile(default_path):
-        logger.debug("Loading prompt '%s' from tasks/%s/", name, task_dir)
+        logger.debug("Loading prompt '%s' (%s) from tasks/%s/", name, filename, task_dir)
         return _read_file(default_path)
 
     logger.warning(
-        "Prompt '%s' not found in config/tasks/ or tasks/", name)
+        "Prompt '%s' (%s) not found in config/tasks/ or tasks/", name, filename)
     return ''
+
+
+def load_prompt(base_dir: str, filename: str) -> str:
+    """Load a prompt that is NOT a user-overridable task prompt: the system
+    prompts of the agent framework, shared services and subagents. Reads
+    <base_dir>/<filename> directly, with no config/tasks override layer —
+    those internal behaviours aren't meant to be re-tuned per workspace the
+    way content tasks are. Returns empty string if the file is missing.
+    """
+    path = os.path.join(base_dir, filename)
+    try:
+        return _read_file(path)
+    except OSError:
+        logger.warning("Prompt file not found: %s", path)
+        return ''

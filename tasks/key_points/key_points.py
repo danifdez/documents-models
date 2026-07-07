@@ -17,7 +17,6 @@ Defends against pathological inputs (data URIs, base64 blobs) the same way as
 """
 
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -100,15 +99,6 @@ def _candidates_from_generated(generated: str) -> List[str]:
     if not candidates:
         candidates = [clean_sentence(s) for s in re.split(r'(?<=[.!?])\s+', generated) if s.strip()]
     return candidates
-
-
-def _read_local_prompt(filename: str) -> str:
-    path = os.path.join(os.path.dirname(__file__), filename)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except OSError:
-        return ""
 
 
 def _embed(texts: List[str]):
@@ -290,7 +280,7 @@ def _merge_pipeline(
         except Exception:
             llm_service = None
         if llm_service is not None:
-            refine_template = _read_local_prompt("refine_prompt.md")
+            refine_template = get_prompt("key-point", "refine_prompt.md")
             if refine_template:
                 refine_max_tokens = int(cfg.get("refine_max_tokens", cfg.get("max_tokens", 1000)))
                 refine_chunk_size = int(cfg.get("refine_chunk_size", 30))

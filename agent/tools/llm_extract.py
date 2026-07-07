@@ -1,11 +1,16 @@
 """LLM extraction tool. Optionally switches model/LoRA per call."""
 
+import os
 from typing import Any, Dict, Optional
 
 from agent.llm import get_llm_for_spec
 from agent.tools.base import tool
 from agent.types import ModelSpec, ToolContext
 from services.llm_json import chat_json
+from services.prompts import load_prompt
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+_DEFAULT_EXTRACT_SYSTEM = load_prompt(_PROMPTS_DIR, "llm_extract_system.md").strip()
 
 
 def _resolve_model(args: Dict[str, Any], ctx: ToolContext) -> ModelSpec:
@@ -43,10 +48,7 @@ def llm_extract(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     if not prompt or not schema_hint:
         return {"error": "Both 'prompt' and 'schema_hint' are required"}
 
-    system = args.get("system") or (
-        "You are a JSON-only extractor. Respond with ONE JSON value matching the "
-        "requested schema. No prose, no markdown fences."
-    )
+    system = args.get("system") or _DEFAULT_EXTRACT_SYSTEM
     max_tokens = int(args.get("max_tokens", 600))
 
     spec = _resolve_model(args, ctx)

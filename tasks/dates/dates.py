@@ -33,6 +33,7 @@ import dateparser
 import spacy
 
 from services.grammars import DATE_RESOLUTION_GBNF
+from services.prompts import get_prompt
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -195,16 +196,11 @@ def _llm_fallback(
         return None
 
     anchor_str = anchor_date or "UNKNOWN"
-    prompt = (
-        f'Anchor date: {anchor_str}. Text language: {language or "unknown"}.\n'
-        f'Expression: "{expression}"\n'
-        f'Context: "{context}"\n'
-        'Respond ONLY with JSON. If the expression refers to a resolvable date or range, respond with '
-        '{"date":"YYYY-MM-DD","endDate":"YYYY-MM-DD" or null,"precision":"day" or "month" or "year"}. '
-        'If it is a relative expression (like "yesterday") and the anchor is UNKNOWN, respond with '
-        '{"unresolved":true,"reason":"missing_anchor"}. '
-        'If it cannot be resolved, respond with {"unresolved":true,"reason":"ambiguous"}. '
-        'Do not include any other text.'
+    prompt = get_prompt("date-extraction", "resolve_prompt.md").format(
+        anchor_str=anchor_str,
+        language=language or "unknown",
+        expression=expression,
+        context=context,
     )
     try:
         response = llm.chat(

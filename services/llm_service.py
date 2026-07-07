@@ -127,6 +127,7 @@ class LLMService:
         messages: list,
         max_tokens: int = 1000,
         grammar: Optional[str] = None,
+        response_format: Optional[dict] = None,
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         allow_thinking: bool = False,
@@ -138,6 +139,13 @@ class LLMService:
         the reasoning budget isn't spent inside `max_tokens`. Callers that
         want the model to reason (and handle stripping themselves) pass
         `allow_thinking=True`.
+
+        `response_format` follows the OpenAI convention
+        ({"type": "json_object", "schema": {...}}): llama-cpp compiles the
+        schema to a grammar internally, so decoding is token-constrained and
+        the output is guaranteed to be a conforming JSON object. Note that
+        the schema is NOT shown to the model — callers must describe the
+        expected output in the prompt themselves.
         """
         if not allow_thinking:
             messages = list(messages) + [{"role": "system", "content": "/no_think"}]
@@ -145,6 +153,8 @@ class LLMService:
         kwargs.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
         if grammar is not None:
             kwargs["grammar"] = LlamaGrammar.from_string(grammar, verbose=False)
+        if response_format is not None:
+            kwargs["response_format"] = response_format
         resp = self.llm.create_chat_completion(**kwargs)
         choice = resp["choices"][0]
         if "message" in choice and "content" in choice["message"]:

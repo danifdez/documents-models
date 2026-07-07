@@ -25,6 +25,7 @@ without one, so the proposal is useless without it.
 """
 
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -32,7 +33,11 @@ from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
 from services.llm_json import parse_json
 from services.model_config import get_llm_defaults, get_task_config
+from services.prompts import load_prompt
 from utils.job_registry import job_handler
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+_PROPOSE_PROMPT = load_prompt(_PROMPTS_DIR, "propose_columns.md")
 
 logger = logging.getLogger(__name__)
 
@@ -59,27 +64,7 @@ def _build_prompt(resources: List[Dict[str, Any]]) -> str:
         excerpts.append(f"--- Document: {title} ---\n{excerpt}")
     joined = "\n\n".join(excerpts)
 
-    return (
-        "You are designing a structured data extraction schema for a researcher. "
-        "Given the following document excerpts (representative papers from the "
-        "researcher's project), propose a list of columns that would be useful "
-        "to extract from each document for cross-document comparison.\n\n"
-        "Rules:\n"
-        "- Each column MUST have:\n"
-        "  - \"key\": snake_case identifier (lowercase letters, digits, underscores).\n"
-        "  - \"name\": short human-readable label (max 30 chars).\n"
-        "  - \"type\": one of \"text\" | \"number\" | \"boolean\" | \"date\" | \"select\".\n"
-        "  - \"description\": ONE full sentence in natural language explaining exactly "
-        "what to extract. This string is fed verbatim to a downstream extractor; be specific.\n"
-        "  - If \"type\" is \"select\", include \"options\" (array of strings, plausible values).\n"
-        "- Propose between 4 and 8 columns. Quality over quantity.\n"
-        "- Favour columns that distinguish documents from each other; skip columns "
-        "where all excerpts would give the same value.\n"
-        "- Include at least one identifier column (title, first author, year, or similar).\n\n"
-        f"Excerpts:\n{joined}\n\n"
-        "Return ONLY a JSON array of column objects matching the rules above. "
-        "No prose, no markdown fences."
-    )
+    return _PROPOSE_PROMPT.format(joined=joined)
 
 
 def _snake_case(value: str) -> str:

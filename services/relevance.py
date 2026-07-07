@@ -19,13 +19,19 @@ must never return an empty list when given a non-empty input.
 
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
 from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
+from services.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompt_templates")
+_RELEVANCE_SYSTEM_PROMPT = load_prompt(_PROMPTS_DIR, "relevance_system.md").strip()
+_RELEVANCE_FILTER_PROMPT = load_prompt(_PROMPTS_DIR, "relevance_filter.md")
 
 
 # Headings that are almost always auxiliary content, regardless of document type.
@@ -166,32 +172,11 @@ def select_relevant_units(
         listing = "\n".join(
             f"[{i}] {_preview_for_judgement(units[i])}" for i in batch
         )
-        instruction = (
-            f"You are filtering sections of a document for a {task_label} task. "
-            "Keep only sections that contain the document's substantive main "
-            "content. Discard sections that are auxiliary, such as: appendices, "
-            "annexes, bibliographies, references, citations, footnotes, "
-            "acknowledgements, author biographies, glossaries, indexes, "
-            "nomenclature, copyright/license/disclaimer boilerplate, "
-            "table-of-contents listings, publication metadata, errata, and "
-            "tables of raw auxiliary data that do not contribute to the main "
-            "argument.\n\n"
-            "Sections (each line is one section, prefixed by its index):\n"
-            f"{listing}\n\n"
-            'Respond with a single JSON object of the form {"keep": [indices]} '
-            "listing the indices of sections to retain. Output JSON only — no "
-            "prose, no markdown fences."
-        )
+        instruction = _RELEVANCE_FILTER_PROMPT.format(task_label=task_label, listing=listing)
         try:
             raw = llm.chat(
                 [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a careful document curator. You reply with a "
-                            "single JSON object and nothing else."
-                        ),
-                    },
+                    {"role": "system", "content": _RELEVANCE_SYSTEM_PROMPT},
                     {"role": "user", "content": instruction},
                 ],
                 max_tokens=max_tokens,
