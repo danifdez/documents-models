@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from .base import Tool, ToolContext, register
+from agents.tool_base import Tool, ToolContext, register
 from common.chat.http import http_json
 
 
@@ -63,5 +63,4 @@ register(Tool(
     },
     execute=_execute,
     summarize=_summarize,
-    hidden_from_main=True,
 ))

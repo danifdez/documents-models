@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from .base import Tool, ToolContext, register
+from agents.tool_base import Tool, ToolContext, register
 from common.chat.http import post_tool_event
 from common.chat.folder import resolve_folder_target
 
@@ -69,6 +69,4 @@ register(Tool(
         },
     },
     execute=_execute,
-    agent_allowed=True,
-    folder_scoped=True,
 ))

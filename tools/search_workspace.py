@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 import urllib.error
 import urllib.request
 
-from .base import Tool, ToolContext, register
+from agents.tool_base import Tool, ToolContext, register
 from common.chat.http import BACKEND_URL
 
 logger = logging.getLogger(__name__)
@@ -128,5 +128,4 @@ register(Tool(
     },
     execute=_execute,
     summarize=_summarize,
-    hidden_from_main=True,
 ))

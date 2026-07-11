@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from .base import Tool, ToolContext, register
+from agents.tool_base import Tool, ToolContext, register
 from common.chat.http import http_json_with_status
 from common.chat.user_tasks import resolve_user_task
 

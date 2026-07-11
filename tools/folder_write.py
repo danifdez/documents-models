@@ -3,9 +3,9 @@
 import base64
 from typing import Any, Dict
 
-from .base import Tool, ToolContext, register
+from agents.tool_base import Tool, ToolContext, register
 from common.chat.http import http_json_with_status, post_tool_event
-from ..file_writers import (
+from .file_writers import (
     ConversionError,
     UnsupportedExtension,
     normalize_and_categorize,
@@ -208,6 +208,4 @@ register(Tool(
     },
     execute=_execute,
     summarize=_summarize,
-    agent_allowed=True,
-    folder_scoped=True,
 ))
