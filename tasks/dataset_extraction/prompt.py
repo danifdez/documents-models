@@ -7,7 +7,7 @@ manually whenever the prompt body (prompts/extract_row.md) changes.
 import os
 from typing import List, Optional
 
-from services.prompts import load_prompt
+from lib.llm.prompts import load_prompt
 
 
 PROMPT_VERSION = "v1-2026-05"

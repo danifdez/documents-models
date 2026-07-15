@@ -2,7 +2,7 @@ import logging
 from utils.job_registry import job_handler
 from rag.pipeline import create_ask_pipeline
 from rag.types import RAGContext
-from services.model_config import get_rag_config, get_task_config
+from lib.llm.config import get_rag_config, get_task_config
 
 logger = logging.getLogger(__name__)
 

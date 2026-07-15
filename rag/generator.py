@@ -1,5 +1,5 @@
 from services.llm_service import get_llm_service
-from services.model_config import get_llm_params
+from lib.llm.config import get_llm_params
 from rag.types import RAGContext
 
 

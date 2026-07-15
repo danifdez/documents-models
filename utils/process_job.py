@@ -377,7 +377,7 @@ def _maybe_resume_parent(job: Dict[str, Any], db, error: str | None = None) -> N
     # sibling completions can't lose each other's results.
     waiting = state.get("waiting_for_children") or {}
     if str(job["id"]) in waiting:
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         cfg = get_task_config(parent.get("type") or "")
         max_retries = int(cfg.get("chunk_max_retries", 0))
         if error is not None:

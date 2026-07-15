@@ -274,7 +274,7 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
     Works well for both small and large texts.
     """
     if target_words is None or max_words is None or overlap_words is None:
-        from services.model_config import get_rag_config
+        from lib.llm.config import get_rag_config
         rag = get_rag_config()
         if target_words is None:
             target_words = rag.get("chunk_target_words", 150)

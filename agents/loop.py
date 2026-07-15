@@ -1,26 +1,25 @@
-"""Agent abstraction: an LLM tool-calling loop with a declared tool set.
+"""The agent engine: the single tool-round loop shared by every agent.
 
-An `AgentSpec` describes an agent — its prompt, the tools it may use (by name,
-resolved against the shared `core/tools` repository), how many tool rounds it
-gets, and how it finishes (a free-text reply, or a structured object matching an
-output schema). The personal assistant and every subagent are instances of the
-same abstraction; the only difference is the fields they set.
+`run_agent_loop` is pure mechanism. It receives the resolved tool schemas and a
+`dispatch` callable, so it knows nothing about which tools are leaves and which
+are nested agents. It reads an `AgentSpec` (the abstraction, from
+`lib.framework.agent`) to know how the agent finishes, and leans on the shared
+tool repository (`core/tools`) only to summarise tool results for the UI card.
 
-`run_agent_loop` is the single tool-round loop, shared by all agents. It is pure
-mechanism: it receives the resolved tool schemas and a `dispatch` callable, so it
-knows nothing about which tools are leaves and which are nested agents.
+The harness patches `extract_inline_tool_calls` in this module to count how many
+`<tool_call>` blocks the model emitted vs how many parsed.
 """
 
 import json
 import logging
 import re
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from services.model_config import get_llm_params, get_task_config
+from lib.framework.agent import AgentSpec
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.text import strip_thinking as _strip_thinking
+from lib.backend.http import post_tool_event
 from services.llm_service import get_llm_service
-from common.chat.http import post_tool_event
-from common.chat.text_utils import strip_thinking as _strip_thinking
 from tools import REGISTRY, summarize_leaf
 
 logger = logging.getLogger(__name__)
@@ -28,38 +27,6 @@ logger = logging.getLogger(__name__)
 # dispatch: (name, args_json, ctx) -> result dict. Resolves a tool call to a
 # leaf executor or a nested agent run. Injected so this module stays agnostic.
 DispatchFn = Callable[[str, str, Any], Dict[str, Any]]
-
-
-@dataclass(frozen=True)
-class AgentSpec:
-    """An agent: prompt + declared tools + turn budget + how it finishes.
-
-    - `tool_names`: the tools this agent may call, by name. Leaves live in
-      `core/tools`; a name that resolves to another agent makes that agent
-      callable-as-a-tool from here.
-    - `output_schema`: None → the agent ends with a free-text reply (the caller
-      decides what to do with the conversation). A dict → the agent must end
-      with a JSON object of that shape; `run_agent_loop` returns it.
-    - `emits_tool_events`: push live tool cards to the UI (the user-facing
-      assistant does; subagents don't).
-    - `tool_schema`: how this agent is offered to a PARENT agent that lists it in
-      its own `tool_names`. None for a top-level agent that nobody invokes.
-    - `input_field`: when invoked as a tool, the JSON property holding its input.
-    - `requires_folder`: this agent is useless without a working folder, so a
-      parent hides it from its catalog when the turn carries no `folderScope`
-      (offering it anyway just degrades tool selection).
-    """
-    name: str
-    config_key: str
-    system_prompt: str
-    tool_names: frozenset
-    max_rounds: int = 3
-    output_schema: Optional[Dict[str, Any]] = None
-    emits_tool_events: bool = False
-    tool_schema: Optional[Dict[str, Any]] = None
-    input_field: str = "query"
-    fallback_max_tokens: int = 600
-    requires_folder: bool = False
 
 
 # ── Inline tool-call parsing (Qwen3 emits <tool_call>…</tool_call> in content) ─

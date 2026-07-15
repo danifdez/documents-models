@@ -49,6 +49,16 @@
     "max_tokens": 1000,
     "history_turns": 16
   },
+  "agent-chat": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 8192,
+    "n_gpu_layers": -1,
+    "max_tokens": 1000,
+    "history_turns": 16
+  },
   "workspace-research-agent": {
     "enabled": true,
     "type": "llm",

@@ -33,7 +33,7 @@ from typing import Optional
 # Allow running as `python live_worker.py` from the models dir.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from services.model_config import get_config, get_task_config  # noqa: E402
+from lib.llm.config import get_config, get_task_config  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from common.chat.text_utils import strip_thinking
-from services.prompts import load_prompt
+from lib.llm.text import strip_thinking
+from lib.llm.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 

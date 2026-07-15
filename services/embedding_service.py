@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer
 from typing import List
 from utils.device import get_device
-from services.model_config import get_task_config
+from lib.llm.config import get_task_config
 
 
 class EmbeddingService:

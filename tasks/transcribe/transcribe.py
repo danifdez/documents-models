@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 from utils.job_registry import job_handler
-from services.model_config import get_task_config
+from lib.llm.config import get_task_config
 
 logger = logging.getLogger(__name__)
 

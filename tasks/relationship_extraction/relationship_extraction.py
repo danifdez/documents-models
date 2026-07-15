@@ -23,10 +23,10 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from database.graph_db import get_graph
-from services.grammars import RELATIONSHIPS_GBNF
+from lib.llm.grammars import RELATIONSHIPS_GBNF
 from services.llm_service import get_llm_service
-from services.model_config import get_llm_defaults, get_llm_params, get_task_config
-from services.prompts import get_prompt
+from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
+from lib.llm.prompts import get_prompt
 from services.relevance import select_relevant_units
 from services.text import (
     extract_section_units,

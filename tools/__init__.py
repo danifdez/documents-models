@@ -12,7 +12,7 @@ Import order below is the order an agent sees tools in (when it lists them all)
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from agents.tool_base import REGISTRY, Tool, ToolContext, register  # noqa: F401
+from lib.framework.tool import REGISTRY, Tool, ToolContext, register  # noqa: F401
 
 # Leaf tools, in catalog order.
 from . import search_workspace  # noqa: F401,E402

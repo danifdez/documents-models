@@ -35,8 +35,8 @@ from typing import Any, Dict, List, Optional
 
 from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
-from services.llm_json import parse_json
-from services.model_config import get_llm_defaults, get_task_config
+from lib.llm.json import parse_json
+from lib.llm.config import get_llm_defaults, get_task_config
 from utils.job_registry import job_handler
 
 from .grammar import build_grammar

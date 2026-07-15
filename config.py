@@ -5,7 +5,7 @@ All configuration is loaded from config/config.json (see services/model_config.p
 This module re-exports infrastructure constants for backward compatibility.
 """
 
-from services.model_config import get_config
+from lib.llm.config import get_config
 
 _cfg = get_config()
 

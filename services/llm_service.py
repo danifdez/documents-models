@@ -1,16 +1,40 @@
+import ctypes
 import os
 import re
 from typing import Any, Dict, Iterator, List, Optional
 
 import logging
 
+import llama_cpp
 from llama_cpp import Llama, LlamaGrammar
 
-from services.model_config import get_inference_sampling
+from lib.llm.config import get_inference_sampling
 
 logger = logging.getLogger(__name__)
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+# `verbose=False` no silencia los avisos que llama.cpp emite por su propio log
+# callback nativo (p. ej. "n_ctx_seq (8192) < n_ctx_train ..."). Registramos un
+# callback que descarta todo lo que esté por debajo de ERROR (nivel ggml >= 4),
+# preservando los errores reales. Guardamos la referencia para que ctypes no lo
+# recolecte, y lo instalamos una sola vez.
+_GGML_LOG_LEVEL_ERROR = 4
+_log_cb = None
+
+
+def _silence_llama_below_error():
+    global _log_cb
+    if _log_cb is not None:
+        return
+
+    @llama_cpp.llama_log_callback
+    def _cb(level, text, user_data):  # noqa: ARG001
+        if level >= _GGML_LOG_LEVEL_ERROR:
+            print(text.decode("utf-8", "replace"), end="", flush=True)
+
+    _log_cb = _cb
+    llama_cpp.llama_log_set(_log_cb, ctypes.c_void_p(0))
 
 
 def strip_thinking(text: str) -> str:
@@ -59,6 +83,7 @@ class LLMService:
             kwargs["lora_path"] = lora_path
             kwargs["lora_scale"] = lora_scale
 
+        _silence_llama_below_error()
         try:
             self.llm = Llama(**kwargs)
         except Exception as e:

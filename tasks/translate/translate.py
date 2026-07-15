@@ -10,7 +10,7 @@ _translation_pipelines: Dict[str, Any] = {}
 def _get_translation_pipeline(source: str, target: str):
     key = f"{source}-{target}"
     if key not in _translation_pipelines:
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         prefix = get_task_config("translate").get("model_prefix", "Helsinki-NLP/opus-mt")
         model_name = f"{prefix}-{source}-{target}"
         device = get_device()
@@ -77,7 +77,7 @@ def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         translation = _get_translation_pipeline(source, target)
 
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         task_config = get_task_config("translate")
         batch_size = task_config.get("chunk_size", 32)
         max_words_per_piece = task_config.get("max_words_per_item", 400)

@@ -24,7 +24,9 @@ if _FROZEN:
     _PROJECT_DIR = sys._MEIPASS  # type: ignore[attr-defined]
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    _PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..'))
+    # This module lives at core/lib/llm/; the project root (holding config/,
+    # common/, tasks/, models/) is two levels up.
+    _PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..', '..'))
 
 _CONFIG_DIR = os.path.join(_PROJECT_DIR, 'config')
 _CONFIG_DEFAULT = os.path.join(_PROJECT_DIR, 'common', 'config.default.json')

@@ -18,8 +18,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
-from services.model_config import get_llm_defaults, get_task_config
-from services.prompts import get_prompt
+from lib.llm.config import get_llm_defaults, get_task_config
+from lib.llm.prompts import get_prompt
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,

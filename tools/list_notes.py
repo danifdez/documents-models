@@ -2,8 +2,8 @@
 
 from typing import Any, Dict
 
-from agents.tool_base import Tool, ToolContext, register
-from common.chat.http import http_json
+from lib.framework.tool import Tool, ToolContext, register
+from lib.backend.http import http_json
 
 
 def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:

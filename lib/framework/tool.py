@@ -1,10 +1,10 @@
 """Tool abstraction — the framework the leaf tools are instances of.
 
 Defines `Tool`, `ToolContext`, `register` and the `REGISTRY`. It lives in
-`core/agents` (with the agent abstraction) rather than in `core/tools` because
-it is framework, not a capability. It is deliberately a pure module (no imports
-beyond the stdlib) so `core/tools` can import it without dragging in the agent
-wiring — see this package's `__init__` for how the cycle is avoided.
+`lib.framework` (next to `AgentSpec`) because it is framework, not a capability.
+It is deliberately a pure module (no imports beyond the stdlib): `core/tools`
+and `core/agents` both depend on it, and it depends on neither, so the import
+graph is acyclic — no lazy-import tricks needed.
 
 Each leaf tool in `core/tools` self-registers a `Tool` on import;
 `tools/__init__.py` imports every tool module to populate the registry, then

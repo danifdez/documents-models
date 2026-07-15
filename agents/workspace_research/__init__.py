@@ -7,9 +7,8 @@ or file bodies, only the summary. That is the parent's context compression.
 
 import os
 
-from services.prompts import load_prompt
-
-from .base import AgentSpec
+from lib.llm.prompts import load_prompt
+from lib.framework.agent import AgentSpec
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
@@ -95,7 +94,7 @@ TOOL_SCHEMA = {
     },
 }
 
-WORKSPACE_RESEARCH = AgentSpec(
+workspace_research = AgentSpec(
     name="workspace_research",
     config_key="workspace-research-agent",
     system_prompt=load_prompt(_PROMPTS_DIR, "workspace_research.md").strip(),

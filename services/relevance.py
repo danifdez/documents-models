@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
-from services.prompts import load_prompt
+from lib.llm.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -8,8 +8,8 @@ from typing import Any, Dict, List
 import urllib.error
 import urllib.request
 
-from agents.tool_base import Tool, ToolContext, register
-from common.chat.http import BACKEND_URL
+from lib.framework.tool import Tool, ToolContext, register
+from lib.backend.http import BACKEND_URL
 
 logger = logging.getLogger(__name__)
 

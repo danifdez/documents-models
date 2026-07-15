@@ -18,7 +18,7 @@ def _get_nlp():
     if nlp is None:
         if HAS_CUDA:
             spacy.prefer_gpu()
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         task_config = get_task_config("entity-extraction")
         model_name = task_config.get("model") or get_spacy_model()
         nlp = spacy.load(model_name)
@@ -55,7 +55,7 @@ def entities(payload: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 text_strings.append(strip_dense_blobs(str(item)))
 
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         task_config = get_task_config("entity-extraction")
 
         ignored_entity_types = set(task_config.get("ignored_entity_types", [

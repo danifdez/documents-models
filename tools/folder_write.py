@@ -3,8 +3,8 @@
 import base64
 from typing import Any, Dict
 
-from agents.tool_base import Tool, ToolContext, register
-from common.chat.http import http_json_with_status, post_tool_event
+from lib.framework.tool import Tool, ToolContext, register
+from lib.backend.http import http_json_with_status, post_tool_event
 from .file_writers import (
     ConversionError,
     UnsupportedExtension,

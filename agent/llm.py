@@ -5,7 +5,7 @@ from typing import Optional
 
 from agent.types import ModelSpec
 from services.llm_service import get_llm_service
-from services.model_config import _PROJECT_DIR, get_llm_defaults  # type: ignore
+from lib.llm.config import _PROJECT_DIR, get_llm_defaults  # type: ignore
 
 
 def _resolve_model_path(name_or_path: str) -> str:

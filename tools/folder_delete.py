@@ -2,9 +2,9 @@
 
 from typing import Any, Dict
 
-from agents.tool_base import Tool, ToolContext, register
-from common.chat.http import post_tool_event
-from common.chat.folder import resolve_folder_target
+from lib.framework.tool import Tool, ToolContext, register
+from lib.backend.http import post_tool_event
+from lib.backend.folder import resolve_folder_target
 
 
 def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:

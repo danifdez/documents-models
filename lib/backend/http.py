@@ -68,6 +68,38 @@ def http_json_with_status(
         return 0, None
 
 
+def post_stream_chunk(
+    owner_segment: str,
+    owner_id: int,
+    job_id: int,
+    chunk: str,
+    done: bool = False,
+) -> None:
+    """Best-effort POST of a partial reply chunk to /:segment/:id/stream-chunk.
+    Failures are logged but never raised — streaming is purely a UX nicety; the
+    final reply still arrives through the normal job-result path.
+
+    When `done=True`, signals that the model has finished generating even if the
+    job hasn't fully completed (memory extraction may still run). The UI uses it
+    to stop the live caret immediately."""
+    if not chunk and not done:
+        return
+    url = f"{BACKEND_URL}/{owner_segment}/{owner_id}/stream-chunk"
+    body: Dict[str, Any] = {"jobId": job_id, "chunk": chunk}
+    if done:
+        body["done"] = True
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=2):
+            pass
+    except (urllib.error.URLError, TimeoutError) as e:
+        logger.warning("chat: stream-chunk POST failed: %s", e)
+
+
 def post_tool_event(
     owner_segment: str,
     owner_id: int,

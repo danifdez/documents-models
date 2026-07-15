@@ -12,7 +12,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..'))
+# This module lives at core/lib/llm/; the project root (holding config/, tasks/)
+# is two levels up.
+_PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..', '..'))
 _CONFIG_TASKS_DIR = os.path.join(_PROJECT_DIR, 'config', 'tasks')
 _TASKS_DIR = os.path.join(_PROJECT_DIR, 'tasks')
 

@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from services.llm_json import parse_json
+from lib.llm.json import parse_json
 
 logger = logging.getLogger(__name__)
 

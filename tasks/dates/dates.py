@@ -32,8 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import dateparser
 import spacy
 
-from services.grammars import DATE_RESOLUTION_GBNF
-from services.prompts import get_prompt
+from lib.llm.grammars import DATE_RESOLUTION_GBNF
+from lib.llm.prompts import get_prompt
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -72,7 +72,7 @@ def _get_nlp():
     if _nlp is None:
         if HAS_CUDA:
             spacy.prefer_gpu()
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         task_config = get_task_config("date-extraction")
         model_name = task_config.get("model") or get_spacy_model()
         _nlp = spacy.load(model_name)
@@ -173,7 +173,7 @@ def _llm_fallback(
     language: str,
     anchor_date: Optional[str],
 ) -> Optional[Dict[str, Any]]:
-    from services.model_config import get_task_config, get_llm_params
+    from lib.llm.config import get_task_config, get_llm_params
     from services.llm_service import get_llm_service
 
     task_config = get_task_config("date-extraction")
@@ -601,7 +601,7 @@ def extract_dates(
     Children additionally carry `_chunk_idx` and `_chunk_offset`.
     """
     try:
-        from services.model_config import get_task_config
+        from lib.llm.config import get_task_config
         cfg = get_task_config("date-extraction")
         if state and state.get("phase") == "merging":
             return _phase_merge(state, cfg, ctx)

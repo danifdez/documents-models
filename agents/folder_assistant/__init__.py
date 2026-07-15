@@ -7,9 +7,8 @@ a structured result, keeping large file contents out of the parent's context.
 
 import os
 
-from services.prompts import load_prompt
-
-from .base import AgentSpec
+from lib.llm.prompts import load_prompt
+from lib.framework.agent import AgentSpec
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
@@ -99,7 +98,7 @@ TOOL_SCHEMA = {
     },
 }
 
-FOLDER_ASSISTANT = AgentSpec(
+folder_assistant = AgentSpec(
     name="folder_assistant",
     config_key="folder-assistant-agent",
     system_prompt=load_prompt(_PROMPTS_DIR, "folder_assistant.md").strip(),

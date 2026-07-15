@@ -9,7 +9,7 @@ from agent.parse import parse_decision
 from agent.prompt import render_messages
 from agent.tools.base import TOOL_REGISTRY
 from agent.types import AgentDefinition, StepOutcome, ToolContext
-from services.grammars import AGENT_DECISION_GBNF, AGENT_FINISH_GBNF
+from lib.llm.grammars import AGENT_DECISION_GBNF, AGENT_FINISH_GBNF
 
 logger = logging.getLogger(__name__)
 

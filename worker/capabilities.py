@@ -1,4 +1,4 @@
-from services.model_config import get_all_task_requirements, get_worker_config, get_task_config, get_config
+from lib.llm.config import get_all_task_requirements, get_worker_config, get_task_config, get_config
 
 GPU = "gpu"
 LLM = "llm"

@@ -4,12 +4,29 @@ It declares its tool set here: the leaf actions over tasks, calendar and notes,
 plus the two agents it can delegate to (workspace_research, folder_assistant).
 Its system prompt is assembled per turn by the task handler (persona + memory +
 date + working folder), so `system_prompt` stays empty here — the handler feeds
-`run_agent` the built messages.
+`assistant.run(messages, ctx)` the built messages. The prompt building blocks
+the handler assembles live with the agent, exposed here:
+
+- `DEFAULT_SYSTEM_PROMPT`   — the default persona, used when the payload carries
+                              no custom `systemPrompt`.
+- `MULTI_TOOL_ORIENTATION`  — multi-tool composition orientation, concatenated
+                              into the system prompt.
 """
 
-from .base import AgentSpec
+import os
 
-MAIN_AGENT = AgentSpec(
+from lib.llm.prompts import load_prompt
+from lib.framework.agent import AgentSpec
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+
+DEFAULT_SYSTEM_PROMPT = load_prompt(_PROMPTS_DIR, "assistant_system.md").strip()
+
+# Multi-tool composition orientation, injected into the system prompt: compose,
+# chain, don't repeat, stop when done.
+MULTI_TOOL_ORIENTATION = load_prompt(_PROMPTS_DIR, "multi_tool_orientation.md").strip()
+
+assistant = AgentSpec(
     name="assistant",
     config_key="assistant-chat",
     system_prompt="",

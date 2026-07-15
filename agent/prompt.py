@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from agent.tools.base import TOOL_REGISTRY
 from agent.types import AgentDefinition
-from services.prompts import load_prompt
+from lib.llm.prompts import load_prompt
 
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")

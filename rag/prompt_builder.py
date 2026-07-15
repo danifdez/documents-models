@@ -1,5 +1,5 @@
 from rag.types import RAGContext
-from services.prompts import get_prompt
+from lib.llm.prompts import get_prompt
 
 
 class PromptBuilder:

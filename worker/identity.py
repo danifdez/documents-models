@@ -6,7 +6,7 @@ import uuid
 import threading
 import time
 
-from services.model_config import get_worker_config
+from lib.llm.config import get_worker_config
 
 logger = logging.getLogger(__name__)
 

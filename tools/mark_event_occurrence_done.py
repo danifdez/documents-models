@@ -4,9 +4,9 @@ import urllib.parse
 from datetime import datetime
 from typing import Any, Dict
 
-from agents.tool_base import Tool, ToolContext, register
-from common.chat.http import http_json_with_status
-from common.chat.calendars import resolve_calendar_event
+from lib.framework.tool import Tool, ToolContext, register
+from lib.backend.http import http_json_with_status
+from lib.backend.calendars import resolve_calendar_event
 
 
 def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:

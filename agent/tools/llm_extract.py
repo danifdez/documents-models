@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional
 from agent.llm import get_llm_for_spec
 from agent.tools.base import tool
 from agent.types import ModelSpec, ToolContext
-from services.llm_json import chat_json
-from services.prompts import load_prompt
+from lib.llm.json import chat_json
+from lib.llm.prompts import load_prompt
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 _DEFAULT_EXTRACT_SYSTEM = load_prompt(_PROMPTS_DIR, "llm_extract_system.md").strip()
