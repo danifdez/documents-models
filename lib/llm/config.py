@@ -204,8 +204,17 @@ def get_llm_params(task_name: str, model_name: str | None = None) -> dict:
     If `model_name` is provided, it overrides the task's `model` field — useful when
     a task needs a specific LLM from its config that differs from the `model` field.
     """
+    return llm_params_for(get_task_config(task_name), model_name)
+
+
+def llm_params_for(task: dict, model_name: str | None = None) -> dict:
+    """Full LLM parameters from an already-resolved task-config dict.
+
+    Split out of `get_llm_params` so callers that already hold the config (e.g. the
+    unit filters, which receive `cfg`) can reach the model without re-passing the
+    task name just to look it back up.
+    """
     defaults = get_llm_defaults()
-    task = get_task_config(task_name)
 
     model_dir = task.get('model_dir', defaults.get('model_dir', 'models'))
     if not os.path.isabs(model_dir):
