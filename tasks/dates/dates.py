@@ -30,10 +30,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import dateparser
-import spacy
 
-from lib.llm.grammars import DATE_RESOLUTION_GBNF
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.grammars import DATE_RESOLUTION_GBNF, STRING_ARRAY_GBNF
 from lib.llm.prompts import get_prompt
+from services.llm_service import get_llm_service
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -41,7 +42,6 @@ from services.text import (
     html_to_markdown,
     strip_dense_blobs,
 )
-from utils.device import HAS_CUDA, get_spacy_model
 from utils.job_registry import job_handler
 
 logger = logging.getLogger(__name__)
@@ -64,20 +64,54 @@ _NUMERIC_DATE_RE = re.compile(
 )
 
 
-_nlp = None
+_DETECT_PROMPT = get_prompt("date-extraction", "detect_prompt.md")
+_RESOLVE_PROMPT = get_prompt("date-extraction", "resolve_prompt.md")
+_TITLE_PROMPT = get_prompt("date-extraction", "title_prompt.md")
 
 
-def _get_nlp():
-    global _nlp
-    if _nlp is None:
-        if HAS_CUDA:
-            spacy.prefer_gpu()
-        from lib.llm.config import get_task_config
-        task_config = get_task_config("date-extraction")
-        model_name = task_config.get("model") or get_spacy_model()
-        _nlp = spacy.load(model_name)
-        logger.info("spaCy loaded model for date-extraction: %s", model_name)
-    return _nlp
+def _detect_expressions(text: str, cfg: Dict[str, Any]) -> List[str]:
+    if not text.strip() or not _DETECT_PROMPT:
+        return []
+    try:
+        response = get_llm_service(**get_llm_params("date-extraction")).chat(
+            [{"role": "user", "content": _DETECT_PROMPT.format(text=text)}],
+            max_tokens=int(cfg.get("detect_max_tokens", cfg.get("max_tokens", 800))),
+            grammar=STRING_ARRAY_GBNF, temperature=0.0,
+        )
+        parsed = json.loads(response)
+    except Exception:
+        logger.exception("date-extraction detection failed")
+        return []
+    return [item.strip() for item in parsed if isinstance(item, str) and len(item.strip()) >= 2] if isinstance(parsed, list) else []
+
+
+def _assign_titles(text: str, entries: List[Dict[str, Any]]) -> None:
+    if not entries or not _TITLE_PROMPT:
+        return
+    try:
+        response = get_llm_service(**get_llm_params("date-extraction")).chat(
+            [{"role": "user", "content": _TITLE_PROMPT.format(
+                text=text, expressions=json.dumps([entry["rawExpression"] for entry in entries]),
+            )}], max_tokens=400, temperature=0.0,
+        )
+        titles = json.loads(response)
+    except Exception:
+        logger.exception("date-extraction titling failed")
+        return
+    pending = {}
+    for entry in entries:
+        pending.setdefault(entry["rawExpression"].lower(), []).append(entry)
+    for title in titles if isinstance(titles, list) else []:
+        if not isinstance(title, dict) or not title.get("title"):
+            continue
+        matches = pending.get(str(title.get("expression") or "").lower(), [])
+        if matches:
+            matches.pop(0)["title"] = str(title["title"]).strip()
+
+
+def _locate(text: str, expression: str, cursor: int) -> int:
+    position = text.find(expression, cursor)
+    return position if position >= 0 else text.lower().find(expression.lower(), cursor)
 
 
 def _is_absolute(expression: str) -> bool:
@@ -266,27 +300,17 @@ def _extract_from_text(
     if not text:
         return [], 0
 
-    nlp = _get_nlp()
-    # spaCy default max_length is 1_000_000. Bump it generously rather than
-    # crash on a fat chunk; the call site already chunks by word budget so this
-    # is mostly a safety belt.
-    needed = len(text) + 100_000
-    if getattr(nlp, "max_length", 0) < needed:
-        nlp.max_length = needed
-
-    doc = nlp(text)
     entries: List[Dict[str, Any]] = []
     consumed = 0
     seen_local = set()
+    cursor = 0
 
-    for ent in doc.ents:
-        if ent.label_ != "DATE":
+    for raw in _detect_expressions(text, cfg):
+        local_start = _locate(text, raw, cursor)
+        if local_start < 0:
             continue
-        raw = ent.text.strip()
-        if len(raw) < 2:
-            continue
-        local_start = ent.start_char
-        local_end = ent.end_char
+        local_end = local_start + len(raw)
+        cursor = local_end
         span_key = (local_start, local_end, raw.lower())
         if span_key in seen_local:
             continue
@@ -354,6 +378,7 @@ def _extract_from_text(
             entry["unresolvedReason"] = "unparseable"
         entries.append(entry)
 
+    _assign_titles(text, entries)
     return entries, consumed
 
 

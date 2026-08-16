@@ -22,7 +22,6 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from database.graph_db import get_graph
 from lib.llm.grammars import RELATIONSHIPS_GBNF
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
@@ -132,6 +131,11 @@ def _persist_to_graph(
     """Write entities and relationships to the graph. Returns an error string on
     failure, None on success or no-op."""
     if not relationships:
+        return None
+    try:
+        from database.graph_db import get_graph
+    except ImportError:
+        logger.info("Graph backend unavailable; returning extracted relationships without persistence")
         return None
     graph = get_graph()
     if not graph:

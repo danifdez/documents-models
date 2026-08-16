@@ -1,35 +1,55 @@
+import json
 import logging
+import re
 from typing import Any, Dict, List
 
-import spacy
-
-from services.text import strip_dense_blobs
-from utils.device import HAS_CUDA, get_spacy_model
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.prompts import get_prompt
+from lib.llm.text import strip_dense_blobs, truncate_for_llm
+from services.llm_service import get_llm_service
 from utils.job_registry import job_handler
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded spaCy model to avoid crash at import time if not installed
-nlp = None
+_PROMPT = get_prompt("entity-extraction")
+_ALLOWED_LABELS = {
+    "PERSON", "ORG", "GPE", "LOC", "NORP", "EVENT", "FAC", "PRODUCT",
+    "WORK_OF_ART", "LANGUAGE", "LAW",
+}
 
 
-def _get_nlp():
-    global nlp
-    if nlp is None:
-        if HAS_CUDA:
-            spacy.prefer_gpu()
-        from lib.llm.config import get_task_config
-        task_config = get_task_config("entity-extraction")
-        model_name = task_config.get("model") or get_spacy_model()
-        nlp = spacy.load(model_name)
-        logger.info("spaCy loaded model: %s", model_name)
-    return nlp
+def _extract_entities(text: str, config: Dict[str, Any]) -> List[Dict[str, str]]:
+    safe_text = truncate_for_llm(strip_dense_blobs(text), config)
+    if not safe_text.strip() or not _PROMPT:
+        return []
+    try:
+        response = get_llm_service(**get_llm_params("entity-extraction")).chat(
+            [{"role": "user", "content": _PROMPT.format(text=safe_text)}],
+            max_tokens=int(config.get("max_tokens", 2000)), temperature=0.0,
+        )
+        parsed = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", response.strip()))
+    except Exception:
+        logger.exception("entity-extraction chat failed")
+        return []
+
+    ignored = set(config.get("ignored_entity_types", []))
+    result, seen = [], set()
+    for item in parsed if isinstance(parsed, list) else []:
+        if not isinstance(item, dict):
+            continue
+        word = str(item.get("word") or "").strip()
+        entity = str(item.get("entity") or "").strip().upper()
+        key = (word, entity)
+        if len(word) > 1 and entity in _ALLOWED_LABELS and entity not in ignored and key not in seen:
+            seen.add(key)
+            result.append({"word": word, "entity": entity})
+    return result
 
 
 @job_handler("entity-extraction")
 def entities(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Extract named entities from text using spaCy.
+    Extract named entities from text using the local LLM.
 
     Each text is sanitized with `strip_dense_blobs` (data URIs and >=2k-char
     unbroken tokens are replaced with placeholders) so an inline base64 image
@@ -44,7 +64,7 @@ def entities(payload: Dict[str, Any]) -> Dict[str, Any]:
         {"entities": [{"word": str, "entity": str}, ...]} or {"error": str}.
     """
     try:
-        texts = payload.get("texts") or []
+        texts = payload.get("texts") or ([payload["text"]] if payload.get("text") else [])
         if not texts:
             return {"entities": []}
 
@@ -55,45 +75,7 @@ def entities(payload: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 text_strings.append(strip_dense_blobs(str(item)))
 
-        from lib.llm.config import get_task_config
-        task_config = get_task_config("entity-extraction")
-
-        ignored_entity_types = set(task_config.get("ignored_entity_types", [
-            'CARDINAL', 'DATE', 'MONEY', 'ORDINAL', 'PERCENT', 'QUANTITY', 'TIME'
-        ]))
-
-        batch_size = int(task_config.get("batch_size", 32))
-
-        nlp = _get_nlp()
-        # Defensive: bump max_length if any single text approaches the cap.
-        longest = max((len(t) for t in text_strings), default=0)
-        needed = longest + 100_000
-        if getattr(nlp, "max_length", 0) < needed:
-            nlp.max_length = needed
-
-        docs = nlp.pipe(text_strings, batch_size=batch_size)
-
-        parse_result: List[Dict[str, str]] = []
-        for doc in docs:
-            for ent in doc.ents:
-                if (len(ent.text.strip()) > 1
-                        and ent.label_ not in ignored_entity_types):
-                    parse_result.append({
-                        "word": ent.text.strip(),
-                        "entity": ent.label_,
-                    })
-
-        # Remove duplicates while preserving order.
-        unique_result: List[Dict[str, str]] = []
-        seen = set()
-        for ent in parse_result:
-            key = (ent["word"], ent["entity"])
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_result.append(ent)
-
-        return {"entities": unique_result}
+        return {"entities": _extract_entities("\n\n".join(text_strings), get_task_config("entity-extraction"))}
 
     except Exception as e:
         logger.exception("entity-extraction failed")
