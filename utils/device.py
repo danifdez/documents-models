@@ -62,7 +62,7 @@ def get_optimal_threads() -> int:
 
 
 def get_gpu_layers() -> int:
-    """Return GPU layer count for llama-cpp.
+    """Return the GPU layer count this machine can offer the inference engine.
 
     Respects the ``LLM_N_GPU_LAYERS`` env var when set.
     Without GPU defaults to 0 (all on CPU); with GPU defaults to -1 (all on GPU).

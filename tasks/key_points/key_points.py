@@ -24,8 +24,9 @@ import numpy as np
 
 from agent.types import ModelSpec
 from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
+from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.prompts import get_prompt
+from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -42,23 +43,6 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Defensive content sanitization is shared with summarize via services.text.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _char_budget(cfg: Dict[str, Any]) -> int:
-    override = cfg.get("input_char_budget")
-    if override is not None:
-        return int(override)
-    n_ctx = int(get_llm_defaults().get("n_ctx", 32768))
-    out_tokens = int(cfg.get("max_tokens", 1000))
-    available_tokens = max(512, n_ctx - out_tokens - 512)
-    return available_tokens * 4
-
-
-def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
-    cap = _char_budget(cfg)
-    if len(text) <= cap:
-        return text
-    return text[:cap]
 
 
 def _build_chunks(
@@ -223,7 +207,8 @@ def _refine_chunked(
 def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any]) -> List[str]:
     if not chunk or not chunk.strip():
         return []
-    safe = _truncate_for_llm(strip_dense_blobs(chunk), cfg)
+    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
+                            tokens_key="max_tokens", default_tokens=1000)
     try:
         params = get_llm_params("key-point")
         llm_service = get_llm_service(**params)

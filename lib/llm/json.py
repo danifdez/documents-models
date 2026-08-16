@@ -1,9 +1,11 @@
 """
 JSON-from-LLM helpers.
 
-Local llama-cpp models do not have a reliable native function-calling API,
-so we extract JSON from free-form chat responses with a tolerant parser
-and a one-retry-with-feedback wrapper.
+Small local models do not reliably answer with the JSON they were asked for, so
+we extract JSON from free-form chat responses with a tolerant parser and a
+one-retry-with-feedback wrapper. (When the output shape matters, prefer
+`chat(response_format=...)`: the engine compiles the schema to a grammar and
+constrains decoding, which cannot produce invalid JSON in the first place.)
 """
 
 import json

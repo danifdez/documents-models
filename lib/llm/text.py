@@ -307,11 +307,12 @@ def chunk_units(units, max_size, size_fn=None, max_words_fallback=None, joiner="
     return chunks
 
 
-def char_budget(cfg):
+def char_budget(cfg, *, tokens_key="chunk_max_tokens", default_tokens=400):
     """Approximate max chars that fit alongside the prompt in the LLM context.
 
     Uses ~4 chars/token (English heuristic) and reserves room for the system
     prompt and output. Honours overrides via `<task>.input_char_budget`.
+    Tasks that size their output with `max_tokens` pass `tokens_key`.
     """
     override = cfg.get("input_char_budget")
     if override is not None:
@@ -319,15 +320,15 @@ def char_budget(cfg):
     from lib.llm.config import get_llm_defaults
 
     n_ctx = int(get_llm_defaults().get("n_ctx", 32768))
-    out_tokens = int(cfg.get("chunk_max_tokens", 400))
+    out_tokens = int(cfg.get(tokens_key, default_tokens))
     # Leave 512 tokens of headroom for the prompt boilerplate.
     available_tokens = max(512, n_ctx - out_tokens - 512)
     return available_tokens * 4
 
 
-def truncate_for_llm(text, cfg):
+def truncate_for_llm(text, cfg, *, tokens_key="chunk_max_tokens", default_tokens=400):
     """Truncate `text` to the character budget from `char_budget`."""
-    cap = char_budget(cfg)
+    cap = char_budget(cfg, tokens_key=tokens_key, default_tokens=default_tokens)
     if len(text) <= cap:
         return text
     return text[:cap]

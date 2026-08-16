@@ -130,7 +130,7 @@ Extracts up to 10 keywords or short topic phrases from text content.
 3. If the LLM is available:
    - Tries chat completion first, then falls back to plain completion.
    - Output is split by commas/newlines and cleaned of bullet markers.
-4. If the LLM is unavailable (including when `llama-cpp-python` is not installed):
+4. If the LLM is unavailable (the shared llama-server is not answering and could not be started):
    - Falls back to heuristic extraction: takes the first 3 words of each sentence.
 5. Each keyword is truncated to a maximum of 3 words.
 6. Results are deduplicated and capped at 10 items.

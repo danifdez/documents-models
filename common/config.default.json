@@ -26,7 +26,9 @@
     "n_ctx": 32768,
     "n_threads": 4,
     "n_batch": 64,
-    "n_gpu_layers": 0
+    "n_gpu_layers": 0,
+    "server_url": "http://127.0.0.1:18080",
+    "server_bin": ""
   },
   "rag": {
     "default_limit": 5,

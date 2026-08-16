@@ -138,11 +138,13 @@ The `EmbeddingService` class (`services/embedding_service.py`) wraps sentence-tr
 
 ## LLM Service
 
-The `LLMService` class (`services/llm_service.py`) wraps llama-cpp-python:
+The `LLMService` class (`services/llm_service.py`) is an HTTP client for the shared llama-server. Nothing loads a `.gguf` in this process: the model is loaded once, by the engine documents-dev runs, and every worker plus the embedded browser generates through it.
 
 - Model path and parameters loaded from `config/tasks.json` via `get_llm_params(task_name)`
 - Cached per model path via `get_llm_service()` — one instance shared across requests for the same model
 - Provides `generate(prompt, max_tokens)` for completion and `chat(messages, max_tokens)` for chat completion
+- `n_threads`, `n_batch`, `n_gpu_layers` and LoRA adapters no longer decide anything here — the engine was started with its own. A task whose config names a different model still gets an answer from whatever is loaded, and says so in the log.
+- Where the engine is, and how it comes up, is `services/llama_server.py`: `LLAMA_SERVER_URL` (or `llm_defaults.server_url`, default `http://127.0.0.1:18080`), started as a service with `manage start llama` and, failing that, by the first job that needs it.
 
 ## Configuration
 

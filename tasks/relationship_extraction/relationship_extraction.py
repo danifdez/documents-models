@@ -25,8 +25,9 @@ from typing import Any, Dict, List, Optional, Set
 from database.graph_db import get_graph
 from lib.llm.grammars import RELATIONSHIPS_GBNF
 from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
+from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.prompts import get_prompt
+from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
 from services.text import (
     extract_section_units,
@@ -115,28 +116,6 @@ def _extract_from_chunk(chunk: str, entities_str: str, prompt_template: str,
             grammar=RELATIONSHIPS_GBNF,
             temperature=0.0,
         )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Defensive truncation against degenerate chunks
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _char_budget(cfg: Dict[str, Any]) -> int:
-    override = cfg.get("input_char_budget")
-    if override is not None:
-        return int(override)
-    n_ctx = int(get_llm_defaults().get("n_ctx", 32768))
-    out_tokens = int(cfg.get("max_tokens", 2000))
-    available_tokens = max(512, n_ctx - out_tokens - 512)
-    return available_tokens * 4
-
-
-def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
-    cap = _char_budget(cfg)
-    if len(text) <= cap:
-        return text
-    return text[:cap]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +212,8 @@ def _run_chunk_llm(
     """Single LLM call against one chunk, validated against entity_names."""
     if not chunk or not chunk.strip():
         return []
-    safe = _truncate_for_llm(strip_dense_blobs(chunk), cfg)
+    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
+                            tokens_key="max_tokens", default_tokens=2000)
     try:
         params = get_llm_params("relationship-extraction")
         llm_service = get_llm_service(**params)

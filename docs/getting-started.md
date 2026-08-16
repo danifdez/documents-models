@@ -8,7 +8,7 @@
 
 ### System Dependencies
 
-The following system packages are needed for compiling native extensions (llama-cpp-python, Docling):
+The following system packages are needed for compiling native extensions (Docling):
 
 ```bash
 build-essential cmake ninja-build python3-dev git
@@ -20,6 +20,23 @@ On Debian/Ubuntu:
 ```bash
 sudo apt-get install build-essential cmake ninja-build python3-dev git \
   libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+```
+
+### Inference engine
+
+Text generation does not happen in this process. It happens in a llama-server that
+documents-dev installs (`bash manage llama:install`, into `bin/llama/`) and runs as
+one more service (`bash manage start llama`), and that every worker — plus the
+embedded browser — talks to over HTTP. There is nothing to compile here: the engine
+is a binary, and whether it uses the GPU depends on which build is installed and on
+`llm_defaults.n_gpu_layers`.
+
+Running this service on its own, without `manage`:
+
+```bash
+source .venv/bin/activate
+python -m services.llama_server     # starts the engine in the foreground
+python jobs.py                      # the worker, which talks to it
 ```
 
 ## Installation

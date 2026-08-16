@@ -1,6 +1,8 @@
-# llama-cpp-python is intentionally NOT here: its PyPI (CPU) and cu126 (CUDA)
-# wheels share a version, so an --extra-index-url lets pip pick the CPU one. The
-# build installs it separately with the CUDA index as primary (see build-release).
+# No LLM runtime lives in this process any more: generation goes to the
+# llama-server documents-dev runs, so there is no CPU-vs-CUDA Python binding left
+# to get right here. Whether the engine uses the GPU is decided when it starts
+# (llm_defaults.n_gpu_layers) by whichever llama-server binary is installed. What
+# remains below is what still needs CUDA wheels of its own.
 --extra-index-url https://download.pytorch.org/whl/cu126
 torch==2.12.1
 cupy-cuda12x==14.1.1

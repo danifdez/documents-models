@@ -387,7 +387,7 @@ Extracts up to 10 keywords or short topic phrases from text content.
 - HTML tags are stripped and entities are unescaped before processing.
 - Uses the configured LLM (via chat completion or plain completion fallback) to generate comma-separated topics.
 - Each keyword is truncated to a maximum of 3 words.
-- If the LLM is unavailable (including when `llama-cpp-python` is not installed), falls back to heuristic extraction (first 3 words of each sentence).
+- If the LLM is unavailable (the shared llama-server is not answering and could not be started), falls back to heuristic extraction (first 3 words of each sentence).
 - Returns up to 10 deduplicated keywords.
 
 ---

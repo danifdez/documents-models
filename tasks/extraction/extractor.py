@@ -9,6 +9,7 @@ from tasks.extraction.processors.txt_processor import process_txt
 from tasks.extraction.processors.eml_processor import process_eml
 from tasks.extraction.processors.odt_processor import process_odt
 from tasks.extraction.processors.media_processor import process_media
+from tasks.extraction.processors.mhtml_processor import process_mhtml
 
 
 def _materialize(input_blob: bytes, extension: str) -> str:
@@ -36,6 +37,10 @@ def _extract_by_extension(payload: dict) -> dict:
         return process_html(html_content)
     if ext in ['.txt', '.md']:
         return process_txt(input_blob.decode('utf-8', errors='replace'))
+    # Una página guardada por el navegador: la página y sus adjuntos en un solo
+    # fichero. Se lee del blob como el HTML, sin pasar por disco.
+    if ext in ['.mhtml', '.mht']:
+        return process_mhtml(input_blob)
 
     tmp_path = _materialize(input_blob, ext)
     try:

@@ -85,7 +85,8 @@ models/
 │   └── types.py                # RAGContext and RetrievedChunk dataclasses
 ├── services/
 │   ├── embedding_service.py    # Sentence-transformers embedding wrapper
-│   ├── llm_service.py          # llama-cpp-python LLM wrapper (cached instances)
+│   ├── llm_service.py          # HTTP client for the shared llama-server (cached per model)
+│   ├── llama_server.py         # Finds (or starts) the shared engine; one definition of it
 │   ├── model_config.py         # Configuration loader (config.json + tasks.json + overrides)
 │   ├── prompts.py              # Prompt loader (config/tasks/ -> tasks/<dir>/prompt.md)
 │   └── text.py                 # HTML text extraction and semantic chunking
@@ -173,7 +174,7 @@ Retriever → Reranker → ContextBuilder → PromptBuilder → Generator
 
 ### Graceful Degradation
 
-LLM-dependent tasks (`key-point`, `keywords`) fall back to heuristic extraction when no LLM is available. The `keywords` task also handles environments where `llama-cpp-python` is not installed.
+LLM-dependent tasks (`key-point`, `keywords`) fall back to heuristic extraction when no LLM is available — which now means the shared llama-server is not reachable and could not be started, rather than a missing Python package.
 
 ### Format-Agnostic Extraction
 

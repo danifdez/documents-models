@@ -23,8 +23,9 @@ import re
 from typing import Any, Dict, List, Optional
 
 from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
+from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.prompts import get_prompt
+from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
 from services.text import (
     chunk_units,
@@ -89,28 +90,6 @@ def _merge_candidates(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Defensive truncation against degenerate chunks
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _char_budget(cfg: Dict[str, Any]) -> int:
-    override = cfg.get("input_char_budget")
-    if override is not None:
-        return int(override)
-    n_ctx = int(get_llm_defaults().get("n_ctx", 32768))
-    out_tokens = int(cfg.get("max_tokens", 500))
-    available_tokens = max(512, n_ctx - out_tokens - 512)
-    return available_tokens * 4
-
-
-def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
-    cap = _char_budget(cfg)
-    if len(text) <= cap:
-        return text
-    return text[:cap]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Per-chunk LLM extraction (used by both leaf and child paths)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,7 +97,8 @@ def _truncate_for_llm(text: str, cfg: Dict[str, Any]) -> str:
 def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any]) -> List[str]:
     if not chunk or not chunk.strip():
         return []
-    safe = _truncate_for_llm(strip_dense_blobs(chunk), cfg)
+    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
+                            tokens_key="max_tokens", default_tokens=500)
     try:
         params = get_llm_params("keywords")
         llm_service = get_llm_service(**params)
