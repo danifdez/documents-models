@@ -25,7 +25,7 @@ sudo apt-get install build-essential cmake ninja-build python3-dev git \
 ### Inference engine
 
 Text generation does not happen in this process. It happens in a llama-server that
-documents-dev installs (`bash manage llama:install`, into `bin/llama/`) and runs as
+Models installs (`bash install`, into `models/bin/llama/`) and runs as
 one more service (`bash manage start llama`), and that every worker — plus the
 embedded browser — talks to over HTTP. There is nothing to compile here: the engine
 is a binary, and whether it uses the GPU depends on which build is installed and on

@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.prompts import get_prompt
@@ -47,7 +47,11 @@ def _extract_entities(text: str, config: Dict[str, Any]) -> List[Dict[str, str]]
 
 
 @job_handler("entity-extraction")
-def entities(payload: Dict[str, Any]) -> Dict[str, Any]:
+def entities(
+    payload: Dict[str, Any],
+    state: Optional[Dict[str, Any]] = None,
+    ctx=None,
+) -> Dict[str, Any]:
     """
     Extract named entities from text using the local LLM.
 

@@ -218,7 +218,9 @@ def llm_params_for(task: dict, model_name: str | None = None) -> dict:
 
     model_dir = task.get('model_dir', defaults.get('model_dir', 'models'))
     if not os.path.isabs(model_dir):
-        model_dir = os.path.join(_PROJECT_DIR, model_dir)
+        mounted_models = os.environ.get('AI_TRAIN_INFERENCE_MODELS', '').strip()
+        model_dir = mounted_models if model_dir == 'models' and mounted_models \
+            else os.path.join(_PROJECT_DIR, model_dir)
     if model_name is None:
         model_name = task.get('model', defaults.get('model', ''))
     if 'model_path' in task:

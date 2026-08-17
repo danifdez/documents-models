@@ -265,6 +265,46 @@ else
   info "The service will run on CPU. This is fully supported but slower for ML tasks."
 fi
 
+# ── Build the generation server owned by Models ──
+LLAMA_CPP_REV="${LLAMA_CPP_REV:-563dec81c1c538aac0fad465ea933eb2a621a183}"
+LLAMA_CPP_DIR="$SCRIPT_DIR/.llama.cpp"
+LLAMA_BUILD_DIR="$SCRIPT_DIR/.llama-server-build"
+LLAMA_DIR="$SCRIPT_DIR/bin/llama"
+LLAMA_BIN="$LLAMA_DIR/llama-server"
+LLAMA_REVISION_FILE="$LLAMA_DIR/.llama-cpp-revision"
+
+if [ ! -x "$LLAMA_BIN" ] || [ ! -f "$LLAMA_REVISION_FILE" ] \
+  || [ "$(tr -d '[:space:]' < "$LLAMA_REVISION_FILE")" != "$LLAMA_CPP_REV" ]; then
+  if [ ! -d "$LLAMA_CPP_DIR/.git" ]; then
+    info "Downloading llama.cpp ($LLAMA_CPP_REV)..."
+    git clone --filter=blob:none https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_DIR"
+  fi
+  git -C "$LLAMA_CPP_DIR" fetch origin "$LLAMA_CPP_REV"
+  git -C "$LLAMA_CPP_DIR" checkout --detach "$LLAMA_CPP_REV"
+
+  CMAKE_ARGS=(
+    -S "$LLAMA_CPP_DIR"
+    -B "$LLAMA_BUILD_DIR"
+    -DCMAKE_BUILD_TYPE=Release
+    -DLLAMA_CURL=OFF
+    -DLLAMA_BUILD_TESTS=OFF
+    -DLLAMA_BUILD_EXAMPLES=OFF
+    -DLLAMA_BUILD_TOOLS=ON
+    -DLLAMA_BUILD_SERVER=ON
+  )
+  if [ "$HAS_CUDA" -eq 1 ]; then
+    CMAKE_ARGS+=(-DGGML_CUDA=ON -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler)
+  fi
+  info "Building llama-server..."
+  cmake "${CMAKE_ARGS[@]}"
+  cmake --build "$LLAMA_BUILD_DIR" --target llama-server --parallel "$(nproc)"
+  test -x "$LLAMA_BUILD_DIR/bin/llama-server" || fail "llama-server build failed"
+  mkdir -p "$LLAMA_DIR"
+  ln -sfn "$(realpath "$LLAMA_BUILD_DIR/bin/llama-server")" "$LLAMA_BIN"
+  printf '%s\n' "$LLAMA_CPP_REV" > "$LLAMA_REVISION_FILE"
+fi
+ok "llama-server ready: $LLAMA_BIN"
+
 # ── Pre-download HuggingFace models ──
 info "Pre-downloading models (this may take a while on first run)..."
 

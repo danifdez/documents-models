@@ -3,6 +3,9 @@ models/
 .env
 .venv/
 .worker_id
+.llama.cpp/
+.llama-server-build/
+bin/
 config/
 build/
 dist/
