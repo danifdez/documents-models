@@ -69,6 +69,46 @@ _NUMERIC_DATE_RE = re.compile(
     r"\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b|\b\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}\b"
 )
 
+_WEEKDAY_RE = re.compile(
+    r"\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|"
+    r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b|"
+    r"\b(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b|"
+    r"\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b|"
+    r"\b(luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica)\b",
+    re.IGNORECASE,
+)
+
+# Deictic markers: they point at a moment from an anchor. Paired with a time
+# unit below, they turn a quantity into a date ("hace 3 días"); alone, a unit
+# is only a duration.
+_RELATIVE_MARKER_RE = re.compile(
+    r"\bhace\b|\bdentro de\b|\bque viene\b|\bpr[oó]xim\w*\b|\bpasad\w*\b|"
+    r"\bago\b|\bin\b|\bnext\b|\blast\b|\bwithin\b|"
+    r"\bvor\b|\bn[aä]chst\w*\b|\bletzt\w*\b|"
+    r"\bil y a\b|\bdans\b|\bprochain\w*\b|\bdernier\w*\b|"
+    r"\bfa\b|\btra\b|\bfra\b|\bprossim\w*\b|\bscors\w*\b",
+    re.IGNORECASE,
+)
+
+# Self-contained relative dates: no unit needed, they already name a day.
+_STANDALONE_RELATIVE_RE = re.compile(
+    r"\b(ayer|hoy|ma[nñ]ana|anteayer|anoche)\b|"
+    r"\b(yesterday|today|tomorrow|tonight)\b|"
+    r"\b(gestern|heute|morgen|vorgestern)\b|"
+    r"\b(hier|aujourd'hui|demain|avant-hier)\b|"
+    r"\b(ieri|oggi|domani|stanotte)\b",
+    re.IGNORECASE,
+)
+
+_TIME_UNIT_RE = re.compile(
+    r"\b(d[ií]as?|semanas?|meses|mes|a[nñ]os?|horas?|minutos?|d[eé]cadas?|siglos?)\b|"
+    r"\b(days?|weeks?|months?|years?|hours?|minutes?|decades?|centur(y|ies))\b|"
+    r"\b(tage?n?|wochen?|monate?n?|jahre?n?|stunden?|minuten?|jahrzehnte?n?)\b|"
+    r"\b(jours?|semaines?|mois|ann[eé]es?|heures?|minutes?|d[eé]cennies?|si[eè]cles?)\b|"
+    r"\b(giorni?|settimane?|mesi|anni?|ore|ora|minuti?|decenni?|secoli?)\b",
+    re.IGNORECASE,
+)
+
 
 _DETECT_PROMPT = get_prompt("date-extraction", "detect_prompt.md")
 _RESOLVE_PROMPT = get_prompt("date-extraction", "resolve_prompt.md")
@@ -83,6 +123,42 @@ _TITLE_PROMPT = get_prompt("date-extraction", "title_prompt.md")
 _DECOR_RE = re.compile(r"^[\s_*`~@#]+|[\s_*`~@#]+$")
 
 
+_JSON_STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def _parse_expression_array(response: str) -> List[str]:
+    """Parse the detector's array, salvaging a truncated one.
+
+    Greedy decoding with no repetition penalty makes the model loop over the
+    same handful of spans until `max_tokens` cuts it off mid-string. Letting
+    `json.loads` fail there would throw away the dozens of complete, correct
+    expressions that precede the cut — including, in a chunked document, the
+    only date in that chunk. Every closed string before the truncation is
+    valid output and is kept; the dangling one has no closing quote and is
+    naturally skipped.
+    """
+    try:
+        parsed = json.loads(response)
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, str)]
+        return []
+    except json.JSONDecodeError:
+        pass
+
+    salvaged: List[str] = []
+    for match in _JSON_STRING_RE.findall(response):
+        try:
+            salvaged.append(json.loads(f'"{match}"'))
+        except json.JSONDecodeError:
+            continue
+    if salvaged:
+        logger.warning(
+            "date-extraction detection was truncated; salvaged %d complete "
+            "expressions out of a malformed array", len(salvaged),
+        )
+    return salvaged
+
+
 def _detect_expressions(text: str, cfg: Dict[str, Any]) -> List[str]:
     if not text.strip() or not _DETECT_PROMPT:
         return []
@@ -92,14 +168,15 @@ def _detect_expressions(text: str, cfg: Dict[str, Any]) -> List[str]:
             max_tokens=int(cfg.get("detect_max_tokens", cfg.get("max_tokens", 800))),
             grammar=STRING_ARRAY_GBNF, temperature=0.0,
         )
-        parsed = json.loads(response)
     except Exception:
         logger.exception("date-extraction detection failed")
         return []
-    if not isinstance(parsed, list):
-        return []
-    cleaned = (_DECOR_RE.sub("", item) for item in parsed if isinstance(item, str))
-    return [item for item in cleaned if len(item) >= 2]
+    cleaned = [_DECOR_RE.sub("", item) for item in _parse_expression_array(response)]
+    # Exact duplicates only: the model loops and repeats spans verbatim. Do
+    # NOT drop a span because a longer one contains it — the detector often
+    # returns both "hace 3 días" and the whole sentence around it, and the
+    # date is the short one.
+    return list(dict.fromkeys(item for item in cleaned if len(item) >= 2))
 
 
 def _assign_titles(text: str, entries: List[Dict[str, Any]]) -> None:
@@ -127,16 +204,49 @@ def _assign_titles(text: str, entries: List[Dict[str, Any]]) -> None:
 
 
 def _locate(text: str, expression: str, cursor: int) -> int:
-    position = text.find(expression, cursor)
-    return position if position >= 0 else text.lower().find(expression.lower(), cursor)
+    """First occurrence at or after `cursor`, falling back to the whole text.
+
+    The cursor stops repeated expressions from collapsing onto one offset, but
+    it must not make a span that IS in the document unfindable. The detector
+    does not answer in document order — it may return a truncated copy of a
+    date before the date itself — and scanning forward only meant the better
+    expression, sitting behind the cursor, was silently dropped.
+    """
+    lowered_text, lowered_expr = text.lower(), expression.lower()
+    for start in (cursor, 0):
+        position = text.find(expression, start)
+        if position >= 0:
+            return position
+        position = lowered_text.find(lowered_expr, start)
+        if position >= 0:
+            return position
+    return -1
 
 
-def _is_absolute(expression: str) -> bool:
-    if _YEAR_RE.search(expression):
-        return True
-    if _NUMERIC_DATE_RE.search(expression):
-        return True
-    return False
+def _classify(expression: str) -> Optional[str]:
+    """"absolute", "relative", or None when the span is not a date at all.
+
+    The detector is an 8B model told to skip money, durations and counts; it
+    does so unreliably, so this is where "is this even a date?" is decided.
+    Answering it by elimination — anything without a year must be relative —
+    is what let "149,90 euros" and "8 sesiones" through as relative dates
+    awaiting an anchor, and a timeline is not the place for a price.
+
+    A date names a point on the calendar: either directly (a year, a numeric
+    date, a month name) or by pointing at one from an anchor ("hace 3 días",
+    "yesterday"). A bare quantity of time is a DURATION, not a date — that is
+    why a time unit alone ("90 minutos", "dos años") is not enough; it needs a
+    deictic marker to become a point in time.
+    """
+    if _YEAR_RE.search(expression) or _NUMERIC_DATE_RE.search(expression):
+        return "absolute"
+    if _MONTH_NAME_RE.search(expression) or _WEEKDAY_RE.search(expression):
+        return "absolute"
+    if _STANDALONE_RELATIVE_RE.search(expression):
+        return "relative"
+    if _RELATIVE_MARKER_RE.search(expression) and _TIME_UNIT_RE.search(expression):
+        return "relative"
+    return None
 
 
 def _infer_precision(expression: str, parsed: datetime) -> str:
@@ -330,8 +440,14 @@ def _extract_from_text(
             continue
         seen_local.add(span_key)
 
+        kind = _classify(raw)
+        if kind is None:
+            # Detector noise (a price, a count, a duration). Dropping it here
+            # also saves the LLM fallback it would otherwise burn.
+            continue
+
         global_start = char_offset + local_start
-        is_relative = not _is_absolute(raw)
+        is_relative = kind == "relative"
         snippet = _build_context_snippet(text, local_start, local_end)
 
         entry: Dict[str, Any] = {

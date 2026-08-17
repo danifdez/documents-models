@@ -31,24 +31,34 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 ws     ::= | " " | "\n" [ \t]{0,20}
 """
 
+# A string that cannot run away. `string` above is unbounded on purpose (an
+# agent's `thought` or a summary legitimately needs the room), but extraction
+# grammars quote short spans copied from the document, and there the same
+# runaway shows up *inside* the quotes: the model loops, `max_tokens` ends the
+# generation mid-string and the whole array fails to parse — one unterminated
+# string silently costs every date in that chunk.
+_BOUNDED_STRING = r"""
+sstring ::= "\"" ( [^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) ){0,200} "\"" ws
+"""
+
 # Any single JSON value (the equivalent of "just give me valid JSON").
 JSON_VALUE_GBNF = "root ::= value\n" + _JSON_COMMON
 
 # A JSON array of strings (e.g. verbatim date expressions / candidate spans).
 STRING_ARRAY_GBNF = (
     r"""
-root ::= "[" ws ( string ( "," ws string ){0,63} )? "]"
+root ::= "[" ws ( sstring ( "," ws sstring ){0,63} )? "]"
 """
-    + _JSON_COMMON
+    + _BOUNDED_STRING + _JSON_COMMON
 )
 
 # relationship-extraction: array of {subject, predicate, object} triples.
 RELATIONSHIPS_GBNF = (
     r"""
 root ::= "[" ws ( rel ( "," ws rel ){0,127} )? "]"
-rel  ::= "{" ws "\"subject\"" ws ":" ws string "," ws "\"predicate\"" ws ":" ws string "," ws "\"object\"" ws ":" ws string "}" ws
+rel  ::= "{" ws "\"subject\"" ws ":" ws sstring "," ws "\"predicate\"" ws ":" ws sstring "," ws "\"object\"" ws ":" ws sstring "}" ws
 """
-    + _JSON_COMMON
+    + _BOUNDED_STRING + _JSON_COMMON
 )
 
 # entity-extraction: array of {word, entity} where entity is one of the
@@ -56,10 +66,10 @@ rel  ::= "{" ws "\"subject\"" ws ":" ws string "," ws "\"predicate\"" ws ":" ws 
 ENTITIES_GBNF = (
     r"""
 root  ::= "[" ws ( ent ( "," ws ent ){0,127} )? "]"
-ent   ::= "{" ws "\"word\"" ws ":" ws string "," ws "\"entity\"" ws ":" ws label ws "}" ws
+ent   ::= "{" ws "\"word\"" ws ":" ws sstring "," ws "\"entity\"" ws ":" ws label ws "}" ws
 label ::= "\"PERSON\"" | "\"ORG\"" | "\"GPE\"" | "\"LOC\"" | "\"NORP\"" | "\"EVENT\"" | "\"FAC\"" | "\"PRODUCT\"" | "\"WORK_OF_ART\"" | "\"LANGUAGE\"" | "\"LAW\""
 """
-    + _JSON_COMMON
+    + _BOUNDED_STRING + _JSON_COMMON
 )
 
 # date-extraction LLM fallback: either a resolved date or an unresolved marker.
