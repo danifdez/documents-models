@@ -12,10 +12,12 @@ Mirrors the state-machine pattern of `summarize` and `key-point`:
 - Once all children finish, the dispatcher re-invokes the handler with the
   persisted state; `_phase_merge` concatenates, dedupes, and sorts.
 
-The worker is **English-only**. The backend is responsible for passing
-`workingContent` (the translated-to-English text) for non-English resources
-and `language="en"`. If the payload arrives in another language we still run
-spaCy in English and emit a warning.
+The worker extracts **in the document's own language**. The backend detects the
+language and enqueues the original text with it (see `detect-language-processor`:
+"Original language is preserved — no translation"), so `payload["language"]` is
+authoritative and is threaded down to dateparser, to the children and to the
+retry template. Hardcoding "en" here silently loses every relative expression
+and every spelled-out month in a non-English document.
 
 Per-chunk LLM fallback budget (`chunk_max_llm_fallbacks`, default 5) replaces
 the previous global `max_llm_fallbacks=10`, so long documents no longer get
@@ -53,10 +55,14 @@ _RANGE_SEPARATORS_RE = re.compile(
 )
 
 _YEAR_RE = re.compile(r"\b(1[0-9]{3}|2[0-9]{3})\b")
+# All five supported languages: a month this misses degrades the entry to
+# `precision: "year"`, so "20. Juli 1969" would land as a bare year.
 _MONTH_NAME_RE = re.compile(
     r"\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?|"
     r"ene(ro)?|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|"
-    r"janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre)\b",
+    r"janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|"
+    r"januar|februar|m[aä]rz|juni|juli|okt(ober)?|dez(ember)?|"
+    r"gennaio|febbraio|aprile|maggio|giugno|luglio|settembre|ottobre|dicembre)\b",
     re.IGNORECASE,
 )
 _NUMERIC_DATE_RE = re.compile(
@@ -67,6 +73,14 @@ _NUMERIC_DATE_RE = re.compile(
 _DETECT_PROMPT = get_prompt("date-extraction", "detect_prompt.md")
 _RESOLVE_PROMPT = get_prompt("date-extraction", "resolve_prompt.md")
 _TITLE_PROMPT = get_prompt("date-extraction", "title_prompt.md")
+
+
+# The model decorates the span it copies (`_July 20, 1969_`, `@3 días`) even
+# when told to quote verbatim, and `_locate` matches against the undecorated
+# document: left alone, the markers make the one expression we actually care
+# about unlocatable, so it gets dropped while the undecorated noise survives.
+# Edges only — a marker inside the span is part of what the model copied.
+_DECOR_RE = re.compile(r"^[\s_*`~@#]+|[\s_*`~@#]+$")
 
 
 def _detect_expressions(text: str, cfg: Dict[str, Any]) -> List[str]:
@@ -82,7 +96,10 @@ def _detect_expressions(text: str, cfg: Dict[str, Any]) -> List[str]:
     except Exception:
         logger.exception("date-extraction detection failed")
         return []
-    return [item.strip() for item in parsed if isinstance(item, str) and len(item.strip()) >= 2] if isinstance(parsed, list) else []
+    if not isinstance(parsed, list):
+        return []
+    cleaned = (_DECOR_RE.sub("", item) for item in parsed if isinstance(item, str))
+    return [item for item in cleaned if len(item) >= 2]
 
 
 def _assign_titles(text: str, entries: List[Dict[str, Any]]) -> None:
@@ -465,11 +482,10 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
     is_child = "_chunk_idx" in payload
     chunk_offset_in = int(payload.get("_chunk_offset", 0)) if is_child else 0
 
-    if language and language.lower() != "en":
-        logger.warning(
-            "date-extraction worker is English-only but received language=%s; "
-            "the backend should pass the translated workingContent.", language,
-        )
+    if not language:
+        # dateparser can autodetect, but it is slower and more ambiguous than
+        # being told; the backend normally resolves this before enqueueing.
+        logger.warning("date-extraction got no language; falling back to autodetect")
 
     if not text:
         return {"dates": []}
@@ -506,10 +522,14 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
             all_entries.extend(entries)
         return {"dates": all_entries}
 
-    # TOP-LEVEL with a single chunk: full pipeline inline.
+    # TOP-LEVEL with a single chunk: full pipeline inline. Pass the declared
+    # language through rather than asserting "en": dateparser is multilingual,
+    # and hardcoding English makes it miss every non-English expression
+    # ("marzo de 2020", "hace 3 días") when the backend did not translate.
+    # The child branch above already trusts the payload; this matches it.
     if len(chunks) == 1:
         entries, _ = _extract_from_text(
-            chunks[0], "en", anchor_dt, anchor_date,
+            chunks[0], language, anchor_dt, anchor_date,
             char_offset=0, cfg=cfg,
             llm_budget_remaining=chunk_max_llm,
         )
@@ -522,7 +542,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         all_entries = []
         for c, off in zip(chunks, chunk_offsets):
             entries, _ = _extract_from_text(
-                c, "en", anchor_dt, anchor_date,
+                c, language, anchor_dt, anchor_date,
                 char_offset=off, cfg=cfg,
                 llm_budget_remaining=chunk_max_llm,
             )
@@ -536,7 +556,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
     for i, (chunk, off) in enumerate(zip(chunks, chunk_offsets)):
         child_payload = {
             "text": chunk,
-            "language": "en",
+            "language": language,
             "anchorDate": anchor_date,
             "_chunk_idx": i,
             "_chunk_offset": off,
@@ -561,11 +581,11 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         "retries": retries,
         "chunks": chunks,
         "chunk_offsets": chunk_offsets,
-        "language": "en",
+        "language": language,
         "anchorDate": anchor_date,
         "chunk_field": "text",
         "chunk_payload_template": {
-            "language": "en",
+            "language": language,
             "anchorDate": anchor_date,
         },
     }
@@ -616,8 +636,8 @@ def extract_dates(
 
     Payload (top-level):
         text: str — the document content (HTML or plain).
-        language: str — should be "en"; backend resolves workingContent for
-            non-English resources before enqueueing.
+        language: str — the document's own language, as detected by the
+            backend. Used verbatim for parsing; not translated.
         anchorDate: str | null — YYYY-MM-DD, the resource's publication date.
 
     Children additionally carry `_chunk_idx` and `_chunk_offset`.
