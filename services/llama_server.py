@@ -38,7 +38,12 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-from lib.llm.config import get_llm_defaults, get_tasks, llm_params_for
+from lib.llm.config import (
+    active_deployments,
+    get_llm_defaults,
+    get_tasks,
+    llm_params_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +141,43 @@ def props(url: str, timeout: float = 5.0) -> Dict[str, Any]:
         return {}
 
 
+def lora_adapters(url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
+    """The adapters the server has loaded: `[{"id", "path", "scale"}, …]`.
+
+    Adapters can only be attached when the server starts (`--lora`), so this is
+    a read of what is already there. Empty list when it can't be asked, like
+    `props`: callers use it to resolve an id or to inform, never to decide
+    whether to run.
+    """
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/lora-adapters",
+                                    timeout=timeout) as resp:
+            loaded = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
+            json.JSONDecodeError):
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def lora_adapter_id(url: str, path: str) -> Optional[int]:
+    """The id the server gave an adapter, or None if it hasn't got it loaded.
+
+    Matches on the absolute path and, failing that, on the filename: the trainer
+    and the server may name the same adapter through different mounts, and the
+    id is what a request has to cite.
+    """
+    if not path:
+        return None
+    wanted = os.path.basename(path)
+    for adapter in lora_adapters(url):
+        if not isinstance(adapter, dict):
+            continue
+        loaded = str(adapter.get("path") or "")
+        if loaded == path or (wanted and os.path.basename(loaded) == wanted):
+            return adapter.get("id")
+    return None
+
+
 def loaded_model(url: str) -> str:
     """Basename of the .gguf the server has loaded, or '' if unknown."""
     data = props(url)
@@ -205,7 +247,27 @@ def engine_defaults() -> Dict[str, Any]:
         "n_ctx": _int("LLAMA_SERVER_CTX", params["n_ctx"]),
         "n_threads": _int("LLAMA_SERVER_THREADS", params["n_threads"]),
         "n_gpu_layers": _int("LLAMA_SERVER_GPU_LAYERS", params["n_gpu_layers"]),
+        # Every adapter deployed on a task, loaded once even if several tasks
+        # share it. They have to be here because llama-server only attaches
+        # adapters at startup: a task whose LoRA didn't make it into the command
+        # line would silently answer as the base model.
+        "lora_paths": _deployed_adapters(),
     }
+
+
+def _deployed_adapters() -> List[str]:
+    """The distinct adapter paths deployed on tasks, in a stable order.
+
+    Missing files are dropped rather than passed on: llama-server refuses to
+    start when `--lora` names a file that isn't there, and one stale deployment
+    must not leave the whole installation without an engine.
+    """
+    paths = []
+    for deployment in active_deployments().values():
+        path = deployment["path"]
+        if path not in paths and os.path.isfile(path):
+            paths.append(path)
+    return paths
 
 
 def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
@@ -248,6 +310,14 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
     ]
     if engine["n_threads"]:
         cmd += ["--threads", str(engine["n_threads"])]
+    for adapter in engine.get("lora_paths") or []:
+        cmd += ["--lora", str(adapter)]
+    if engine.get("lora_paths"):
+        # Loaded but not applied: with several adapters on one server, applying
+        # them all at once would mix them into every answer. Each request cites
+        # the id it wants (`lora: [{"id", "scale"}]`), so a task without an
+        # adapter keeps talking to the plain base model.
+        cmd += ["--lora-init-without-apply"]
     extra = os.environ.get("LLAMA_SERVER_ARGS", "").strip()
     if extra:
         cmd += shlex.split(extra)

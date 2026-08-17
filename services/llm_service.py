@@ -104,15 +104,38 @@ class LLMService:
             "LLM sampling for %s: %s", os.path.basename(model_path), self.sampling
         )
 
-        if lora_path:
-            logger.warning(
-                "LoRA %s is ignored: the shared engine serves whatever it was "
-                "started with. Start llama-server with --lora to apply it.",
-                os.path.basename(lora_path),
-            )
-
         self.url = llama_server.ensure_server(model_path)
         self._warn_on_mismatch()
+
+        # The adapter is applied per request, citing the id the server gave it
+        # when it loaded it (`--lora`). Resolving it here means a task whose
+        # adapter never made it into the engine fails when its client is built,
+        # loudly — before it produces a single answer that looks fine-tuned and
+        # is really the base model.
+        self._lora_id = None
+        if lora_path:
+            self._lora_id = llama_server.lora_adapter_id(self.url, lora_path)
+            if self._lora_id is None:
+                raise RuntimeError(
+                    f"LoRA {os.path.basename(lora_path)} is not loaded by the "
+                    f"engine at {self.url}. Adapters attach at startup: restart "
+                    "it so the deployment reaches the command line."
+                )
+            logger.info(
+                "LLM using LoRA %s (id=%s, scale=%s)",
+                os.path.basename(lora_path), self._lora_id, self.lora_scale,
+            )
+
+    def _lora_field(self) -> Dict[str, Any]:
+        """The `lora` field of a request, or nothing when there's no adapter.
+
+        Sent on every request rather than applied once on the server: one engine
+        serves every task, and the next request may belong to a task with a
+        different adapter — or with none.
+        """
+        if self._lora_id is None:
+            return {}
+        return {"lora": [{"id": self._lora_id, "scale": self.lora_scale}]}
 
     def _warn_on_mismatch(self) -> None:
         """Say so when the engine isn't serving what this task asked for.
@@ -186,11 +209,35 @@ class LLMService:
             "cache_prompt": True,
         }
         body.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
+        body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
         resp = _post(f"{self.url}/completion", body)
         text = (resp.get("content") or "").strip()
         return text if allow_thinking else strip_thinking(text)
+
+    def ask(
+        self,
+        prompt: str,
+        max_tokens: int = 1000,
+        temperature: Optional[float] = None,
+    ) -> str:
+        """One instruction in, the answer out — no conversation to carry.
+
+        Through `chat`, so the model's own template is rendered and the thinking
+        is suppressed: a raw completion gives an instruct model no way to tell an
+        instruction from text to continue, and it answers with a heading, repeats
+        the block, or spills its reasoning into the output. Tasks that constrain
+        the answer with a grammar don't need this and call `generate` directly.
+
+        The fallback keeps an engine without the chat endpoint answering.
+        """
+        try:
+            return self.chat([{"role": "user", "content": prompt}],
+                             max_tokens=max_tokens, temperature=temperature)
+        except Exception:  # noqa: BLE001 — engine without /v1/chat/completions
+            return self.generate(prompt, max_tokens=max_tokens,
+                                 temperature=temperature)
 
     def chat(
         self,
@@ -226,6 +273,7 @@ class LLMService:
             "cache_prompt": True,
         }
         body.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
+        body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
         if response_format is not None:
@@ -263,6 +311,7 @@ class LLMService:
             "stream": False,
         }
         body.update(self._sampling_kwargs())
+        body.update(self._lora_field())
         resp = _post(f"{self.url}/v1/chat/completions", body)
         choices = resp.get("choices") or [{}]
         return choices[0].get("message") or {}
@@ -286,6 +335,7 @@ class LLMService:
             "cache_prompt": True,
         }
         body.update(self._sampling_kwargs())
+        body.update(self._lora_field())
         resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
         with resp:
             for raw in resp:
@@ -332,3 +382,14 @@ def get_llm_service(
             model_path, n_ctx, n_threads, n_batch, n_gpu_layers, lora_path, lora_scale
         )
     return _llm_cache[key]
+
+
+def reset_cache() -> None:
+    """Forget every cached client. Call it after restarting the engine.
+
+    A client holds the engine URL and the id its adapter had in THAT server;
+    both are meaningless once the server is replaced, and reusing them would
+    send requests citing an adapter id that now belongs to another file — or to
+    nothing at all.
+    """
+    _llm_cache.clear()

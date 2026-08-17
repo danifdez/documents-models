@@ -9,5 +9,8 @@ class Generator:
     def run(self, ctx: RAGContext) -> RAGContext:
         params = get_llm_params("ask")
         llm = get_llm_service(**params)
-        ctx.response = llm.generate(ctx.prompt, max_tokens=ctx.max_tokens)
+        # `ask` y no `generate`: el prompt es una instrucción con el contexto
+        # recuperado dentro, y una completion cruda invita al modelo a seguir
+        # escribiendo el contexto en vez de responder la pregunta.
+        ctx.response = llm.ask(ctx.prompt, max_tokens=ctx.max_tokens)
         return ctx

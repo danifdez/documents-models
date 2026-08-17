@@ -111,14 +111,7 @@ def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any])
     max_tokens = int(cfg.get("max_tokens", 500))
     try:
         prompt = prompt_template.format(target_lang=target_lang, text=safe)
-        try:
-            generated = llm_service.chat(
-                [{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=0.0,
-            )
-        except Exception:
-            generated = llm_service.generate(prompt, max_tokens=max_tokens, temperature=0.0)
+        generated = llm_service.ask(prompt, max_tokens=max_tokens, temperature=0.0)
     except Exception as e:
         logger.warning("keywords chunk extraction failed: %s", e)
         return []

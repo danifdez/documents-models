@@ -39,6 +39,28 @@ _INFERENCE_DEFAULTS_FILE = os.path.join(_PROJECT_DIR, 'common', 'inference_defau
 _CONFIG_FILE = os.environ.get('MODELS_CONFIG_PATH') or os.path.join(_CONFIG_DIR, 'config.json')
 _TASKS_FILE = os.environ.get('MODELS_TASKS_PATH') or os.path.join(_CONFIG_DIR, 'tasks.json')
 
+# Fine-tuned adapters deployed per task: {"tasks": {"<task>": {"enabled": true,
+# "path": "…/adapter.gguf", "scale": 1.0}}}. Whoever trains the adapter writes
+# this file; here it only decides which task gets which LoRA.
+_DEPLOYMENTS_FILE = os.path.join(_CONFIG_DIR, 'deployments.json')
+
+
+def _deployments_file() -> str:
+    """Where the deployments live, resolved on every read.
+
+    An environment knob because the trainer lives outside this tree (the
+    ai-train lab writes its own .ai-train/deployments.json), and both names are
+    accepted so neither side has to know about the other's layout. Resolved per
+    call, not at import: a worker spawned with a different environment has to
+    obey it, and nothing here is worth the surprise of a value frozen by
+    whichever module imported this one first.
+    """
+    return (
+        os.environ.get('MODELS_DEPLOYMENTS_PATH')
+        or os.environ.get('AI_TRAIN_DEPLOYMENTS_PATH')
+        or _DEPLOYMENTS_FILE
+    )
+
 _config = None
 _tasks = None
 _inference_defaults = None
@@ -131,10 +153,46 @@ def get_worker_config() -> dict:
     return _load_config().get('worker', {})
 
 
+def active_deployments() -> dict:
+    """Deployed adapters, as `{task_name: {"path": str, "scale": float}}`.
+
+    Read on every call rather than cached: deploying an adapter is an
+    interactive action, and a long-lived worker has to pick it up on the next
+    job instead of on the next restart. A missing or malformed file simply means
+    no deployments — never an error, because inference must keep working.
+    """
+    try:
+        with open(_deployments_file(), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+    tasks = data.get('tasks') if isinstance(data, dict) else None
+    if not isinstance(tasks, dict):
+        return {}
+
+    out = {}
+    for name, entry in tasks.items():
+        if not isinstance(entry, dict) or not entry.get('enabled', True):
+            continue
+        path = str(entry.get('path') or '').strip()
+        if not path:
+            continue
+        try:
+            scale = float(entry.get('scale', 1.0))
+        except (TypeError, ValueError):
+            scale = 1.0
+        out[name] = {'path': path, 'scale': scale}
+    return out
+
+
 def get_task_config(task_name: str) -> dict:
     """Get configuration for a specific task.
 
-    Merges config/tasks/<task_name>/config.json on top if present.
+    Merges config/tasks/<task_name>/config.json on top if present, and the
+    adapter deployed on this task (if any) on top of that: a fine-tuned task has
+    to reach inference with its LoRA, or it would be evaluated as the base model
+    without anyone noticing.
     """
     tasks = _load_tasks()
     base = dict(tasks.get(task_name, {}))
@@ -145,6 +203,11 @@ def get_task_config(task_name: str) -> dict:
         with open(override_path, 'r', encoding='utf-8') as f:
             overrides = json.load(f)
         base.update(overrides)
+
+    deployment = active_deployments().get(task_name)
+    if deployment:
+        base['lora_path'] = deployment['path']
+        base['lora_scale'] = deployment['scale']
 
     return base
 
