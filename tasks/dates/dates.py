@@ -207,9 +207,6 @@ def _llm_fallback(
     language: str,
     anchor_date: Optional[str],
 ) -> Optional[Dict[str, Any]]:
-    from lib.llm.config import get_task_config, get_llm_params
-    from services.llm_service import get_llm_service
-
     task_config = get_task_config("date-extraction")
     if not task_config.get("enable_llm_fallback", True):
         return None
@@ -626,7 +623,9 @@ def extract_dates(
     Children additionally carry `_chunk_idx` and `_chunk_offset`.
     """
     try:
-        from lib.llm.config import get_task_config
+        # Module-level binding on purpose: a function-local re-import would
+        # dodge any patch a test harness applies to this module to override
+        # the task config (chunk_word_budget & friends).
         cfg = get_task_config("date-extraction")
         if state and state.get("phase") == "merging":
             return _phase_merge(state, cfg, ctx)
