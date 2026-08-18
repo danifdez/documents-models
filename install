@@ -213,6 +213,9 @@ if [ ! -d ".venv" ]; then
   ok "Created .venv"
 else
   ok ".venv already exists"
+  # Re-running install after this checkout was moved/renamed: realign the
+  # venv's baked-in absolute paths instead of leaving them stale.
+  ./ensure-venv
 fi
 
 # ── Activate venv ──

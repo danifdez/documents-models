@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Keep this submodule's venv usable regardless of where it's checked out —
+# on its own, inside the documents-dev monorepo, or after that checkout gets
+# moved/renamed. `python -m venv` bakes the venv's absolute path into
+# pyvenv.cfg and bin/activate*; if the directory this venv lives under ever
+# moves after `install` created it, those baked-in paths go stale and
+# `source .venv/bin/activate` silently fails to put a working `python` on
+# PATH. This script detects that and regenerates just the venv's own scripts
+# (no --clear) — installed packages are untouched.
+#
+# Used by install (idempotent re-runs) and by anything that starts a models
+# process (jobs.py, services.llama_server, voice.run_pool) — whoever that
+# is, monorepo `manage` or a standalone checkout, calls this first.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$SCRIPT_DIR/.venv"
+ACTIVATE="$VENV_DIR/bin/activate"
+
+[ -f "$ACTIVATE" ] || exit 0   # no venv yet — install's job, not ours
+
+if grep -qF "VIRTUAL_ENV=$VENV_DIR" "$ACTIVATE" 2>/dev/null; then
+  exit 0   # already aligned
+fi
+
+echo "[models/ensure-venv] .venv has stale absolute paths (checkout was moved) — realigning..." >&2
+PYTHON_BIN="$(command -v python3 || command -v python)"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
+echo "[models/ensure-venv] realigned $VENV_DIR" >&2
