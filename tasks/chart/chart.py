@@ -1,5 +1,5 @@
 from utils.job_registry import job_handler
-from common.dataset import load_dataset, safe_float, apply_filters, resolve_fk_labels, _normalize_fk_value
+from common.dataset import load_dataset, safe_float, apply_filters, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 
 
@@ -85,7 +85,7 @@ def chart(payload) -> dict:
 
         raw_labels = grouped.index.tolist()
         fk_map = resolve_fk_labels(schema, x_field, raw_labels)
-        labels = [fk_map.get(_normalize_fk_value(v), str(v)) for v in raw_labels]
+        labels = [fk_map.get(normalize_fk_value(v), str(v)) for v in raw_labels]
         values = [safe_float(v) for v in grouped.values]
 
         stats_dict = {"totalRecords": len(df), "categories": len(grouped)}

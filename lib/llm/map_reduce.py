@@ -10,6 +10,16 @@ A task is defined by declaring a `MapReduceSpec` with two functions —`leaf_fn`
 (how to process one chunk) and `reduce_fn` (how to merge partials)— and calling
 `run_map_reduce(payload, state, ctx, spec=..., cfg=...)` from its `@job_handler`.
 
+Two result models coexist:
+
+- Default (string) mode: `leaf_fn`/`reduce_fn` produce text and every result is
+  `{"response": <str>}` — the original summarize behaviour.
+- `list_results` mode: `leaf_fn` returns a list, results are wrapped under
+  `result_key` (`{"dates": [...]}`, `{"keywords": [...]}`, …), a single-chunk
+  root still runs `reduce_fn` (so the task's cross-chunk pipeline also applies
+  to one chunk), children never fan out again, and the merge hands `reduce_fn`
+  the raw per-chunk lists without any validity filtering.
+
 Dispatcher contract (shared with documents-dev via `job_mock`/`process_job`):
 the fan-out returns
 `{"_sub_agent_pending_many": True, "_state": {...}, "pending_children": {...}}`
@@ -25,10 +35,22 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from lib.llm.text import build_chunks, word_count
 from lib.llm.unit_filters import build_units_filter
 
-# (chunk_text, payload, cfg) -> processed text for that chunk.
-LeafFn = Callable[[str, Dict[str, Any], Dict[str, Any]], str]
-# (partials, payload, cfg) -> merged text.
-ReduceFn = Callable[[List[str], Dict[str, Any], Dict[str, Any]], str]
+# (chunk_text, payload, cfg) -> processed result for that chunk: text in the
+# default mode, a list in `list_results` mode.
+LeafFn = Callable[[str, Dict[str, Any], Dict[str, Any]], Any]
+# (partials, payload, cfg) -> merged result.
+ReduceFn = Callable[[List[Any], Dict[str, Any], Dict[str, Any]], Any]
+# (payload, cfg, is_child) -> chunks.
+ChunksFn = Callable[[Dict[str, Any], Dict[str, Any], bool], List[str]]
+# (payload, cfg) -> static fields for every child payload (and the template).
+ChildStaticFn = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
+# (chunks, payload, cfg) -> (per-chunk extra payloads or None, extra state keys).
+FanoutExtrasFn = Callable[
+    [List[str], Dict[str, Any], Dict[str, Any]],
+    Tuple[Optional[List[Dict[str, Any]]], Dict[str, Any]],
+]
+# (state) -> context payload handed to reduce_fn in the merge phase.
+MergePayloadFn = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -45,10 +67,33 @@ class MapReduceSpec:
       order, only at the root (never on children, which already receive a single
       chunk). Resolved by `lib.llm.unit_filters`; `cfg["units_filters"]` overrides
       this list, and a filter returning an empty list keeps its input (fail-open).
+      Ignored when `chunks_fn` is set (the custom pipeline owns its filtering).
     - `recursive_merge`: if the merge exceeds `chunk_word_budget *
-      merge_recursion_factor` words, fan out over it again.
+      merge_recursion_factor` words, fan out over it again. Only honoured in the
+      default string mode; `list_results` tasks never recurse.
     - `child_max_steps`: `agent_max_steps` of each child job (leaves are
       single-step).
+
+    Optional extensions (defaults preserve the original string behaviour):
+
+    - `result_key`: key wrapping every result (`"response"` by default). Also
+      the key the merge phase reads from each stored child result.
+    - `empty_value`: value returned under `result_key` when there is nothing to
+      process.
+    - `list_results`: switch to list semantics (see the module docstring).
+    - `chunks_fn`: replaces the default `build_chunks` pipeline for tasks with
+      their own cleaning/chunking. Called exactly once per plan invocation.
+    - `child_static_fn`: static fields every child receives, also stored as the
+      `chunk_payload_template`. Unlike `carry_fields`, the values are kept even
+      when `None` and are placed before `_chunk_idx` in the child payload.
+    - `fanout_extras_fn`: per-chunk extra payload entries appended after
+      `_chunk_idx` (e.g. date-extraction's `_chunk_offset`) plus extra state
+      keys inserted between `chunks` and `chunk_field`. Also applied to the
+      in-process fallback so its leaves see the same extras.
+    - `merge_payload_fn`: context payload handed to `reduce_fn` in the merge
+      phase; defaults to the `carry_fields` extraction from the state. In
+      `list_results` mode the payload `reduce_fn` receives always carries the
+      chunk list under `"_chunks"`.
     """
 
     task_name: str
@@ -59,6 +104,13 @@ class MapReduceSpec:
     units_filters: Sequence[str] = ()
     recursive_merge: bool = True
     child_max_steps: int = 1
+    result_key: str = "response"
+    empty_value: Any = ""
+    list_results: bool = False
+    chunks_fn: Optional[ChunksFn] = None
+    child_static_fn: Optional[ChildStaticFn] = None
+    fanout_extras_fn: Optional[FanoutExtrasFn] = None
+    merge_payload_fn: Optional[MergePayloadFn] = None
 
 
 def run_map_reduce(
@@ -90,32 +142,71 @@ def _plan_or_leaf(
     is_child = "_chunk_idx" in payload
     chunk_word_budget = int(cfg.get("chunk_word_budget", 1500))
 
-    units_filter = None
-    if not is_child:
-        units_filter = build_units_filter(spec.units_filters, payload, cfg)
-
-    chunks = build_chunks(
-        payload.get(spec.chunk_field, ""), chunk_word_budget, units_filter=units_filter
-    )
+    if spec.chunks_fn is not None:
+        chunks = spec.chunks_fn(payload, cfg, is_child)
+    else:
+        units_filter = None
+        if not is_child:
+            units_filter = build_units_filter(spec.units_filters, payload, cfg)
+        chunks = build_chunks(
+            payload.get(spec.chunk_field, ""), chunk_word_budget, units_filter=units_filter
+        )
     if not chunks:
-        return {"response": ""}
+        return {spec.result_key: spec.empty_value}
+
+    if spec.list_results and is_child:
+        # Children never fan out again: when re-cleaning splits the received
+        # chunk further (rare), process every piece against the payload the
+        # child got and concatenate the per-piece lists.
+        collected: List[Any] = []
+        for chunk in chunks:
+            collected.extend(spec.leaf_fn(chunk, payload, cfg))
+        return {spec.result_key: collected}
 
     if len(chunks) == 1:
-        return {"response": spec.leaf_fn(chunks[0], payload, cfg)}
+        if spec.list_results:
+            # A single-chunk root still runs the task's full merge pipeline.
+            merged = spec.reduce_fn(
+                [spec.leaf_fn(chunks[0], payload, cfg)],
+                {**payload, "_chunks": chunks},
+                cfg,
+            )
+            return {spec.result_key: merged}
+        return {spec.result_key: spec.leaf_fn(chunks[0], payload, cfg)}
+
+    # Computed before the queue check: the in-process fallback needs the
+    # per-chunk extras (e.g. chunk offsets) too.
+    chunk_extras: Optional[List[Dict[str, Any]]] = None
+    state_extras: Dict[str, Any] = {}
+    if spec.fanout_extras_fn is not None:
+        chunk_extras, state_extras = spec.fanout_extras_fn(chunks, payload, cfg)
 
     if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
         # No job queue (e.g. unit tests): process the chunks in-process and
         # merge, without fan-out.
+        if spec.list_results:
+            partials: List[Any] = []
+            for i, chunk in enumerate(chunks):
+                leaf_payload = {**payload, **chunk_extras[i]} if chunk_extras else payload
+                partials.append(spec.leaf_fn(chunk, leaf_payload, cfg))
+            merged = spec.reduce_fn(partials, {**payload, "_chunks": chunks}, cfg)
+            return {spec.result_key: merged}
         partials = [spec.leaf_fn(c, payload, cfg) for c in chunks]
-        return {"response": spec.reduce_fn(partials, payload, cfg)}
+        return {spec.result_key: spec.reduce_fn(partials, payload, cfg)}
 
     carry = _carry(payload, spec)
+    static = spec.child_static_fn(payload, cfg) if spec.child_static_fn is not None else None
 
     pending: Dict[str, int] = {}
-    results: Dict[str, Optional[str]] = {}
+    results: Dict[str, Optional[Any]] = {}
     retries: Dict[str, int] = {}
     for i, chunk in enumerate(chunks):
-        child_payload = {spec.chunk_field: chunk, "_chunk_idx": i, **carry}
+        if static is not None:
+            child_payload = {spec.chunk_field: chunk, **static, "_chunk_idx": i}
+        else:
+            child_payload = {spec.chunk_field: chunk, "_chunk_idx": i, **carry}
+        if chunk_extras is not None:
+            child_payload.update(chunk_extras[i])
         child_id = ctx.db.enqueue_child_job(
             ctx.job_id, spec.task_name,
             payload=child_payload, agent_max_steps=spec.child_max_steps,
@@ -133,8 +224,9 @@ def _plan_or_leaf(
         "results": results,
         "retries": retries,
         "chunks": chunks,
+        **state_extras,
         "chunk_field": spec.chunk_field,
-        "chunk_payload_template": dict(carry),
+        "chunk_payload_template": dict(static) if static is not None else dict(carry),
         **carry,
     }
 
@@ -151,7 +243,27 @@ def _merge(
     n = int(state.get("chunks_count", 0))
     results = state.get("results") or {}
 
-    partials: List[str] = []
+    if spec.list_results:
+        failed_idx = state.get("failed_idx")
+        if failed_idx is not None:
+            return {
+                "error": (
+                    f"chunk {failed_idx} failed after retries: "
+                    f"{state.get('failed_error') or 'unknown error'}"
+                )
+            }
+        partials: List[Any] = []
+        for i in range(n):
+            r = results.get(str(i))
+            partials.append(r.get(spec.result_key) if isinstance(r, dict) else None)
+        if spec.merge_payload_fn is not None:
+            base = spec.merge_payload_fn(state)
+        else:
+            base = _carry(state, spec)
+        ctx_payload = {**base, "_chunks": state.get("chunks") or []}
+        return {spec.result_key: spec.reduce_fn(partials, ctx_payload, cfg)}
+
+    partials = []
     for i in range(n):
         r = results.get(str(i))
         if isinstance(r, dict):
@@ -185,4 +297,4 @@ def _merge(
                 {**ctx_payload, spec.chunk_field: merged}, ctx, spec=spec, cfg=cfg,
             )
 
-    return {"response": merged}
+    return {spec.result_key: merged}

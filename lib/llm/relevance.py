@@ -1,9 +1,9 @@
 """Drop the section units of a document that don't carry substantive content.
 
-Espejo de `documents-dev/models/services/relevance.py`. Única desviación: el
-modelo se resuelve con `llm_params_for(cfg)` (la convención de core) en vez de
-construir un `ModelSpec`. Como `cfg` es la propia config de la tarea, las
-funciones solo reciben `cfg`.
+Mirror of `documents-dev/models/services/relevance.py`. Single deviation: the
+model is resolved with `llm_params_for(cfg)` (core's convention) instead of
+building a `ModelSpec`. Since `cfg` is the task's own config, the functions
+only receive `cfg`.
 
 Two independent filters, each registered as its own unit-filter entity (see
 `lib.llm.unit_filters`) so a task turns them on by naming them, not with a flag:

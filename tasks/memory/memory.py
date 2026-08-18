@@ -9,19 +9,10 @@ other table.
 
 import logging
 
-import psycopg
-from psycopg.rows import dict_row
-
 from utils.job_registry import job_handler
+from database.memory import entries_by_ids, recent_entries
 from database.rag import get_memory_rag, PointStruct
 from services.embedding_service import get_embedding_service
-from config import (
-    POSTGRES_HOST,
-    POSTGRES_PORT,
-    POSTGRES_DB,
-    POSTGRES_USER,
-    POSTGRES_PASSWORD,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -125,40 +116,6 @@ def search_memory(payload: dict) -> dict:
     return {"results": results}
 
 
-def _memory_db_connection():
-    return psycopg.connect(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        dbname=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
-        autocommit=True,
-        row_factory=dict_row,
-    )
-
-
-def _recent_entries(assistant_id: int, limit: int) -> list:
-    with _memory_db_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, name, type, body FROM assistant_memory_entries "
-            "WHERE assistant_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
-            (assistant_id, limit),
-        )
-        return cur.fetchall()
-
-
-def _entries_by_ids(assistant_id: int, ids: list) -> dict:
-    if not ids:
-        return {}
-    with _memory_db_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, name, type, body FROM assistant_memory_entries "
-            "WHERE assistant_id = %s AND id = ANY(%s)",
-            (assistant_id, list(ids)),
-        )
-        return {r["id"]: r for r in cur.fetchall()}
-
-
 def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> list:
     """Memories likely relevant to the user's message, mixed with recent ones.
     In-process replacement for the backend's old relevantForInjection; returns
@@ -169,7 +126,7 @@ def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> lis
     if len(clean) < 8:
         return [
             {**e, "relevance": "recent"}
-            for e in _recent_entries(assistant_id, recent_limit)
+            for e in recent_entries(assistant_id, recent_limit)
         ]
     try:
         hits = search_memory(
@@ -178,7 +135,7 @@ def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> lis
     except Exception:
         logger.exception("memory: relevant_for_injection search failed")
         hits = []
-    bodies = _entries_by_ids(assistant_id, [h["memoryId"] for h in hits])
+    bodies = entries_by_ids(assistant_id, [h["memoryId"] for h in hits])
     seen: set = set()
     merged: list = []
     for h in hits:
@@ -188,7 +145,7 @@ def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> lis
         e["relevance"] = "high" if (h.get("score") or 0) > 0.85 else "medium"
         merged.append(e)
         seen.add(e["id"])
-    for r in _recent_entries(assistant_id, recent_limit):
+    for r in recent_entries(assistant_id, recent_limit):
         if r["id"] in seen:
             continue
         r["relevance"] = "recent"

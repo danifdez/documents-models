@@ -1,12 +1,13 @@
 """Reentrant entity-extraction task.
 
-Same state-machine shape as `keywords` and `date-extraction`:
+Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
+`keywords` and `date-extraction`:
 
 - The root invocation cleans the text, splits it into section units and chunks
   them. One chunk runs inline; several fan out one child job per chunk.
 - Each child returns the entities of its own chunk.
 - Once every child is done the dispatcher re-invokes the handler with the
-  persisted state and `_phase_merge` concatenates and dedupes.
+  persisted state and the reduce step concatenates and dedupes.
 
 Chunking is not an optimisation here: the previous single-shot version pushed
 the whole document through `truncate_for_llm`, so everything past the model's
@@ -20,6 +21,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
 from lib.llm.text import build_chunks, strip_dense_blobs, truncate_for_llm
 from services.llm_service import get_llm_service
@@ -115,88 +117,37 @@ def _dedupe(entities: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return out
 
 
-def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    is_child = "_chunk_idx" in payload
+def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
     raw_content = _payload_text(payload)
     if not raw_content.strip():
-        return {"entities": []}
-
-    chunks = build_chunks(raw_content, int(cfg.get("chunk_word_budget", 1500)))
-    if not chunks:
-        return {"entities": []}
-
-    # CHILD: raw per-chunk entities; the parent dedupes across chunks.
-    if is_child:
-        found: List[Dict[str, str]] = []
-        for c in chunks:
-            found.extend(_extract_entities(c, cfg))
-        return {"entities": found}
-
-    if len(chunks) == 1:
-        return {"entities": _dedupe(_extract_entities(chunks[0], cfg))}
-
-    # No job queue (unit tests / fallback): in-process serial.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
-        found = []
-        for c in chunks:
-            found.extend(_extract_entities(c, cfg))
-        return {"entities": _dedupe(found)}
-
-    # FAN-OUT: one child per chunk.
-    pending: Dict[str, int] = {}
-    results: Dict[str, Optional[Dict[str, Any]]] = {}
-    retries: Dict[str, int] = {}
-    for i, chunk in enumerate(chunks):
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id,
-            "entity-extraction",
-            payload={"text": chunk, "_chunk_idx": i},
-            agent_max_steps=1,
-        )
-        if child_id is None:
-            return {"error": f"failed to enqueue child for chunk {i}"}
-        pending[str(child_id)] = i
-        results[str(i)] = None
-        retries[str(i)] = 0
-
-    state = {
-        "phase": "merging",
-        "chunks_count": len(chunks),
-        "pending": pending,
-        "results": results,
-        "retries": retries,
-        "chunks": chunks,
-        "chunk_field": "text",
-        "chunk_payload_template": {},
-    }
-    return {
-        "_sub_agent_pending_many": True,
-        "_state": state,
-        "pending_children": pending,
-    }
+        return []
+    return build_chunks(raw_content, int(cfg.get("chunk_word_budget", 1500)))
 
 
-def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    failed_idx = state.get("failed_idx")
-    if failed_idx is not None:
-        return {
-            "error": (
-                f"chunk {failed_idx} failed after retries: "
-                f"{state.get('failed_error') or 'unknown error'}"
-            )
-        }
+def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, str]]:
+    return _extract_entities(chunk, cfg)
 
-    results = state.get("results") or {}
+
+def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, str]]:
     merged: List[Dict[str, str]] = []
-    for i in range(int(state.get("chunks_count", 0))):
-        chunk_result = results.get(str(i))
-        if not isinstance(chunk_result, dict):
-            continue
-        for entry in chunk_result.get("entities") or []:
+    for entries_list in partials:
+        for entry in (entries_list or []):
             if isinstance(entry, dict) and entry.get("word") and entry.get("entity"):
                 merged.append({"word": str(entry["word"]), "entity": str(entry["entity"])})
+    return _dedupe(merged)
 
-    return {"entities": _dedupe(merged)}
+
+_SPEC = MapReduceSpec(
+    task_name="entity-extraction",
+    leaf_fn=_leaf,
+    reduce_fn=_reduce,
+    chunk_field="text",
+    recursive_merge=False,
+    result_key="entities",
+    empty_value=[],
+    list_results=True,
+    chunks_fn=_chunks,
+)
 
 
 @job_handler("entity-extraction")
@@ -219,9 +170,7 @@ def entities(
     """
     try:
         cfg = get_task_config("entity-extraction")
-        if state and state.get("phase") == "merging":
-            return _phase_merge(state, cfg, ctx)
-        return _phase_plan_or_leaf(payload, cfg, ctx)
+        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("entity-extraction failed")
         return {"error": f"entity-extraction failed: {e}"}

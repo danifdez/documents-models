@@ -17,14 +17,23 @@ heuristic result (or, in the worst case, the original list). The function
 must never return an empty list when given a non-empty input.
 """
 
-import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
+# These helpers are identical in both stacks; `lib.llm.relevance` is the
+# canonical home and they are imported here so the code lives once.
+# `_heuristic_keep_indices` stays local because it calls
+# `_looks_auxiliary_heading`, which HAS diverged (the lib version strips the
+# markdown ATX marker before matching the auxiliary-heading regex).
+from lib.llm.relevance import (
+    _heading_of,
+    _parse_keep_indices,
+    _preview_for_judgement,
+)
 from lib.llm.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -64,16 +73,6 @@ _NUMBERING_RE = re.compile(
 )
 
 
-def _heading_of(unit: str) -> str:
-    if not unit:
-        return ""
-    for line in unit.splitlines():
-        s = line.strip()
-        if s:
-            return s
-    return ""
-
-
 def _looks_auxiliary_heading(unit: str) -> bool:
     head = _heading_of(unit)
     if not head:
@@ -84,45 +83,6 @@ def _looks_auxiliary_heading(unit: str) -> bool:
 
 def _heuristic_keep_indices(units: List[str]) -> List[int]:
     return [i for i, u in enumerate(units) if not _looks_auxiliary_heading(u)]
-
-
-def _preview_for_judgement(unit: str, char_budget: int = 240) -> str:
-    lines = [ln.strip() for ln in (unit or "").splitlines() if ln.strip()]
-    if not lines:
-        return ""
-    head = lines[0]
-    body = " ".join(lines[1:])
-    body_excerpt = body[:char_budget]
-    if body_excerpt:
-        return f"{head} | {body_excerpt}"
-    return head[:char_budget]
-
-
-def _parse_keep_indices(raw: str, allowed: List[int]) -> Optional[List[int]]:
-    """Parse `{"keep": [int, ...]}` from possibly noisy LLM output.
-
-    Returns None if no keep list could be extracted (caller should fail-open).
-    Returns an empty list only if the model explicitly returned `keep: []` —
-    the caller must treat that as a "model rejected everything" signal.
-    """
-    if not raw:
-        return None
-    text = raw.strip()
-    # Trim accidental code fences.
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    allowed_set = set(allowed)
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict) and isinstance(data.get("keep"), list):
-            return [int(x) for x in data["keep"] if isinstance(x, (int, float)) and int(x) in allowed_set]
-    except Exception:
-        pass
-    m = re.search(r'"keep"\s*:\s*\[([\s\S]*?)\]', raw)
-    if m:
-        nums = [int(x) for x in re.findall(r"\d+", m.group(1))]
-        return [n for n in nums if n in allowed_set]
-    return None
 
 
 def select_relevant_units(

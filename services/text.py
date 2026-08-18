@@ -1,62 +1,15 @@
 import re
-import html
 from bs4 import BeautifulSoup
+
+# These three helpers are identical in both stacks; `lib.llm.text` is the
+# canonical home and they are re-exported here so existing `services.text`
+# imports keep working. The rest of the module (`clean_html_text`,
+# `_recursive_split`, `extract_section_units`, `chunk_units`, the RAG chunkers)
+# has diverged from the `lib.llm.text` versions and stays local on purpose.
+from lib.llm.text import html_to_markdown, normalize_text, strip_dense_blobs
 
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _PARAGRAPH_TAGS = {"p", "li", "blockquote", "pre"}
-_HTML_TAG_RE = re.compile(r'<[a-zA-Z/!?]')
-
-# Defenses against pathological inputs (data URIs, base64 blobs, minified
-# payloads). Any LLM-facing pipeline should pre-process its input through
-# `strip_dense_blobs` so a single inline blob can't blow the context window.
-_DATA_URI_RE = re.compile(
-    r"data:[a-zA-Z0-9+./;=-]*;base64,[A-Za-z0-9+/=\s]+",
-    re.MULTILINE,
-)
-_HUGE_TOKEN_RE = re.compile(r"\S{2000,}")
-
-
-def strip_dense_blobs(text: str) -> str:
-    """Replace data URIs and very long unbroken tokens with short placeholders.
-
-    `data:...;base64,...` becomes `[image]` and any non-whitespace run of
-    >=2000 chars becomes `[blob]`. Idempotent and safe to apply multiple
-    times.
-    """
-    if not text:
-        return text
-    cleaned = _DATA_URI_RE.sub("[image]", text)
-    cleaned = _HUGE_TOKEN_RE.sub("[blob]", cleaned)
-    return cleaned
-
-
-def normalize_text(text: str) -> str:
-    """Strip HTML tags, unescape HTML entities, and normalize whitespace."""
-    try:
-        text = re.sub(r'<[^>]+>', '', text)
-        text = html.unescape(text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text
-    except Exception:
-        return text
-
-
-def html_to_markdown(content: str) -> str:
-    """Convert HTML to Markdown, preserving headings, lists, links, code, emphasis.
-
-    Used by LLM tasks (summarize, keywords, key-point, relationship-extraction)
-    so the model receives structured Markdown rather than tag-stripped plain text.
-    Inputs that don't look like HTML are returned unchanged.
-    """
-    if not content:
-        return ""
-    if _HTML_TAG_RE.search(content):
-        try:
-            from markdownify import markdownify as _md
-            return _md(content, heading_style="ATX").strip()
-        except ImportError:
-            return normalize_text(content)
-    return content
 
 # Function to extract text from each HTML block element and return as array
 def clean_html_text(html_content):

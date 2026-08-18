@@ -1,6 +1,7 @@
 """Agentic date-extraction task.
 
-Mirrors the state-machine pattern of `summarize` and `key-point`:
+Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
+`summarize` and `key-point`:
 
 - Top-level invocation cleans the text (HTML → markdown, strip dense blobs),
   splits it into section units, optionally drops auxiliary sections via the
@@ -10,7 +11,7 @@ Mirrors the state-machine pattern of `summarize` and `key-point`:
 - Each child receives a single chunk plus its global character offset and
   returns a list of dated entries with global `charOffset` already applied.
 - Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; `_phase_merge` concatenates, dedupes, and sorts.
+  persisted state; the reduce step concatenates, dedupes, and sorts.
 
 The worker extracts **in the document's own language**. The backend detects the
 language and enqueues the original text with it (see `detect-language-processor`:
@@ -35,6 +36,7 @@ import dateparser
 
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.grammars import DATE_RESOLUTION_GBNF, STRING_ARRAY_GBNF
+from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
 from services.llm_service import get_llm_service
 from services.relevance import select_relevant_units
@@ -569,7 +571,7 @@ def _dedupe_and_sort(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phases
+# Map-reduce spec
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -590,13 +592,27 @@ def _chunk_offsets(cleaned: str, chunks: List[str]) -> List[int]:
     return offsets
 
 
-def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
+def _language_of(payload: Dict[str, Any]) -> Optional[str]:
+    return (payload.get("language") or "").strip() or None
+
+
+def _parse_anchor_quiet(anchor_date: Optional[str]) -> Optional[datetime]:
+    """`_parse_anchor` without the warning: the plan phase (`_chunks`) already
+    logged it once per invocation; leaves must not repeat it per chunk."""
+    if not anchor_date:
+        return None
+    try:
+        return datetime.strptime(anchor_date[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
     text = payload.get("text") or ""
-    language = (payload.get("language") or "").strip() or None
-    anchor_date = payload.get("anchorDate")
-    anchor_dt = _parse_anchor(anchor_date)
-    is_child = "_chunk_idx" in payload
-    chunk_offset_in = int(payload.get("_chunk_offset", 0)) if is_child else 0
+    language = _language_of(payload)
+    # Called for its warning only, so an invalid anchorDate is still logged
+    # exactly once per invocation; the value is re-parsed quietly in each leaf.
+    _parse_anchor(payload.get("anchorDate"))
 
     if not language:
         # dateparser can autodetect, but it is slower and more ambiguous than
@@ -604,136 +620,89 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         logger.warning("date-extraction got no language; falling back to autodetect")
 
     if not text:
-        return {"dates": []}
+        return []
 
     cleaned = strip_dense_blobs(html_to_markdown(text))
     units = extract_section_units(cleaned)
     if not units:
-        return {"dates": []}
+        return []
 
     if not is_child and cfg.get("relevance_filter_enabled", True):
         units = select_relevant_units(
             units, cfg, task_label="date extraction", target_lang="en",
         ) or units
 
-    chunk_word_budget = int(cfg.get("chunk_word_budget", 1500))
-    chunks = chunk_units(units, chunk_word_budget, joiner="\n\n")
-    if not chunks:
-        return {"dates": []}
-
-    chunk_max_llm = int(cfg.get("chunk_max_llm_fallbacks", 5))
-
-    # CHILD: receive a single chunk plus its global offset.
-    if is_child:
-        # If the cleaning re-chunks the input further (rare — child payloads
-        # are already a single chunk), process every piece against the same
-        # base offset; the loss of precision is acceptable for retries.
-        all_entries: List[Dict[str, Any]] = []
-        for c in chunks:
-            entries, _ = _extract_from_text(
-                c, language, anchor_dt, anchor_date,
-                char_offset=chunk_offset_in, cfg=cfg,
-                llm_budget_remaining=chunk_max_llm,
-            )
-            all_entries.extend(entries)
-        return {"dates": all_entries}
-
-    # TOP-LEVEL with a single chunk: full pipeline inline. Pass the declared
-    # language through rather than asserting "en": dateparser is multilingual,
-    # and hardcoding English makes it miss every non-English expression
-    # ("marzo de 2020", "hace 3 días") when the backend did not translate.
-    # The child branch above already trusts the payload; this matches it.
-    if len(chunks) == 1:
-        entries, _ = _extract_from_text(
-            chunks[0], language, anchor_dt, anchor_date,
-            char_offset=0, cfg=cfg,
-            llm_budget_remaining=chunk_max_llm,
-        )
-        return {"dates": _dedupe_and_sort(entries)}
-
-    chunk_offsets = _chunk_offsets(cleaned, chunks)
-
-    # No DB context (unit tests / fallback): in-process serial.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
-        all_entries = []
-        for c, off in zip(chunks, chunk_offsets):
-            entries, _ = _extract_from_text(
-                c, language, anchor_dt, anchor_date,
-                char_offset=off, cfg=cfg,
-                llm_budget_remaining=chunk_max_llm,
-            )
-            all_entries.extend(entries)
-        return {"dates": _dedupe_and_sort(all_entries)}
-
-    # FAN-OUT: one child per chunk, each carrying its global offset.
-    pending: Dict[str, int] = {}
-    results: Dict[str, Optional[Dict[str, Any]]] = {}
-    retries: Dict[str, int] = {}
-    for i, (chunk, off) in enumerate(zip(chunks, chunk_offsets)):
-        child_payload = {
-            "text": chunk,
-            "language": language,
-            "anchorDate": anchor_date,
-            "_chunk_idx": i,
-            "_chunk_offset": off,
-        }
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id,
-            "date-extraction",
-            payload=child_payload,
-            agent_max_steps=1,
-        )
-        if child_id is None:
-            return {"error": f"failed to enqueue child for chunk {i}"}
-        pending[str(child_id)] = i
-        results[str(i)] = None
-        retries[str(i)] = 0
-
-    state = {
-        "phase": "merging",
-        "chunks_count": len(chunks),
-        "pending": pending,
-        "results": results,
-        "retries": retries,
-        "chunks": chunks,
-        "chunk_offsets": chunk_offsets,
-        "language": language,
-        "anchorDate": anchor_date,
-        "chunk_field": "text",
-        "chunk_payload_template": {
-            "language": language,
-            "anchorDate": anchor_date,
-        },
-    }
-
-    return {
-        "_sub_agent_pending_many": True,
-        "_state": state,
-        "pending_children": pending,
-    }
+    return chunk_units(units, int(cfg.get("chunk_word_budget", 1500)), joiner="\n\n")
 
 
-def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    failed_idx = state.get("failed_idx")
-    if failed_idx is not None:
-        return {
-            "error": (
-                f"chunk {failed_idx} failed after retries: "
-                f"{state.get('failed_error') or 'unknown error'}"
-            )
-        }
+def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the entries of one chunk. Pass the declared language through
+    rather than asserting "en": dateparser is multilingual, and hardcoding
+    English makes it miss every non-English expression ("marzo de 2020",
+    "hace 3 días") when the backend did not translate.
 
-    n = int(state.get("chunks_count", 0))
-    results = state.get("results") or {}
+    Children (and the in-process fallback) carry the chunk's global offset in
+    `_chunk_offset`; a top-level single chunk starts at 0. When the cleaning
+    re-chunks a child's input further (rare), every piece is processed against
+    the same base offset; the loss of precision is acceptable for retries.
+    """
+    anchor_date = payload.get("anchorDate")
+    entries, _ = _extract_from_text(
+        chunk,
+        _language_of(payload),
+        _parse_anchor_quiet(anchor_date),
+        anchor_date,
+        char_offset=int(payload.get("_chunk_offset", 0)),
+        cfg=cfg,
+        llm_budget_remaining=int(cfg.get("chunk_max_llm_fallbacks", 5)),
+    )
+    return entries
+
+
+def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     all_entries: List[Dict[str, Any]] = []
-    for i in range(n):
-        r = results.get(str(i))
-        if isinstance(r, dict):
-            for d in (r.get("dates") or []):
-                if isinstance(d, dict):
-                    all_entries.append(d)
+    for entries in partials:
+        for d in (entries or []):
+            if isinstance(d, dict):
+                all_entries.append(d)
+    return _dedupe_and_sort(all_entries)
 
-    return {"dates": _dedupe_and_sort(all_entries)}
+
+def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "language": _language_of(payload),
+        "anchorDate": payload.get("anchorDate"),
+    }
+
+
+def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
+    # Re-cleans the text (cheap and deterministic) because the chunk offsets
+    # are measured against the cleaned document, not the raw payload.
+    cleaned = strip_dense_blobs(html_to_markdown(payload.get("text") or ""))
+    chunk_offsets = _chunk_offsets(cleaned, chunks)
+    return (
+        [{"_chunk_offset": off} for off in chunk_offsets],
+        {
+            "chunk_offsets": chunk_offsets,
+            "language": _language_of(payload),
+            "anchorDate": payload.get("anchorDate"),
+        },
+    )
+
+
+_SPEC = MapReduceSpec(
+    task_name="date-extraction",
+    leaf_fn=_leaf,
+    reduce_fn=_reduce,
+    chunk_field="text",
+    recursive_merge=False,
+    result_key="dates",
+    empty_value=[],
+    list_results=True,
+    chunks_fn=_chunks,
+    child_static_fn=_child_static,
+    fanout_extras_fn=_fanout_extras,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -763,9 +732,7 @@ def extract_dates(
         # dodge any patch a test harness applies to this module to override
         # the task config (chunk_word_budget & friends).
         cfg = get_task_config("date-extraction")
-        if state and state.get("phase") == "merging":
-            return _phase_merge(state, cfg, ctx)
-        return _phase_plan_or_leaf(payload, cfg, ctx)
+        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("date-extraction failed")
         return {"error": f"date-extraction failed: {e}"}

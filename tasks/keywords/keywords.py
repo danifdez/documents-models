@@ -1,7 +1,7 @@
 """Agentic keyword extraction.
 
-Mirrors the state-machine used by `summarize`, `key-point` and
-`date-extraction`:
+Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
+`summarize`, `key-point` and `date-extraction`:
 
 - Top-level invocation cleans the text (HTML → markdown, strip dense blobs),
   runs the relevance filter to drop bibliography/appendix-like sections, and
@@ -11,7 +11,7 @@ Mirrors the state-machine used by `summarize`, `key-point` and
   per-chunk candidate list. The parent merges them with the existing
   frequency-then-first-appearance ranking.
 - Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; `_phase_merge` produces the final ranked keyword list.
+  persisted state; the reduce step produces the final ranked keyword list.
 
 Defends against pathological inputs (data URIs, long base64 blobs) and
 truncates per-chunk LLM input to a safe character budget so a degenerate
@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
 from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
@@ -174,119 +175,74 @@ def _build_chunks(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phases
+# Map-reduce spec
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    target_lang = (
+def _target_lang(payload: Dict[str, Any]) -> str:
+    return (
         payload.get("targetLanguage")
         or payload.get("target_language")
         or "auto"
     )
-    chunk_word_budget = int(cfg.get("chunk_word_budget", 1500))
-    is_child = "_chunk_idx" in payload
 
+
+def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
     raw_content = payload.get("content", "") or ""
     if not str(raw_content).strip():
-        return {"keywords": []}
-
+        return []
     units_filter = None
     if not is_child:
+        target_lang = _target_lang(payload)
         units_filter = lambda us: select_relevant_units(
             us, cfg, task_label="keyword extraction", target_lang=target_lang,
         )
-
-    chunks = _build_chunks(raw_content, chunk_word_budget, units_filter=units_filter)
-    if not chunks:
-        return {"keywords": []}
-
-    # CHILD: return raw per-chunk candidates; the parent does the cross-chunk merge.
-    if is_child:
-        candidates: List[str] = []
-        for c in chunks:
-            candidates.extend(_extract_chunk_candidates(c, target_lang, cfg))
-        return {"keywords": candidates}
-
-    # TOP-LEVEL with a single chunk: run the full pipeline inline.
-    if len(chunks) == 1:
-        per_chunk = [_extract_chunk_candidates(chunks[0], target_lang, cfg)]
-        return {"keywords": _merge_pipeline(per_chunk, raw_content, cfg)}
-
-    # No DB context (unit tests / fallback): in-process serial.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
-        per_chunk_lists = [_extract_chunk_candidates(c, target_lang, cfg) for c in chunks]
-        return {"keywords": _merge_pipeline(per_chunk_lists, raw_content, cfg)}
-
-    # FAN-OUT: one child per chunk.
-    pending: Dict[str, int] = {}
-    results: Dict[str, Optional[Dict[str, Any]]] = {}
-    retries: Dict[str, int] = {}
-    for i, chunk in enumerate(chunks):
-        child_payload = {
-            "content": chunk,
-            "targetLanguage": target_lang,
-            "_chunk_idx": i,
-        }
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id,
-            "keywords",
-            payload=child_payload,
-            agent_max_steps=1,
-        )
-        if child_id is None:
-            return {"error": f"failed to enqueue child for chunk {i}"}
-        pending[str(child_id)] = i
-        results[str(i)] = None
-        retries[str(i)] = 0
-
-    state = {
-        "phase": "merging",
-        "chunks_count": len(chunks),
-        "pending": pending,
-        "results": results,
-        "retries": retries,
-        "chunks": chunks,
-        "targetLanguage": target_lang,
-        "raw_content": raw_content,
-        "chunk_field": "content",
-        "chunk_payload_template": {"targetLanguage": target_lang},
-    }
-
-    return {
-        "_sub_agent_pending_many": True,
-        "_state": state,
-        "pending_children": pending,
-    }
+    return _build_chunks(
+        raw_content, int(cfg.get("chunk_word_budget", 1500)), units_filter=units_filter
+    )
 
 
-def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    failed_idx = state.get("failed_idx")
-    if failed_idx is not None:
-        return {
-            "error": (
-                f"chunk {failed_idx} failed after retries: "
-                f"{state.get('failed_error') or 'unknown error'}"
-            )
-        }
+def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
+    return _extract_chunk_candidates(chunk, _target_lang(payload), cfg)
 
-    n = int(state.get("chunks_count", 0))
-    raw_content = state.get("raw_content", "")
-    results = state.get("results") or {}
 
+def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
     per_chunk_lists: List[List[str]] = []
-    for i in range(n):
-        r = results.get(str(i))
-        if isinstance(r, dict):
-            kw = r.get("keywords") or []
-            if isinstance(kw, list):
-                per_chunk_lists.append([str(x) for x in kw])
-            else:
-                per_chunk_lists.append([])
-        else:
-            per_chunk_lists.append([])
+    for kw in partials:
+        kw = kw or []
+        per_chunk_lists.append([str(x) for x in kw] if isinstance(kw, list) else [])
+    return _merge_pipeline(per_chunk_lists, payload.get("content", "") or "", cfg)
 
-    return {"keywords": _merge_pipeline(per_chunk_lists, raw_content, cfg)}
+
+def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    return {"targetLanguage": _target_lang(payload)}
+
+
+def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
+    return None, {
+        "targetLanguage": _target_lang(payload),
+        "raw_content": payload.get("content", "") or "",
+    }
+
+
+def _merge_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {"content": state.get("raw_content", "")}
+
+
+_SPEC = MapReduceSpec(
+    task_name="keywords",
+    leaf_fn=_leaf,
+    reduce_fn=_reduce,
+    chunk_field="content",
+    recursive_merge=False,
+    result_key="keywords",
+    empty_value=[],
+    list_results=True,
+    chunks_fn=_chunks,
+    child_static_fn=_child_static,
+    fanout_extras_fn=_fanout_extras,
+    merge_payload_fn=_merge_payload,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -304,9 +260,7 @@ def keywords(
     dispatcher when the parent is woken after all children complete."""
     try:
         cfg = get_task_config("keywords")
-        if state and state.get("phase") == "merging":
-            return _phase_merge(state, cfg, ctx)
-        return _phase_plan_or_leaf(payload, cfg, ctx)
+        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("Error extracting keywords")
         return {"error": f"Error extracting keywords: {e}"}

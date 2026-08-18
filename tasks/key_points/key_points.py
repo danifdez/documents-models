@@ -1,6 +1,7 @@
 """Agentic key-point extraction.
 
-Mirrors the agentic state-machine used by `summarize`:
+Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
+`summarize`:
 
 - Top-level invocation chunks the content. Single chunk → run the full
   extraction + dedup + refine + rank pipeline inline. Multiple chunks → fan
@@ -9,7 +10,7 @@ Mirrors the agentic state-machine used by `summarize`:
   in payload) and returns only the *raw* per-chunk candidates so the parent can
   do cross-chunk semantic dedup, refine and ranking.
 - Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; `_phase_merge` runs the cross-chunk pipeline and returns
+  persisted state; the reduce step runs the cross-chunk pipeline and returns
   the final `key_points` list.
 
 Defends against pathological inputs (data URIs, base64 blobs) the same way as
@@ -25,6 +26,7 @@ import numpy as np
 from agent.types import ModelSpec
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
 from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
@@ -316,119 +318,79 @@ def _merge_pipeline(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phases
+# Map-reduce spec
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    target_lang = payload.get("targetLanguage") or payload.get("target_language") or "en"
-    chunk_word_budget = int(cfg.get("chunk_word_budget", 1500))
-    is_child = "_chunk_idx" in payload
+def _target_lang(payload: Dict[str, Any]) -> str:
+    return payload.get("targetLanguage") or payload.get("target_language") or "en"
 
+
+def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
     raw_content = payload.get("content", "") or ""
     if not str(raw_content).strip():
-        return {"key_points": []}
-
+        return []
     units_filter = None
     if not is_child:
+        target_lang = _target_lang(payload)
         units_filter = lambda us: select_relevant_units(
             us, cfg, task_label="key-point extraction", target_lang=target_lang,
         )
-
-    chunks = _build_chunks(raw_content, chunk_word_budget, units_filter=units_filter)
-    if not chunks:
-        return {"key_points": []}
-
-    # CHILD invocation (one chunk per child by construction). Return raw
-    # per-chunk candidates; the parent does cross-chunk dedup/refine/rank.
-    if is_child:
-        candidates: List[str] = []
-        for c in chunks:
-            candidates.extend(_extract_chunk_candidates(c, target_lang, cfg))
-        return {"key_points": candidates}
-
-    # TOP-LEVEL with a single chunk: run the full pipeline inline.
-    if len(chunks) == 1:
-        per_chunk = [_extract_chunk_candidates(chunks[0], target_lang, cfg)]
-        return {"key_points": _merge_pipeline(per_chunk, chunks, raw_content, target_lang, cfg)}
-
-    # No DB context (e.g. unit tests): run sequentially in-process.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
-        per_chunk_lists = [_extract_chunk_candidates(c, target_lang, cfg) for c in chunks]
-        return {"key_points": _merge_pipeline(per_chunk_lists, chunks, raw_content, target_lang, cfg)}
-
-    # TOP-LEVEL with N chunks: fan out one child per chunk.
-    pending: Dict[str, int] = {}
-    results: Dict[str, Optional[Dict[str, Any]]] = {}
-    retries: Dict[str, int] = {}
-    for i, chunk in enumerate(chunks):
-        child_payload = {
-            "content": chunk,
-            "targetLanguage": target_lang,
-            "_chunk_idx": i,
-        }
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id,
-            "key-point",
-            payload=child_payload,
-            agent_max_steps=1,
-        )
-        if child_id is None:
-            return {"error": f"failed to enqueue child for chunk {i}"}
-        pending[str(child_id)] = i
-        results[str(i)] = None
-        retries[str(i)] = 0
-
-    state = {
-        "phase": "merging",
-        "chunks_count": len(chunks),
-        "pending": pending,
-        "results": results,
-        "retries": retries,
-        "chunks": chunks,
-        "targetLanguage": target_lang,
-        "raw_content": raw_content,
-        "chunk_field": "content",
-        "chunk_payload_template": {"targetLanguage": target_lang},
-    }
-
-    return {
-        "_sub_agent_pending_many": True,
-        "_state": state,
-        "pending_children": pending,
-    }
+    return _build_chunks(
+        raw_content, int(cfg.get("chunk_word_budget", 1500)), units_filter=units_filter
+    )
 
 
-def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    failed_idx = state.get("failed_idx")
-    if failed_idx is not None:
-        return {
-            "error": (
-                f"chunk {failed_idx} failed after retries: "
-                f"{state.get('failed_error') or 'unknown error'}"
-            )
-        }
+def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
+    return _extract_chunk_candidates(chunk, _target_lang(payload), cfg)
 
-    n = int(state.get("chunks_count", 0))
-    target_lang = state.get("targetLanguage") or "en"
-    chunks = state.get("chunks") or []
-    raw_content = state.get("raw_content", "")
-    results = state.get("results") or {}
 
+def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
     per_chunk_lists: List[List[str]] = []
-    for i in range(n):
-        r = results.get(str(i))
-        if isinstance(r, dict):
-            kp = r.get("key_points") or []
-            if isinstance(kp, list):
-                per_chunk_lists.append([str(x) for x in kp])
-            else:
-                per_chunk_lists.append([])
-        else:
-            per_chunk_lists.append([])
+    for kp in partials:
+        kp = kp or []
+        per_chunk_lists.append([str(x) for x in kp] if isinstance(kp, list) else [])
+    return _merge_pipeline(
+        per_chunk_lists,
+        payload.get("_chunks") or [],
+        payload.get("content", "") or "",
+        _target_lang(payload),
+        cfg,
+    )
 
-    final = _merge_pipeline(per_chunk_lists, chunks, raw_content, target_lang, cfg)
-    return {"key_points": final}
+
+def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    return {"targetLanguage": _target_lang(payload)}
+
+
+def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
+    return None, {
+        "targetLanguage": _target_lang(payload),
+        "raw_content": payload.get("content", "") or "",
+    }
+
+
+def _merge_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "content": state.get("raw_content", ""),
+        "targetLanguage": state.get("targetLanguage"),
+    }
+
+
+_SPEC = MapReduceSpec(
+    task_name="key-point",
+    leaf_fn=_leaf,
+    reduce_fn=_reduce,
+    chunk_field="content",
+    recursive_merge=False,
+    result_key="key_points",
+    empty_value=[],
+    list_results=True,
+    chunks_fn=_chunks,
+    child_static_fn=_child_static,
+    fanout_extras_fn=_fanout_extras,
+    merge_payload_fn=_merge_payload,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -442,9 +404,7 @@ def key_points(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, 
     dispatcher when the parent is woken after all children complete."""
     try:
         cfg = get_task_config("key-point")
-        if state and state.get("phase") == "merging":
-            return _phase_merge(state, cfg, ctx)
-        return _phase_plan_or_leaf(payload, cfg, ctx)
+        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("Error extracting key points")
         return {"error": f"Error extracting key points: {e}"}
