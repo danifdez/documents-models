@@ -1,6 +1,7 @@
 import copy
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
@@ -83,6 +84,96 @@ class AgentLoopResultTest(unittest.TestCase):
         self.assertEqual(dispatched, [("read_fixture", '{"query":"item"}')])
         self.assertEqual(len(llm.tool_calls), 2)
         self.assertEqual(llm.chat_calls, [])
+
+    def test_warns_once_after_the_tool_soft_limit_is_reached(self):
+        class SoftLimitedExecution:
+            context = None
+
+            def __init__(self):
+                self.starts = 0
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, *_args, **_kwargs):
+                self.starts += 1
+                return SimpleNamespace(
+                    budget_state={
+                        "tool": {
+                            "granted": 3,
+                            "available": 3 - self.starts,
+                            "softLimit": 1,
+                            "softLimitReached": True,
+                        }
+                    }
+                )
+
+            def flush_evidence(self):
+                pass
+
+            def observe_tool_result(self, *_args):
+                return None
+
+            def finish_tool(self, *_args, **_kwargs):
+                pass
+
+        llm = FakeLlm([
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {"name": "first", "arguments": "{}"},
+                }],
+            },
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-2",
+                    "function": {"name": "second", "arguments": "{}"},
+                }],
+            },
+            {"content": "done", "tool_calls": []},
+        ])
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"first", "second"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={
+                "max_rounds": 3,
+                "max_tokens": 32,
+                "max_tool_calls": 3,
+                "tool_call_soft_limit": 1,
+            },
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=SoftLimitedExecution()),
+                [],
+                lambda name, *_args: {"value": name},
+            )
+
+        self.assertEqual(result, AgentRunResult.final_text("done"))
+        second_messages = llm.tool_calls[1][0][0]
+        third_messages = llm.tool_calls[2][0][0]
+        warnings = [
+            message["content"]
+            for message in second_messages
+            if message.get("role") == "system"
+            and message.get("content", "").startswith("Tool budget is low")
+        ]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("2 of 3 calls remain", warnings[0])
+        self.assertFalse(any(
+            (message.get("content") or "").startswith("Tool budget is low")
+            for message in third_messages
+        ))
 
     def test_returns_final_text_after_an_inline_tool_call(self):
         llm = FakeLlm([

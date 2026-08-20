@@ -17,6 +17,7 @@ from config import (
     POSTGRES_USER,
 )
 from lib.execution import ExecutionEmitter, ToolBudgetDenied
+from lib.execution.progress import ProgressLoopContext
 
 
 _CHILD_CODE = r'''
@@ -186,7 +187,14 @@ class ToolBudgetInterruptionTests(unittest.TestCase):
         ))["usage"]["tool"]
         self.assertEqual(
             usage,
-            {"granted": 1, "reserved": 1, "consumed": 0, "available": 0},
+            {
+                "granted": 1,
+                "reserved": 1,
+                "consumed": 0,
+                "available": 0,
+                "softLimit": 0,
+                "softLimitReached": False,
+            },
         )
         self.assertFalse(any(
             event["eventType"] == "operation.started"
@@ -202,13 +210,88 @@ class ToolBudgetInterruptionTests(unittest.TestCase):
         ))["usage"]["tool"]
         self.assertEqual(
             usage,
-            {"granted": 1, "reserved": 0, "consumed": 1, "available": 0},
+            {
+                "granted": 1,
+                "reserved": 0,
+                "consumed": 1,
+                "available": 0,
+                "softLimit": 0,
+                "softLimitReached": False,
+            },
         )
         self.assertEqual(
             progress["ledger"]["operations"]["tool_call"],
             {"started": 1, "finished": 0, "unfinished": 1, "failed": 0},
         )
         self.assert_capacity_is_not_recovered(context, events, progress)
+
+    def test_soft_limit_signal_survives_a_new_execution_attempt(self):
+        context = self.create_execution()
+        emitter = ExecutionEmitter(context)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="mvp07-soft-limit",
+            loop_kind="top_level",
+            max_rounds=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=6,
+            tool_call_soft_limit=4,
+        )
+        last_handle = None
+        for index in range(4):
+            last_handle = emitter.start_tool(
+                "lookup_value",
+                {"index": index},
+                f"provider-tool-call-{index}",
+                progress.trace(round=1, phase="agent_loop"),
+            )
+            emitter.flush_evidence()
+
+        self.assertIsNotNone(last_handle.soft_limit_signal)
+        projected = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/progress"
+        )
+        events = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/events?limit=100"
+        )["events"]
+        usage = next(iter(
+            projected["ledger"]["operationBudget"]["grants"].values()
+        ))["usage"]["tool"]
+        self.assertEqual(usage["available"], 2)
+        self.assertEqual(usage["softLimit"], 4)
+        self.assertTrue(usage["softLimitReached"])
+        self.assertEqual(sum(
+            event["payload"].get("kind") == "budget_soft_limit_reached"
+            for event in events
+        ), 1)
+
+        next_attempt = str(uuid.uuid4())
+        with self.database_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE {EXECUTIONS_TABLE} SET attempt_id = %s WHERE execution_id = %s",
+                (next_attempt, context["executionId"]),
+            )
+        resumed = ExecutionEmitter({
+            **context,
+            "attemptId": next_attempt,
+            "causedByEventId": events[-1]["eventId"],
+        })
+        recovered = ProgressLoopContext.start(
+            resumed,
+            agent_name="mvp07-soft-limit",
+            loop_kind="top_level",
+            max_rounds=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=6,
+            tool_call_soft_limit=4,
+        )
+        self.assertTrue(recovered.tool_soft_limit_reached)
+        self.assertTrue(recovered.soft_limit_warning_pending)
+        self.assertEqual(recovered.tool_budget_available, 2)
 
 
 if __name__ == "__main__":

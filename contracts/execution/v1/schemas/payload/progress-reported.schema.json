@@ -11,13 +11,15 @@
         "policy_snapshot",
         "ledger_snapshot",
         "budget_grant",
-        "budget_reservation"
+        "budget_reservation",
+        "budget_soft_limit_reached"
       ]
     },
     "policy": { "$ref": "#/$defs/policy" },
     "ledger": { "$ref": "#/$defs/ledger" },
     "grant": { "$ref": "#/$defs/grant" },
     "reservation": { "$ref": "#/$defs/reservation" },
+    "signal": { "$ref": "#/$defs/budgetSoftLimitSignal" },
     "visibleEvent": { "type": "object" }
   },
   "allOf": [
@@ -51,6 +53,13 @@
         "required": ["reservation"],
         "properties": { "reservation": true }
       }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "budget_soft_limit_reached" } },
+        "required": ["kind"]
+      },
+      "then": { "required": ["signal"], "properties": { "signal": true } }
     }
   ],
   "$defs": {
@@ -75,7 +84,8 @@
         "repair": { "type": "integer", "minimum": 0 },
         "closing": { "type": "integer", "minimum": 0, "maximum": 1 },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
-        "toolCalls": { "type": "integer", "minimum": 0 }
+        "toolCalls": { "type": "integer", "minimum": 0 },
+        "toolCallSoftLimit": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -196,7 +206,41 @@
         "granted": { "type": "integer", "minimum": 0 },
         "reserved": { "type": "integer", "minimum": 0 },
         "consumed": { "type": "integer", "minimum": 0 },
-        "available": { "type": "integer", "minimum": 0 }
+        "available": { "type": "integer", "minimum": 0 },
+        "softLimit": { "type": "integer", "minimum": 0 },
+        "softLimitReached": { "type": "boolean" },
+        "softLimitReachedAt": { "$ref": "../common.schema.json#/$defs/timestamp" },
+        "softLimitTriggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "budgetSoftLimitSignal": {
+      "type": "object",
+      "required": [
+        "version",
+        "grantId",
+        "operationKind",
+        "bucket",
+        "softLimit",
+        "hardLimit",
+        "committed",
+        "available",
+        "triggeringOperationId",
+        "executionAttemptId",
+        "decidedAt"
+      ],
+      "properties": {
+        "version": { "const": "1" },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationKind": { "const": "tool_call" },
+        "bucket": { "const": "tool" },
+        "softLimit": { "type": "integer", "minimum": 1 },
+        "hardLimit": { "type": "integer", "minimum": 2 },
+        "committed": { "type": "integer", "minimum": 1 },
+        "available": { "type": "integer", "minimum": 0 },
+        "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
       "additionalProperties": false
     },
@@ -293,6 +337,7 @@
         "forcedFinalizationAvailable": { "type": "boolean" },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
         "maxToolCalls": { "type": "integer", "minimum": 0 },
+        "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false

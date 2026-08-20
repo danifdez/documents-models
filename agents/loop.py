@@ -171,6 +171,7 @@ def run_agent_loop(
         cfg.get("tool_max_tokens") or cfg.get("max_tokens") or spec.fallback_max_tokens
     )
     max_tool_calls = int(cfg.get("max_tool_calls", 6))
+    tool_call_soft_limit = int(cfg.get("tool_call_soft_limit", 4))
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
@@ -187,6 +188,7 @@ def run_agent_loop(
         forced_finalization_available=spec.output_schema is None,
         max_tokens_per_inference=round_max_tokens,
         max_tool_calls=max_tool_calls,
+        tool_call_soft_limit=tool_call_soft_limit,
     )
     max_rounds = progress.max_rounds
     round_max_tokens = progress.max_tokens_per_inference
@@ -206,7 +208,7 @@ def run_agent_loop(
         )
         try:
             msg = llm.chat_with_tools(
-                messages,
+                progress.messages_for_inference(messages),
                 tools,
                 max_tokens=round_max_tokens,
                 inference_name="chat_with_tools",
@@ -350,6 +352,7 @@ def run_agent_loop(
                     error=str(result.get("error")) if isinstance(result, dict) and result.get("error") else None,
                 )
                 execution.flush_evidence()
+                progress.observe_tool_budget(tool_trace)
             summary, entity = _summarize(name, result)
             logger.info("agent[%s]: tool=%s → %s", spec.name, name, summary)
             messages.append({

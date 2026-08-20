@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 
-@dataclass(frozen=True)
+@dataclass
 class ProgressLoopContext:
     loop_id: str
     agent_name: str
@@ -13,7 +13,13 @@ class ProgressLoopContext:
     forced_finalization_available: bool
     max_tokens_per_inference: int
     max_tool_calls: int
+    tool_call_soft_limit: int
     grant_id: Optional[str] = None
+    tool_budget_granted: int = 0
+    tool_budget_available: int = 0
+    tool_soft_limit_reached: bool = False
+    soft_limit_warning_pending: bool = False
+    soft_limit_warning_emitted: bool = False
 
     @classmethod
     def start(
@@ -27,6 +33,7 @@ class ProgressLoopContext:
         forced_finalization_available: bool,
         max_tokens_per_inference: int,
         max_tool_calls: int = 0,
+        tool_call_soft_limit: int = 0,
     ) -> "ProgressLoopContext":
         loop_id = (
             str(emitter.context.get("executionId"))
@@ -39,6 +46,7 @@ class ProgressLoopContext:
             "closing": 1 if forced_finalization_available else 0,
             "maxTokensPerInference": max_tokens_per_inference,
             "toolCalls": max_tool_calls,
+            "toolCallSoftLimit": tool_call_soft_limit,
         }
         grant = None
         if (
@@ -57,6 +65,10 @@ class ProgressLoopContext:
                 "requestedPolicy": requested_policy,
             })
         effective = (grant or {}).get("effectivePolicy", requested_policy)
+        budget_state = (grant or {}).get("_budgetState") or {}
+        tool_state = budget_state.get("tool") if isinstance(budget_state, dict) else {}
+        tool_state = tool_state if isinstance(tool_state, dict) else {}
+        soft_limit_reached = bool(tool_state.get("softLimitReached", False))
         context = cls(
             loop_id=loop_id,
             agent_name=agent_name,
@@ -66,7 +78,14 @@ class ProgressLoopContext:
             forced_finalization_available=int(effective["closing"]) > 0,
             max_tokens_per_inference=int(effective["maxTokensPerInference"]),
             max_tool_calls=int(effective.get("toolCalls", max_tool_calls)),
+            tool_call_soft_limit=int(
+                effective.get("toolCallSoftLimit", tool_call_soft_limit)
+            ),
             grant_id=(grant or {}).get("grantId"),
+            tool_budget_granted=int(tool_state.get("granted", 0)),
+            tool_budget_available=int(tool_state.get("available", 0)),
+            tool_soft_limit_reached=soft_limit_reached,
+            soft_limit_warning_pending=soft_limit_reached,
         )
         if emitter:
             emitter.record_progress_policy(context.policy())
@@ -89,6 +108,7 @@ class ProgressLoopContext:
             "forcedFinalizationAvailable": self.forced_finalization_available,
             "maxTokensPerInference": self.max_tokens_per_inference,
             "maxToolCalls": self.max_tool_calls,
+            "toolCallSoftLimit": self.tool_call_soft_limit,
         }
         if self.grant_id:
             value["grantId"] = self.grant_id
@@ -113,3 +133,30 @@ class ProgressLoopContext:
         if self.grant_id:
             value["budgetGrantId"] = self.grant_id
         return value
+
+    def observe_tool_budget(self, handle) -> None:
+        state = getattr(handle, "budget_state", None)
+        tool = state.get("tool") if isinstance(state, dict) else None
+        if not isinstance(tool, dict):
+            return
+        self.tool_budget_granted = int(tool.get("granted", self.tool_budget_granted))
+        self.tool_budget_available = int(
+            tool.get("available", self.tool_budget_available)
+        )
+        reached = bool(tool.get("softLimitReached", False))
+        self.tool_soft_limit_reached = reached
+        if reached and not self.soft_limit_warning_emitted:
+            self.soft_limit_warning_pending = True
+
+    def messages_for_inference(self, messages):
+        if not self.soft_limit_warning_pending or self.soft_limit_warning_emitted:
+            return messages
+        self.soft_limit_warning_pending = False
+        self.soft_limit_warning_emitted = True
+        warning = (
+            f"Tool budget is low: {self.tool_budget_available} of "
+            f"{self.tool_budget_granted} calls remain. Prefer completing with "
+            "the evidence already collected. Use another tool only when it is "
+            "required to answer the user correctly; do not open optional work."
+        )
+        return [*messages, {"role": "system", "content": warning}]

@@ -41,7 +41,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:13dbef9a0c6bbe1f902f796c2c31572819157e3f1a32aa32f491d10dab5bd6e2"
+CONTRACT_SET_HASH = "sha256:cc404d9dc3af0dd47fd53fb62f372ba8de6714a26ff06dfceaf3255723939917"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -111,6 +111,8 @@ class OperationHandle:
     started_event_id: Optional[str]
     started_monotonic: float
     tool_call_id: Optional[str] = None
+    budget_state: Optional[Dict[str, Any]] = None
+    soft_limit_signal: Optional[Dict[str, Any]] = None
 
 
 class ExecutionEmitter:
@@ -212,7 +214,11 @@ class ExecutionEmitter:
         if not isinstance(grant, dict) or not grant.get("grantId") or not event_id:
             raise RuntimeError("Required progress grant failed")
         self.last_event_id = str(event_id)
-        return grant
+        result = dict(grant)
+        budget_state = (response or {}).get("budgetState")
+        if isinstance(budget_state, dict):
+            result["_budgetState"] = budget_state
+        return result
 
     def reserve_operation_budget(
         self,
@@ -256,7 +262,14 @@ class ExecutionEmitter:
             if operation_kind == "tool_call":
                 raise ToolBudgetDenied(reason)
             raise InferenceBudgetDenied(reason)
-        return reservation
+        result = dict(reservation)
+        budget_state = (response or {}).get("budgetState")
+        soft_limit_signal = (response or {}).get("softLimitSignal")
+        if isinstance(budget_state, dict):
+            result["_budgetState"] = budget_state
+        if isinstance(soft_limit_signal, dict):
+            result["_softLimitSignal"] = soft_limit_signal
+        return result
 
     @staticmethod
     def _budget_bucket(phase: str) -> str:
@@ -334,6 +347,7 @@ class ExecutionEmitter:
         attempt_id = str(uuid.uuid4())
         trace = _safe_value(metadata or {})
         budget_payload: Dict[str, Any] = {}
+        reservation: Optional[Dict[str, Any]] = None
         if (
             self.context
             and trace.get("loopKind") == "top_level"
@@ -369,6 +383,9 @@ class ExecutionEmitter:
             operation_id=operation_id,
             attempt_id=attempt_id,
         )
+        if handle and reservation:
+            handle.budget_state = reservation.get("_budgetState")
+            handle.soft_limit_signal = reservation.get("_softLimitSignal")
         return handle
 
     def observe_tool_result(self, handle: OperationHandle, result: Any) -> Optional[str]:

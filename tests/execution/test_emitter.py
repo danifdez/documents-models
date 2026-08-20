@@ -241,6 +241,41 @@ class ExecutionEmitterTest(unittest.TestCase):
                  if request[0] == "artifacts"),
         )
 
+    def test_tool_reservation_exposes_the_authoritative_soft_limit_state(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=2,
+            tool_call_soft_limit=1,
+        )
+
+        handle = emitter.start_tool(
+            "folder_read",
+            {"path": "fixture.txt"},
+            "provider-call-1",
+            progress.trace(round=1, phase="agent_loop"),
+        )
+        progress.observe_tool_budget(handle)
+        messages = progress.messages_for_inference([
+            {"role": "user", "content": "question"},
+        ])
+
+        self.assertTrue(handle.soft_limit_signal)
+        self.assertTrue(progress.tool_soft_limit_reached)
+        self.assertEqual(progress.tool_budget_available, 1)
+        self.assertIn("1 of 2 calls remain", messages[-1]["content"])
+        self.assertIs(
+            progress.messages_for_inference(messages),
+            messages,
+        )
+
     def test_tool_operation_reserves_budget_before_its_start(self):
         client = RecordingIngestClient()
         emitter = self.emitter(client)
