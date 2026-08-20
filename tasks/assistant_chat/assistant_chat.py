@@ -12,7 +12,7 @@ with a user-created agent is a different execution type — see the `agent-chat`
 This module is a thin task handler: it builds the conversation (persona, memory,
 date, working folder) and hands it to the personal assistant agent
 (`core/agents`). The tool-calling loop, the tool repository and the subagents all
-live outside this file; here we only assemble the turn and stream the reply.
+live outside this file; here we assemble the turn and return its final reply.
 
 Expected payload:
   {
@@ -20,9 +20,8 @@ Expected payload:
     "name": str,                          # owner's display name
     "systemPrompt": str | null,           # owner's custom prompt; null => default
     "folderScope": str | null,            # working folder, passed through to tools
-    "assistantSystem": bool,              # true => emitter the tool phase
-    "memorySnippets": [...],              # injected memory
-    "extractMemory": bool,                # emitter memory extraction
+    "assistantSystem": bool,              # true => tools and persistent memory
+    "memorySnippets": [...] | null,       # optional extraction context
     "conversation": [{"role": ..., "content": ...}, ...]
   }
 
@@ -95,22 +94,18 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             execution=emitter,
         )
 
-        # Tool-call phase (non-streaming: the model has to decide whether to call
-        # a tool BEFORE it produces user-visible text). If a tool runs, its
-        # result is appended to `messages` and the streaming phase below sees the
-        # augmented conversation. Tool cards are pushed LIVE via POST /tool-event
-        # from inside the agent loop.
-        if payload.get("assistantSystem"):
+        effective_tools = assistant.tools(ctx) if payload.get("assistantSystem") else []
+        if effective_tools:
             logger.info("assistant-chat: entering tool phase")
-            assistant.emitter(messages, ctx)
+            outcome = assistant.run(messages, ctx)
+            raw = outcome.content if outcome.kind == "final_text" else ""
         else:
-            logger.info("assistant-chat: skipping tool phase (assistantSystem falsy)")
-
-        raw = generate_reply(
-            llm, messages, max_tokens,
-            owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
-            stream_enabled=bool(cfg.get("stream", True)),
-        )
+            logger.info("assistant-chat: direct response without effective tools")
+            raw = generate_reply(
+                llm, messages, max_tokens,
+                owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
+                stream_enabled=bool(cfg.get("stream", True)),
+            )
 
         reply = _strip_thinking(raw)
         if not reply:
@@ -118,6 +113,7 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             emitter.flush_evidence()
             return emitter.attach_summary({"error": error})
 
+        emitter.record_final_message(reply)
         result: Dict[str, Any] = {"reply": reply}
 
         # Persistent user memory: extract after replying.
@@ -131,7 +127,6 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                     result["memoryAction"] = action
                     logger.info("assistant-chat: memoryAction=%r", action)
 
-        emitter.record_final_message(reply)
         emitter.flush_evidence()
         return emitter.attach_summary(result)
     except Exception as e:  # noqa: BLE001

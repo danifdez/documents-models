@@ -152,13 +152,19 @@ class ExecutionEmitter:
             value["executionTelemetry"] = self.summary()
         return value
 
-    def start_inference(self, name: str, request: Any) -> Optional[OperationHandle]:
+    def start_inference(
+        self,
+        name: str,
+        request: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[OperationHandle]:
         artifact_id = self.record_artifact("materialized_prompt", request, "application/json")
         return self.start_operation(
             "inference",
             name,
             artifact_refs=[artifact_id] if artifact_id else [],
             input_artifact_id=artifact_id,
+            extra_payload=_safe_value(metadata or {}),
         )
 
     def finish_inference(

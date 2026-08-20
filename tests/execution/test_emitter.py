@@ -93,6 +93,24 @@ class ExecutionEmitterTest(unittest.TestCase):
 
         self.assertIn(CONTEXT["attemptId"], emitter.instance_id)
 
+    def test_forced_finalization_metadata_is_recorded_on_the_operation(self):
+        emitter = self.emitter()
+
+        emitter.start_inference(
+            "forced_finalization",
+            {"messages": []},
+            {
+                "phase": "forced_finalization",
+                "reason": "step_budget_exhausted",
+            },
+        )
+
+        event = emitter.pending_events[-1]
+        self.assertEqual(event["eventType"], "operation.started")
+        self.assertEqual(event["payload"]["name"], "forced_finalization")
+        self.assertEqual(event["payload"]["phase"], "forced_finalization")
+        self.assertEqual(event["payload"]["reason"], "step_budget_exhausted")
+
     def test_oversized_artifact_is_declared_missing_without_transport(self):
         emitter = self.emitter()
         emitter._post = lambda *_: self.fail("oversized artifact must not be sent")

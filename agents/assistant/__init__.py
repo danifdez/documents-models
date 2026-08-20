@@ -49,6 +49,6 @@ assistant = AgentSpec(
         "folder_assistant",
     }),
     max_rounds=3,
-    output_schema=None,          # ends with a free-text reply, streamed by the handler
+    output_schema=None,
     emits_tool_events=True,
 )

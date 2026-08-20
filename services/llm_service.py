@@ -38,10 +38,17 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 REQUEST_TIMEOUT_S = float(os.environ.get("LLAMA_TIMEOUT", "600"))
 
 
-def _begin_inference(name: str, request: Dict[str, Any]):
+def _begin_inference(
+    name: str,
+    request: Dict[str, Any],
+    trace_metadata: Optional[Dict[str, Any]] = None,
+):
     from lib.execution import get_active_emitter
     emitter = get_active_emitter()
-    return (emitter, emitter.start_inference(name, request)) if emitter else (None, None)
+    return (
+        (emitter, emitter.start_inference(name, request, trace_metadata))
+        if emitter else (None, None)
+    )
 
 
 def _response_metrics(response: Dict[str, Any]) -> Dict[str, Any]:
@@ -319,6 +326,8 @@ class LLMService:
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         allow_thinking: bool = False,
+        inference_name: str = "chat",
+        trace_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Chat completion. Returns the assistant message content.
 
@@ -349,7 +358,7 @@ class LLMService:
             body["grammar"] = grammar
         if response_format is not None:
             body["response_format"] = response_format
-        emitter, trace = _begin_inference("chat", body)
+        emitter, trace = _begin_inference(inference_name, body, trace_metadata)
         try:
             resp = _post(f"{self.url}/v1/chat/completions", body)
         except Exception as error:

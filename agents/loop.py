@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from lib.framework.agent import AgentSpec
+from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.text import strip_thinking as _strip_thinking
 from lib.backend.http import post_tool_event
@@ -128,11 +128,10 @@ def run_agent_loop(
     ctx,
     tools: List[Dict[str, Any]],
     dispatch: DispatchFn,
-) -> Optional[Dict[str, Any]]:
+) -> AgentRunResult:
     """Run tool-call rounds until the model replies without calling a tool or the
     round budget runs out. Mutates `messages` in place (appends assistant/tool
-    turns). Returns the structured object for a schema agent, or None for a
-    free-reply agent (the caller renders the reply from the augmented messages)."""
+    turns). Returns the final outcome produced by the loop."""
     cfg = get_task_config(spec.config_key)
     params = get_llm_params(spec.config_key)
     llm = get_llm_service(**params)
@@ -164,8 +163,12 @@ def run_agent_loop(
         )
         if not tool_calls:
             if spec.output_schema is not None:
-                return _coerce_output(spec, llm, messages, content, round_max_tokens)
-            return None
+                return AgentRunResult.structured_result(
+                    _coerce_output(spec, llm, messages, content, round_max_tokens)
+                )
+            if content:
+                return AgentRunResult.final_text(content)
+            return AgentRunResult.invalid("empty_model_response")
 
         messages.append({
             "role": "assistant",
@@ -233,15 +236,30 @@ def run_agent_loop(
             if pending and spec.output_schema is not None:
                 logger.info("agent[%s]: pending confirmation from %s, ending",
                             spec.name, name)
-                return {
+                return AgentRunResult.structured_result({
                     "summary": (
                         f"Awaiting user confirmation for {name}. A confirmation "
                         "card has been shown to the user."
                     ),
-                }
+                })
 
     # Out of rounds. A schema agent still owes a structured object.
     logger.info("agent[%s]: rounds exhausted", spec.name)
     if spec.output_schema is not None:
-        return _coerce_output(spec, llm, messages, "", round_max_tokens)
-    return None
+        return AgentRunResult.structured_result(
+            _coerce_output(spec, llm, messages, "", round_max_tokens)
+        )
+    forced = llm.chat(
+        messages,
+        max_tokens=round_max_tokens,
+        allow_thinking=True,
+        inference_name="forced_finalization",
+        trace_metadata={
+            "phase": "forced_finalization",
+            "reason": "step_budget_exhausted",
+        },
+    ) or ""
+    content = _strip_thinking(forced)
+    if content:
+        return AgentRunResult.final_text(content)
+    return AgentRunResult.invalid("empty_forced_finalization")

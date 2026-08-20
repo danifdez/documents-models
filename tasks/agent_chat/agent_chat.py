@@ -11,8 +11,8 @@ are separate execution types and responsibilities:
 
 This module is a thin task handler: it builds the conversation (persona,
 orientation, date, working folder) and drives the user agent (`core/agents`). The
-tool-calling loop and the tool repository live outside this file; here we only
-assemble the turn and stream the reply. Tool cards are pushed LIVE via POST
+tool-calling loop and the tool repository live outside this file; here we
+assemble the turn and return its final reply. Tool cards are pushed LIVE via POST
 /agents/:id/tool-event from inside the agent loop.
 
 Expected payload (built by the backend's AgentService):
@@ -93,18 +93,18 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             execution=emitter,
         )
 
-        # Tool-call phase (non-streaming: the model has to decide whether to call
-        # a tool BEFORE it produces user-visible text). If a tool runs, its
-        # result is appended to `messages` and the streaming phase below sees the
-        # augmented conversation.
-        logger.info("agent-chat: entering tool phase")
-        user_agent_for(payload).emitter(messages, ctx)
-
-        raw = generate_reply(
-            llm, messages, max_tokens,
-            owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
-            stream_enabled=bool(cfg.get("stream", True)),
-        )
+        agent = user_agent_for(payload)
+        if agent.tools(ctx):
+            logger.info("agent-chat: entering tool phase")
+            outcome = agent.run(messages, ctx)
+            raw = outcome.content if outcome.kind == "final_text" else ""
+        else:
+            logger.info("agent-chat: direct response without effective tools")
+            raw = generate_reply(
+                llm, messages, max_tokens,
+                owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
+                stream_enabled=bool(cfg.get("stream", True)),
+            )
 
         reply = _strip_thinking(raw)
         if not reply:

@@ -3,8 +3,9 @@
 Two responsibilities, both driven by the execution payload:
   - injection: pull the memories relevant to the user's message into the
     system prompt (`memory_for_payload` / `format_memory_block`);
-  - extraction: a second LLM call that decides whether to save/forget/replace
-    a memory from the user's message (`extract_memory_action`).
+  - extraction: a post-response LLM call that decides whether to
+    save/forget/replace a memory from the user's message
+    (`extract_memory_action`).
 
 This is a mini-agent, not a tool: the model never calls it — the handler runs
 it after every personal-assistant turn.
@@ -100,8 +101,8 @@ def extract_memory_action(
     memory_snippets: List[Dict[str, Any]],
     cfg: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Second LLM call: decide save/forget/none based on the user message and
-    existing memory. Returns a dict shaped like::
+    """Post-response LLM call: decide save/forget/none based on the user
+    message and existing memory. Returns a dict shaped like::
 
         {"action": "save", "save": {name, type, body}}
         {"action": "forget", "forget_id": int}
@@ -125,6 +126,8 @@ def extract_memory_action(
             messages,
             max_tokens=int(cfg.get("memory_extract_max_tokens", 256)),
             allow_thinking=extract_thinking,
+            inference_name="memory_extraction",
+            trace_metadata={"phase": "memory_extraction"},
         ) or ""
     except Exception:
         logger.exception("assistant-chat: memory extraction failed")

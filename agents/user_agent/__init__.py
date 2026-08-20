@@ -48,7 +48,7 @@ def _spec(tool_names) -> AgentSpec:
         system_prompt="",
         tool_names=tool_names,
         max_rounds=3,
-        output_schema=None,      # ends with a free-text reply, streamed by the handler
+        output_schema=None,
         emits_tool_events=True,
     )
 

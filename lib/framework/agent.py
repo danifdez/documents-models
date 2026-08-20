@@ -23,9 +23,29 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AgentRunResult:
+    kind: Literal["final_text", "structured_result", "invalid"]
+    content: Optional[str] = None
+    value: Optional[Dict[str, Any]] = None
+    reason: Optional[str] = None
+
+    @classmethod
+    def final_text(cls, content: str) -> "AgentRunResult":
+        return cls(kind="final_text", content=content)
+
+    @classmethod
+    def structured_result(cls, value: Dict[str, Any]) -> "AgentRunResult":
+        return cls(kind="structured_result", value=value)
+
+    @classmethod
+    def invalid(cls, reason: str) -> "AgentRunResult":
+        return cls(kind="invalid", reason=reason)
 
 
 @dataclass(frozen=True)
@@ -35,9 +55,8 @@ class AgentSpec:
     - `tool_names`: the tools this agent may call, by name. Leaves live in
       `core/tools`; a name that resolves to another agent makes that agent
       callable-as-a-tool from here.
-    - `output_schema`: None → the agent ends with a free-text reply (the caller
-      decides what to do with the conversation). A dict → the agent must end
-      with a JSON object of that shape; `run` returns it.
+    - `output_schema`: None → the agent ends with a free-text result. A dict →
+      the agent must end with a JSON object of that shape.
     - `emits_tool_events`: push live tool cards to the UI (the user-facing
       assistant does; subagents don't).
     - `tool_schema`: how this agent is offered to a PARENT agent that lists it in
@@ -83,11 +102,8 @@ class AgentSpec:
 
     def run(
         self, messages: List[Dict[str, Any]], ctx,
-    ) -> Optional[Dict[str, Any]]:
-        """Run this agent as a top-level turn over already-built messages (the
-        caller owns the system prompt). Returns the structured object for a
-        schema agent, or None for a free-reply agent (the caller renders the
-        reply from `messages`, which is mutated in place)."""
+    ) -> AgentRunResult:
+        """Run a top-level turn and return its explicit final outcome."""
         from agents import dispatch_tool
         from agents.loop import run_agent_loop
 
@@ -138,7 +154,11 @@ class AgentSpec:
                 result = run_agent_loop(
                     self, messages, ctx, self.tools(ctx), dispatch_tool,
                 )
-                return result if result is not None else {"summary": ""}
+                if result.kind == "structured_result":
+                    return result.value or {}
+                if result.kind == "final_text":
+                    return {"summary": result.content or ""}
+                return {"error": result.reason or "invalid_agent_result"}
             except Exception:
                 logger.exception(
                     "agent[%s]: run failed (attempt %d/2)", self.name, attempt + 1,
