@@ -18,9 +18,9 @@ def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
     indexed_file_id = target.get("indexedFileId")
     filename = target.get("filename") or ""
 
-    if isinstance(ctx.job_id, int):
+    if isinstance(ctx.execution_id, int):
         post_tool_event(
-            ctx.owner_segment, ctx.owner_id, ctx.job_id, "folder_delete", filename,
+            ctx.owner_segment, ctx.owner_id, ctx.execution_id, "folder_delete", filename,
             status="pending_confirmation",
             summary=f"Pending: delete {filename}",
             kind="folder_delete",

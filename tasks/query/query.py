@@ -1,9 +1,9 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float, apply_filters, get_dataset_records, build_dataframe, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 
 
-@job_handler("query")
+@execution_handler("query")
 def query(payload) -> dict:
     """Custom query across one or multiple datasets."""
     try:

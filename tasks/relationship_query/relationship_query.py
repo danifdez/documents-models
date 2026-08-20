@@ -1,11 +1,11 @@
 import logging
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from database.graph_db import get_graph
 
 logger = logging.getLogger(__name__)
 
 
-@job_handler("relationship-query")
+@execution_handler("relationship-query")
 def query_relationships(payload) -> dict:
     query_type = payload.get("query_type", "by-resource")
     resource_id = payload.get("resource_id") or payload.get("resourceId")

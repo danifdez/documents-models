@@ -1,7 +1,7 @@
 from langdetect import detect
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
-@job_handler("detect-language")
+@execution_handler("detect-language")
 def detect_language(payload) -> dict:
     """Detect language of given text and return the language code."""
     try:

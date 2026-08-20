@@ -24,11 +24,11 @@ mkdir -p tasks/my_task
 Create `tasks/my_task/my_task.py`:
 
 ```python
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from services.model_config import get_task_config
 
 
-@job_handler("my-task")
+@execution_handler("my-task")
 def my_task(payload) -> dict:
     task_config = get_task_config("my-task")
     text = payload.get("content", "")
@@ -39,7 +39,7 @@ def my_task(payload) -> dict:
     return {"result": result}
 ```
 
-The `@job_handler("my-task")` decorator registers the function to handle jobs of type `"my-task"`.
+The `@execution_handler("my-task")` decorator registers the function to handle executions of type `"my-task"`.
 
 ### 2. Add configuration to `common/tasks.default.json`
 
@@ -67,7 +67,7 @@ Fields:
 
 ### 3. Register the task module
 
-Add an import in `utils/process_job.py`:
+Add an import in `utils/process_execution.py`:
 
 ```python
 import tasks.my_task.my_task
@@ -116,7 +116,7 @@ Workers detect their capabilities at startup:
 - `llm`: LLM inference enabled (not disabled in config)
 - `embeddings`: Embedding models enabled (not disabled in config)
 
-A task is only processed by a worker if:
+A task is only completed by a worker if:
 1. The task is `enabled` in config
 2. The worker has all capabilities listed in the task's `capabilities` array
 
@@ -126,13 +126,13 @@ Full example creating a sentiment analysis task:
 
 **`tasks/sentiment/sentiment.py`**:
 ```python
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from services.model_config import get_task_config, get_llm_params
 from services.llm_service import get_llm_service
 from services.prompts import get_prompt
 
 
-@job_handler("sentiment")
+@execution_handler("sentiment")
 def sentiment(payload) -> dict:
     text = payload.get("content", "")
     if not text:
@@ -175,7 +175,7 @@ Text: {text}
 }
 ```
 
-**Import in `utils/process_job.py`**:
+**Import in `utils/process_execution.py`**:
 ```python
 import tasks.sentiment.sentiment
 ```

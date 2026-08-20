@@ -1,4 +1,4 @@
-"""Job handlers for the assistant personal-memory table.
+"""Execution handlers for the assistant personal-memory table.
 
 Separate from `tasks/ingest/ingest.py` and `tasks/indexed_file/indexed_file.py`
 because the storage scope is different (assistant memory entries in their own
@@ -9,7 +9,7 @@ other table.
 
 import logging
 
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from database.memory import entries_by_ids, recent_entries
 from database.rag import get_memory_rag, PointStruct
 from services.embedding_service import get_embedding_service
@@ -17,7 +17,7 @@ from services.embedding_service import get_embedding_service
 logger = logging.getLogger(__name__)
 
 
-@job_handler("memory-ingest")
+@execution_handler("memory-ingest")
 def ingest_memory(payload: dict) -> dict:
     """Embed ``name + ": " + body`` and upsert into ``memory_vectors``.
 
@@ -27,14 +27,14 @@ def ingest_memory(payload: dict) -> dict:
 
     Payload keys:
         - memoryId (int): required.
-        - assistantId (int): required, stored as filter key.
+        - ownerId (int): required, stored as filter key.
         - name (str): required, concatenated for the embedding.
         - type (str): 'fact' | 'event' | 'instruction'.
         - body (str): required, concatenated for the embedding.
     """
     try:
         memory_id = int(payload["memoryId"])
-        assistant_id = int(payload["assistantId"])
+        assistant_id = int(payload["ownerId"])
         name = (payload.get("name") or "").strip()
         type_ = (payload.get("type") or "fact").strip().lower()
         body = (payload.get("body") or "").strip()
@@ -63,12 +63,12 @@ def ingest_memory(payload: dict) -> dict:
     return {"success": True, "memoryId": memory_id}
 
 
-@job_handler("memory-search")
+@execution_handler("memory-search")
 def search_memory(payload: dict) -> dict:
     """Semantic search over ``memory_vectors`` filtered by assistant_id.
 
     Payload keys:
-        - assistantId (int): required, filter key.
+        - ownerId (int): required, filter key.
         - query (str): required, natural-language query.
         - limit (int, optional): top-K, default 8.
 
@@ -81,7 +81,7 @@ def search_memory(payload: dict) -> dict:
         second DB hit.
     """
     try:
-        assistant_id = int(payload["assistantId"])
+        assistant_id = int(payload["ownerId"])
         query = (payload.get("query") or "").strip()
     except (KeyError, TypeError, ValueError) as e:
         logger.warning("memory-search: invalid payload: %s", e)
@@ -130,7 +130,7 @@ def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> lis
         ]
     try:
         hits = search_memory(
-            {"assistantId": assistant_id, "query": clean, "limit": limit}
+            {"ownerId": assistant_id, "query": clean, "limit": limit}
         ).get("results", [])
     except Exception:
         logger.exception("memory: relevant_for_injection search failed")
@@ -156,7 +156,7 @@ def relevant_for_injection(assistant_id: int, query: str, limit: int = 8) -> lis
     return merged[:cap]
 
 
-@job_handler("memory-delete-vectors")
+@execution_handler("memory-delete-vectors")
 def delete_memory_vectors(payload: dict) -> dict:
     """Delete memory vectors.
 
@@ -164,14 +164,14 @@ def delete_memory_vectors(payload: dict) -> dict:
     - Single: payload has ``memoryId`` → delete the row with that PK. Mostly
       redundant now (the FK to ``assistant_memory_entries`` cascades on delete),
       kept for manual/idempotent cleanup.
-    - Bulk: payload has ``assistantId`` (and no ``memoryId``) → delete all rows
-      where ``assistant_id == <assistantId>``. Used after
+    - Bulk: payload has ``ownerId`` (and no ``memoryId``) → delete all rows
+      where ``assistant_id == <ownerId>``. Used after
       ``AssistantMemoryService.clear``.
 
     Idempotent: deleting a row that does not exist is a no-op.
     """
     memory_id = payload.get("memoryId")
-    assistant_id = payload.get("assistantId")
+    assistant_id = payload.get("ownerId")
     rag = get_memory_rag()
     if memory_id is not None:
         try:
@@ -184,7 +184,7 @@ def delete_memory_vectors(payload: dict) -> dict:
         try:
             aid = int(assistant_id)
         except (TypeError, ValueError):
-            return {"error": "invalid assistantId"}
+            return {"error": "invalid ownerId"}
         rag.delete_by_column("assistant_id", aid)
         return {"success": True, "deleted": "bulk", "assistantId": aid}
-    return {"error": "memoryId or assistantId required"}
+    return {"error": "memoryId or ownerId required"}

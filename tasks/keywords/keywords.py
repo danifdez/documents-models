@@ -35,7 +35,7 @@ from services.text import (
     normalize_text,
     strip_dense_blobs,
 )
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +250,7 @@ _SPEC = MapReduceSpec(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@job_handler("keywords")
+@execution_handler("keywords")
 def keywords(
     payload: Dict[str, Any],
     state: Optional[Dict[str, Any]] = None,

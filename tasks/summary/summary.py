@@ -1,9 +1,9 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float
 import pandas as pd
 
 
-@job_handler("summary")
+@execution_handler("summary")
 def summary(payload) -> dict:
     """Quick summary overview of all fields."""
     try:

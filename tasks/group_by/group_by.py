@@ -1,9 +1,9 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 
 
-@job_handler("group-by")
+@execution_handler("group-by")
 def group_by(payload) -> dict:
     """Aggregate a numeric field grouped by a categorical field."""
     try:

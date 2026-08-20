@@ -14,7 +14,7 @@ Mirrors the state-machine used by `summarize`, `key-point`, `keywords`, and
 - Once all children finish, the dispatcher re-invokes the handler with the
   persisted state; `_phase_merge` deduplicates across chunks and persists to
   the graph. **Graph writes only happen at merge time** so a partially failed
-  job never leaves an inconsistent graph.
+  execution never leaves an inconsistent graph.
 """
 
 import json
@@ -34,7 +34,7 @@ from services.text import (
     semantic_chunk_text,
     strip_dense_blobs,
 )
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +295,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         return _final_result(deduped, resource_id, error=err)
 
     # No DB ctx (unit tests / fallback): run all chunks in-process.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
+    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "execution_id", None) is None:
         all_valid: List[Dict[str, Any]] = []
         for c in chunks:
             all_valid.extend(_run_chunk_llm(c, entities_str, entity_names, prompt_template, cfg))
@@ -315,8 +315,8 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
             "project_id": project_id,
             "_chunk_idx": i,
         }
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id,
+        child_id = ctx.db.enqueue_child_execution(
+            ctx.execution_id,
             "relationship-extraction",
             payload=child_payload,
             agent_max_steps=1,
@@ -330,7 +330,7 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
     state = {
         "phase": "merging",
         "chunks_count": len(chunks),
-        "pending": pending,
+        "queued": pending,
         "results": results,
         "retries": retries,
         "chunks": chunks,
@@ -388,7 +388,7 @@ def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, A
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@job_handler("relationship-extraction")
+@execution_handler("relationship-extraction")
 def extract_relationships(
     payload: Dict[str, Any],
     state: Optional[Dict[str, Any]] = None,

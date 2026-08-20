@@ -10,22 +10,22 @@ import types
 from pathlib import Path
 from typing import Callable, Dict, Any
 
-from utils.job_registry import TASK_HANDLERS
+from common.execution_registry import TASK_HANDLERS
 
 
 class HandlerCtx:
     """Lightweight context passed to reentrant task handlers.
 
-    Carries the database handle and parent job id so a handler can enqueue
-    child jobs (fan-out) without importing `database.job` directly.
+    Carries the database handle and parent execution id so a handler can enqueue
+    child executions (fan-out) without importing `database.execution` directly.
     """
 
-    __slots__ = ("db", "job_id", "job_type")
+    __slots__ = ("db", "execution_id", "task_type")
 
-    def __init__(self, db, job_id, job_type):
+    def __init__(self, db, execution_id, task_type):
         self.db = db
-        self.job_id = job_id
-        self.job_type = job_type
+        self.execution_id = execution_id
+        self.task_type = task_type
 
 
 def _call_handler(handler, payload, *, state=None, ctx=None):
@@ -47,7 +47,7 @@ def _call_handler(handler, payload, *, state=None, ctx=None):
 logger = logging.getLogger(__name__)
 
 # Ensure task modules under the `tasks` package are imported so their
-# `@job_handler` decorators can register handlers in `TASK_HANDLERS`.
+# `@execution_handler` decorators can register handlers in `TASK_HANDLERS`.
 _TASKS_LOADED = False
 
 
@@ -66,7 +66,7 @@ def _load_task_modules() -> None:
                 try:
                     if not jt_cfg.get("enabled", True):
                         continue
-                    # Ensure module for this job type is imported (prefers config/task)
+                    # Ensure module for this execution type is imported (prefers config/task)
                     _ensure_task_for_type(jt)
                 except Exception:
                     logger.exception("Failed to ensure task for type %s", jt)
@@ -124,23 +124,23 @@ def _load_task_modules() -> None:
     logger.debug("No task modules found in config.task or tasks packages")
 
 
-def _ensure_task_for_type(job_type: str) -> bool:
-    """Ensure the module that registers a handler for `job_type` is imported.
+def _ensure_task_for_type(task_type: str) -> bool:
+    """Ensure the module that registers a handler for `task_type` is imported.
 
     Tries candidates under `config.task` first (including loading from
     filesystem if `config` is not a package), then `tasks`.
-    Returns True if a handler for `job_type` is present after imports.
+    Returns True if a handler for `task_type` is present after imports.
     """
-    if not job_type:
+    if not task_type:
         return False
 
-    if job_type in TASK_HANDLERS:
+    if task_type in TASK_HANDLERS:
         return True
 
-    # candidate base names derived from job type
-    bases = [job_type, job_type.replace("-", "_")]
-    if "-" in job_type:
-        bases.append(job_type.replace("-", ""))
+    # candidate base names derived from execution type
+    bases = [task_type, task_type.replace("-", "_")]
+    if "-" in task_type:
+        bases.append(task_type.replace("-", ""))
     # remove duplicates while preserving order
     seen = set()
     bases = [b for b in bases if not (b in seen or seen.add(b))]
@@ -158,11 +158,11 @@ def _ensure_task_for_type(job_type: str) -> bool:
             return False
 
     for base in bases:
-        # First, try to find a module file that contains the decorator for this job_type
+        # First, try to find a module file that contains the decorator for this task_type
         # Search in models/tasks
         tasks_dir = models_root / "tasks"
         decorator_patterns = [
-            f"@job_handler(\"{job_type}\")", f"@job_handler('{job_type}')"]
+            f"@execution_handler(\"{task_type}\")", f"@execution_handler('{task_type}')"]
         if tasks_dir.exists():
             for fp in tasks_dir.rglob("*.py"):
                 if fp.name == "__init__.py" or fp.name.startswith("_"):
@@ -178,11 +178,11 @@ def _ensure_task_for_type(job_type: str) -> bool:
                     if mod_name.endswith(".py"):
                         mod_name = mod_name[:-3]
                     try:
-                        if try_import(mod_name) and job_type in TASK_HANDLERS:
+                        if try_import(mod_name) and task_type in TASK_HANDLERS:
                             return True
                     except Exception:
                         logger.exception(
-                            "Failed to import module %s for job type %s", mod_name, job_type)
+                            "Failed to import module %s for execution type %s", mod_name, task_type)
 
         # Also search in config/task folder on disk (if present)
         config_task_dir = models_root / "config" / "task"
@@ -201,11 +201,11 @@ def _ensure_task_for_type(job_type: str) -> bool:
                     if mod_name.endswith(".py"):
                         mod_name = mod_name[:-3]
                     try:
-                        if try_import(mod_name) and job_type in TASK_HANDLERS:
+                        if try_import(mod_name) and task_type in TASK_HANDLERS:
                             return True
                     except Exception:
                         logger.exception(
-                            "Failed to import config.task module %s for job type %s", mod_name, job_type)
+                            "Failed to import config.task module %s for execution type %s", mod_name, task_type)
 
         # Try package-style imports if file-search didn't find a match
         candidates = [
@@ -216,7 +216,7 @@ def _ensure_task_for_type(job_type: str) -> bool:
         ]
 
         for mod_name in candidates:
-            if try_import(mod_name) and job_type in TASK_HANDLERS:
+            if try_import(mod_name) and task_type in TASK_HANDLERS:
                 return True
 
         # If config.task import failed as a package, try loading from filesystem
@@ -256,72 +256,94 @@ def _ensure_task_for_type(job_type: str) -> bool:
                     logger.exception(
                         "Failed to load config task module from %s", fp)
 
-                if job_type in TASK_HANDLERS:
+                if task_type in TASK_HANDLERS:
                     return True
 
     return False
 
 
-def process_job(job: Dict[str, Any]) -> None:
-    from database.job import get_job_database
+def process_execution(execution: Dict[str, Any]) -> None:
+    from database.execution import get_execution_database
     from agent.registry import get_agent
     # Importing the tools subpackage registers all built-in tools.
     import agent.tools  # noqa: F401
 
-    job_type = job.get("type")
-    db = get_job_database()
-    agent_def = get_agent(job_type)
-    agent_max_steps = int(job.get("agent_max_steps") or 0)
+    task_type = execution.get("task_type")
+    db = get_execution_database()
+    agent_def = get_agent(task_type)
+    agent_max_steps = int(execution.get("max_steps") or 0)
+    attempt_id = execution.get("attempt_id")
 
-    # Agent path: only when an agent is registered for this job type AND
-    # the row was enqueued with agent_max_steps > 1 (opt-in per job).
+    # Agent path: only when an agent is registered for this execution type AND
+    # the row was enqueued with agent_max_steps > 1 (opt-in per execution).
     if agent_def is not None and agent_max_steps > 1:
         from agent.loop import run_one_step
         logger.info(
-            "Processing agent job: %s of type: %s (iteration %s/%s)",
-            job["id"], job_type, job.get("agent_iteration", 0), agent_max_steps,
+            "Processing agent execution: %s of type: %s (iteration %s/%s)",
+            execution["execution_id"], task_type, execution.get("step", 0), agent_max_steps,
         )
         try:
-            outcome = run_one_step(job, agent_def, db)
+            outcome = run_one_step(execution, agent_def, db)
             if outcome.value == "finished":
-                _maybe_resume_parent(job, db)
+                current = db.get_execution(execution["execution_id"]) or {}
+                if current.get("attempt_id") is None and (
+                    current.get("phase") == "backend_finalization"
+                    or current.get("status") == "failed"
+                ):
+                    _maybe_resume_parent(execution, db)
         except Exception as e:
-            logger.exception("Agent job %s failed: %s", job["id"], e)
-            db.update_job_status(job["id"], "failed")
-            _maybe_resume_parent(job, db, error=str(e))
+            logger.exception("Agent execution %s failed: %s", execution["execution_id"], e)
+            if db.update_execution_status(
+                execution["execution_id"],
+                "failed",
+                attempt_id=attempt_id,
+                failure_message=str(e),
+            ):
+                _maybe_resume_parent(execution, db, error=str(e))
         return
 
     # One-shot path (existing behaviour).
-    handler = TASK_HANDLERS.get(job_type)
+    handler = TASK_HANDLERS.get(task_type)
     if not handler:
-        logger.warning("No handler for job type: %s", job_type)
-        db.update_job_status(job["id"], "failed")
-        _maybe_resume_parent(job, db, error=f"no handler for {job_type}")
+        logger.warning("No handler for execution type: %s", task_type)
+        if db.update_execution_status(
+            execution["execution_id"],
+            "failed",
+            attempt_id=attempt_id,
+            failure_message=f"No handler for {task_type}",
+        ):
+            _maybe_resume_parent(execution, db, error=f"no handler for {task_type}")
         return
 
-    logger.info("Processing job: %s of type: %s", job["id"], job_type)
+    logger.info("Processing execution: %s of type: %s", execution["execution_id"], task_type)
     try:
-        # Surface the optional input_blob (bytes from the jobs.input_blob column)
+        # Surface the optional input_blob (bytes from the executions.input_blob column)
         # to the handler under a private payload key so handler signatures stay
         # uniform. Handlers that don't need it ignore the key.
-        payload = job.get("payload") or {}
+        payload = execution.get("payload") or {}
         if isinstance(payload, dict):
             payload = dict(payload)
-            payload["jobId"] = job["id"]
-            input_blob = job.get("input_blob")
+            payload["executionId"] = execution["execution_id"]
+            payload["execution"] = {
+                "rootExecutionId": str(execution["root_execution_id"]),
+                "executionId": str(execution["execution_id"]),
+                "turnId": str(execution["turn_id"]) if execution.get("turn_id") else None,
+                "attemptId": str(execution["attempt_id"]) if execution.get("attempt_id") else None,
+                "causedByEventId": str(execution["last_event_id"]) if execution.get("last_event_id") else None,
+            }
+            input_blob = execution.get("input_blob")
             if input_blob is not None:
                 payload["_input_blob"] = bytes(input_blob)
 
-        # Reentrant handlers receive any persisted state (e.g. set when the job
-        # transitioned to 'waiting' for child jobs) and a ctx with db/job_id so
-        # they can enqueue children. Legacy one-shot handlers ignore both.
-        state = job.get("agent_state")
+        # Reentrant handlers receive persisted state and a context that can
+        # enqueue child executions. One-shot handlers ignore both.
+        state = execution.get("checkpoint")
         if isinstance(state, str):
             try:
                 state = json.loads(state)
             except Exception:
                 state = None
-        ctx = HandlerCtx(db, job["id"], job_type)
+        ctx = HandlerCtx(db, execution["execution_id"], task_type)
 
         result = _call_handler(handler, payload, state=state, ctx=ctx)
 
@@ -331,8 +353,8 @@ def process_job(job: Dict[str, Any]) -> None:
             new_state = result.get("_state") or {}
             pending = result.get("pending_children") or {}
             new_state["waiting_for_children"] = {str(k): v for k, v in pending.items()}
-            db.update_agent_state(job["id"], new_state)
-            db.update_job_status(job["id"], "waiting")
+            if db.update_agent_state(execution["execution_id"], new_state, attempt_id=attempt_id):
+                db.update_execution_status(execution["execution_id"], "waiting", attempt_id=attempt_id)
             return
 
         # Handlers may attach a binary result via the `_result_blob` key; pull
@@ -340,52 +362,61 @@ def process_job(job: Dict[str, Any]) -> None:
         result_blob = None
         if isinstance(result, dict):
             result_blob = result.pop("_result_blob", None)
-        db.update_job_result(job["id"], result, result_blob=result_blob)
-        db.update_job_status(job["id"], "processed")
-        _maybe_resume_parent(job, db)
+        if db.update_execution_result(execution["execution_id"], result, result_blob=result_blob, attempt_id=attempt_id):
+            finalized = db.update_execution_status(
+                execution["execution_id"],
+                "running",
+                phase="backend_finalization",
+                attempt_id=attempt_id,
+            )
+            if finalized:
+                _maybe_resume_parent(execution, db)
     except Exception as e:
-        logger.error("Job %s failed: %s", job["id"], e)
-        db.update_job_status(job["id"], "failed")
-        _maybe_resume_parent(job, db, error=str(e))
+        logger.error("Execution %s failed: %s", execution["execution_id"], e)
+        if db.update_execution_status(
+            execution["execution_id"],
+            "failed",
+            attempt_id=attempt_id,
+            failure_message=str(e),
+        ):
+            _maybe_resume_parent(execution, db, error=str(e))
 
 
-def _maybe_resume_parent(job: Dict[str, Any], db, error: str | None = None) -> None:
-    """If this job has a parent, write the result/error into the parent's
-    state and wake the parent back to 'pending' when appropriate.
+def _maybe_resume_parent(execution: Dict[str, Any], db, error: str | None = None) -> None:
+    """If this execution has a parent, write the result/error into the parent's
+    state and wake the parent back to 'queued' when appropriate.
 
     Two parent shapes are supported:
-      - LLM-driven agent (single child): parent.agent_state.transcript[-1]
-        has `pending_child == this job id`.
-      - Reentrant task fan-out (N children): parent.agent_state.waiting_for_children
-        contains this job id. Handled atomically via db.resume_parent_with_child
-        to avoid races between concurrent child completions.
+      - LLM-driven agent (single child): parent checkpoint transcript[-1]
+        has `pending_child == this execution id`.
+      - Reentrant task fan-out (N children): parent checkpoint waiting_for_children
+        contains this execution id and is integrated by db.resume_parent_with_child.
     """
-    parent_id = job.get("parent_job_id")
+    parent_id = execution.get("parent_execution_id")
     if not parent_id:
         return
-    parent = db.get_job(parent_id)
+    parent = db.get_execution(parent_id)
     if not parent:
         return
-    state = parent.get("agent_state") or {}
+    state = parent.get("checkpoint") or {}
     if isinstance(state, str):
         try:
             state = json.loads(state)
         except Exception:
             state = {}
 
-    # Many-children fan-out: delegate to the atomic helper so concurrent
-    # sibling completions can't lose each other's results.
+    # Many-children fan-out uses the shared checkpoint integration helper.
     waiting = state.get("waiting_for_children") or {}
-    if str(job["id"]) in waiting:
+    if str(execution["execution_id"]) in waiting:
         from lib.llm.config import get_task_config
-        cfg = get_task_config(parent.get("type") or "")
+        cfg = get_task_config(parent.get("task_type") or "")
         max_retries = int(cfg.get("chunk_max_retries", 0))
         if error is not None:
             db.resume_parent_with_child(
-                parent_id, job["id"], error=error, max_retries=max_retries,
+                parent_id, execution["execution_id"], error=error, max_retries=max_retries,
             )
         else:
-            fresh = db.get_job(job["id"]) or {}
+            fresh = db.get_execution(execution["execution_id"]) or {}
             result = fresh.get("result") or {}
             if isinstance(result, str):
                 try:
@@ -393,27 +424,27 @@ def _maybe_resume_parent(job: Dict[str, Any], db, error: str | None = None) -> N
                 except Exception:
                     result = {}
             db.resume_parent_with_child(
-                parent_id, job["id"],
+                parent_id, execution["execution_id"],
                 success_result=result if isinstance(result, dict) else {},
                 max_retries=max_retries,
             )
         return
 
-    # Single-child LLM-agent path (unchanged).
+    # Single-child LLM-agent path.
     transcript = state.get("transcript") or []
     if transcript:
         last = transcript[-1]
-        if last.get("pending_child") == job["id"]:
+        if last.get("pending_child") == execution["execution_id"]:
             if error is not None:
-                last["observation"] = {"error": error, "child_job_id": job["id"]}
+                last["observation"] = {"error": error, "child_execution_id": execution["execution_id"]}
             else:
-                fresh = db.get_job(job["id"]) or {}
+                fresh = db.get_execution(execution["execution_id"]) or {}
                 last["observation"] = fresh.get("result") or {}
             last.pop("pending_child", None)
             state["transcript"] = transcript
     state.pop("waiting_for_child", None)
     db.update_agent_state(parent_id, state)
-    db.wake_waiting_job(parent_id)
+    db.wake_waiting_execution(parent_id)
 
 
 # Load all enabled tasks at import time so handlers are registered immediately.

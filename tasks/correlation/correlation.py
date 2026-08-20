@@ -1,11 +1,11 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float
 from scipy import stats as scipy_stats
 import pandas as pd
 import numpy as np
 
 
-@job_handler("correlation")
+@execution_handler("correlation")
 def correlation(payload) -> dict:
     """Scatter plot + correlation between two numeric fields."""
     try:

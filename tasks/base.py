@@ -7,7 +7,7 @@ Every task must follow this structure:
    - <task_name>.py  -- handler module
    - prompt.md       -- default prompt template (optional, only for LLM tasks)
 
-2. Handler: decorated with @job_handler("<task-type>")
+2. Handler: decorated with @execution_handler("<task-type>")
    - Receives a payload dict
    - Returns a result dict
 
@@ -18,7 +18,7 @@ Every task must follow this structure:
    - model: str           -- model name or path (optional)
    - ...additional task-specific parameters
 
-4. Registration: import the module in utils/process_job.py
+4. Registration: import the module in utils/process_execution.py
 
 Users can override task behavior via:
 - config/tasks/<task-type>/prompt.md   -- custom prompt

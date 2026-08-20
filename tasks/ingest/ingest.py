@@ -1,11 +1,11 @@
 import uuid
 from services.text import semantic_chunk_text, clean_html_text
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from database.rag import get_rag, PointStruct
 from services.embedding_service import get_embedding_service
 
 
-@job_handler("ingest-content")
+@execution_handler("ingest-content")
 def ingest(payload) -> dict:
     """
     Ingests content for a resource or doc into the vector database.
@@ -66,7 +66,7 @@ def ingest(payload) -> dict:
     return {"success": True}
 
 
-@job_handler("delete-vectors")
+@execution_handler("delete-vectors")
 def delete_vectors(payload) -> dict:
     """Delete all vectors for a given source_id from the vector database."""
     source_id = payload.get("sourceId")

@@ -3,7 +3,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from common.job_registry import job_handler
+from common.execution_registry import execution_handler
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
@@ -78,7 +78,7 @@ _SPEC = MapReduceSpec(
 )
 
 
-@job_handler("summarize")
+@execution_handler("summarize")
 def summarize_text(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, ctx=None) -> Dict[str, Any]:
     """Reentrant handler. `state` is None on first invocation; populated by the
     dispatcher when the parent is woken after all children complete."""

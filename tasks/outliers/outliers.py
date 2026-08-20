@@ -1,10 +1,10 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float
 import pandas as pd
 import numpy as np
 
 
-@job_handler("outliers")
+@execution_handler("outliers")
 def outliers(payload) -> dict:
     """Detect outliers in a numeric field using IQR method."""
     try:

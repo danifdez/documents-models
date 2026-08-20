@@ -1,9 +1,9 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 
 
-@job_handler("pivot-table")
+@execution_handler("pivot-table")
 def pivot_table(payload) -> dict:
     """Cross-tabulation / pivot table."""
     try:

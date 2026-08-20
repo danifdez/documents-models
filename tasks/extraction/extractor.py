@@ -1,7 +1,7 @@
 import os
 import tempfile
 
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from tasks.extraction.processors.html_processor import process_html
 from tasks.extraction.processors.doc_processor import process_doc
 from tasks.extraction.processors.pdf_processor import process_pdf
@@ -13,7 +13,7 @@ from tasks.extraction.processors.mhtml_processor import process_mhtml
 
 
 def _materialize(input_blob: bytes, extension: str) -> str:
-    """Write the job's input_blob to a tempfile so file-based processors can use it."""
+    """Write the execution's input_blob to a tempfile so file-based processors can use it."""
     fd, path = tempfile.mkstemp(suffix=extension)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -30,7 +30,7 @@ def _extract_by_extension(payload: dict) -> dict:
     ext = payload["extension"]
     input_blob = payload.get("_input_blob")
     if input_blob is None:
-        return {"error": "extraction job is missing input_blob"}
+        return {"error": "extraction execution is missing input_blob"}
 
     if ext in ['.html', '.htm']:
         html_content = input_blob.decode('utf-8', errors='replace')
@@ -62,7 +62,7 @@ def _extract_by_extension(payload: dict) -> dict:
             os.remove(tmp_path)
 
 
-@job_handler("document-extraction")
+@execution_handler("document-extraction")
 def extract(payload) -> dict:
     try:
         return _extract_by_extension(payload)
@@ -70,7 +70,7 @@ def extract(payload) -> dict:
         return {"error": str(e)}
 
 
-@job_handler("indexed-file-extraction")
+@execution_handler("indexed-file-extraction")
 def extract_indexed_file(payload) -> dict:
     """
     Extracts plain text from an IndexedFile blob.

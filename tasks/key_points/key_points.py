@@ -5,7 +5,7 @@ Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
 
 - Top-level invocation chunks the content. Single chunk → run the full
   extraction + dedup + refine + rank pipeline inline. Multiple chunks → fan
-  out one `key-point` child job per chunk and wait.
+  out one `key-point` child execution per chunk and wait.
 - Each child detects it's running on a single chunk (via the `_chunk_idx` marker
   in payload) and returns only the *raw* per-chunk candidates so the parent can
   do cross-chunk semantic dedup, refine and ranking.
@@ -37,7 +37,7 @@ from services.text import (
     normalize_text,
     strip_dense_blobs,
 )
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 logger = logging.getLogger(__name__)
 
@@ -398,7 +398,7 @@ _SPEC = MapReduceSpec(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@job_handler("key-point")
+@execution_handler("key-point")
 def key_points(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, ctx=None) -> Dict[str, Any]:
     """Reentrant handler. `state` is None on first invocation; populated by the
     dispatcher when the parent is woken after all children complete."""

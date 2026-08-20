@@ -1,0 +1,7 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    { "op": "remove", "path": "/artifacts/0" }
+  ],
+  "expectedFailure": "invariant"
+}

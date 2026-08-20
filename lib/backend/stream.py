@@ -75,28 +75,28 @@ def generate_reply(
     *,
     owner_segment: str,
     owner_id: Any,
-    job_id: Any,
+    execution_id: Any,
     stream_enabled: bool = True,
 ) -> str:
     """Produce the model's reply, streaming it live to the UI when possible.
 
     Streams (posting chunks to `/:segment/:id/stream-chunk`) when `stream_enabled`
-    and both `owner_id`/`job_id` are ints; otherwise falls back to a single
+    and `owner_id` is an integer and `execution_id` is a UUID string; otherwise falls back to a single
     blocking `chat` call. Returns the RAW text (thinking blocks NOT stripped) —
     the caller strips once for the persisted reply."""
     can_stream = (
         stream_enabled
         and isinstance(owner_id, int)
-        and isinstance(job_id, int)
+        and isinstance(execution_id, str)
     )
     if not can_stream:
         logger.warning(
-            "chat: streaming disabled (owner=%s/%s job=%r stream=%r)",
-            owner_segment, owner_id, job_id, stream_enabled,
+            "chat: streaming disabled (owner=%s/%s execution=%r stream=%r)",
+            owner_segment, owner_id, execution_id, stream_enabled,
         )
         return llm.chat(messages, max_tokens=max_tokens, allow_thinking=True) or ""
 
-    logger.info("chat: streaming (owner=%s/%s job=%s)", owner_segment, owner_id, job_id)
+    logger.info("chat: streaming (owner=%s/%s execution=%s)", owner_segment, owner_id, execution_id)
     think = _ThinkFilter()
     raw_parts: List[str] = []
     buffer: List[str] = []
@@ -110,13 +110,13 @@ def generate_reply(
             buffer.append(visible)
         now_ms = time.monotonic() * 1000
         if buffer and now_ms - last_flush_ms >= STREAM_FLUSH_INTERVAL_MS:
-            post_stream_chunk(owner_segment, owner_id, job_id, "".join(buffer))
+            post_stream_chunk(owner_segment, owner_id, execution_id, "".join(buffer))
             chunks_sent += 1
             buffer.clear()
             last_flush_ms = now_ms
     if buffer:
-        post_stream_chunk(owner_segment, owner_id, job_id, "".join(buffer))
+        post_stream_chunk(owner_segment, owner_id, execution_id, "".join(buffer))
         chunks_sent += 1
-    post_stream_chunk(owner_segment, owner_id, job_id, "", done=True)
+    post_stream_chunk(owner_segment, owner_id, execution_id, "", done=True)
     logger.info("chat: stream done, %d chunks sent", chunks_sent)
     return "".join(raw_parts)

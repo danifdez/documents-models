@@ -2,8 +2,8 @@
 Live dictation worker.
 
 Persistent process that keeps a `faster-whisper` model in memory and processes
-audio chunks streamed over a WebSocket. Sits outside the normal job queue
-(`jobs.py`) on purpose — live dictation cannot wait behind long-running jobs.
+audio chunks streamed over a WebSocket. Sits outside the normal execution queue
+(`executions.py`) on purpose — live dictation cannot wait behind long-running executions.
 
 Protocol (`ws://<host>:<port>/voice`):
     Inbound from client:

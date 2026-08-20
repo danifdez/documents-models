@@ -1,6 +1,6 @@
-# Job Types
+# Execution Types
 
-The models service processes 13 job types, each registered via the `@job_handler` decorator. All handlers receive a `payload` dict and return a result dict.
+The models service processes 13 execution types, each registered via the `@execution_handler` decorator. All handlers receive a `payload` dict and return a result dict.
 
 ## Overview
 
@@ -103,7 +103,7 @@ Generates a summary of the provided text, with cross-lingual support.
 ```
 
 - Uses `facebook/mbart-large-50-one-to-many-mmt`.
-- HTML tags are stripped before processing.
+- HTML tags are stripped before running.
 - Input is truncated to 1024 tokens.
 - Summary length: 30-200 tokens, with beam search (4 beams) and no-repeat n-gram (size 3).
 
@@ -146,7 +146,7 @@ Translates a list of texts between language pairs.
 ```
 
 - Uses `Helsinki-NLP/opus-mt-{source}-{target}` models (one model per language pair).
-- Texts are processed in batches of 32.
+- Texts are completed in batches of 32.
 - Supports both `targetLanguage` (string) and `targetLanguages` (array, uses the first element).
 - The `path` field is passed through for client-side reference.
 
@@ -352,7 +352,7 @@ Extracts up to 5 key points from text content.
 }
 ```
 
-- HTML tags are stripped and entities are unescaped before processing.
+- HTML tags are stripped and entities are unescaped before running.
 - Uses the configured LLM to generate key points as complete sentences (3-10 words each).
 - If the LLM is unavailable or produces insufficient results, falls back to heuristic extraction from the original text (splitting by sentence boundaries and filtering by word count).
 - Returns up to 5 deduplicated key points.
@@ -384,7 +384,7 @@ Extracts up to 10 keywords or short topic phrases from text content.
 }
 ```
 
-- HTML tags are stripped and entities are unescaped before processing.
+- HTML tags are stripped and entities are unescaped before running.
 - Uses the configured LLM (via chat completion or plain completion fallback) to generate comma-separated topics.
 - Each keyword is truncated to a maximum of 3 words.
 - If the LLM is unavailable (the shared llama-server is not answering and could not be started), falls back to heuristic extraction (first 3 words of each sentence).
@@ -450,3 +450,4 @@ Computes descriptive statistics for a dataset stored in the `datasets` / `datase
 - Reads schema and records directly from PostgreSQL.
 - Builds a pandas DataFrame and computes per-field statistics (numeric: mean/std/min/max/percentiles; string: unique count and most-frequent value; boolean: true/false counts).
 - Does not require any capability (any worker can handle it).
+

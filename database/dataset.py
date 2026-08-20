@@ -6,12 +6,12 @@ Pure DataFrame/value transformations live in ``common.dataset``.
 
 import json
 
-from database.job import get_job_database
+from database.execution import get_execution_database
 
 
 def get_dataset_records(dataset_id: int):
     """Fetch dataset schema and records directly from PostgreSQL."""
-    db = get_job_database()
+    db = get_execution_database()
     conn = db.get_connection()
 
     with conn.cursor() as cur:
@@ -61,7 +61,7 @@ def resolve_fk_labels(schema, field_key, raw_values):
     if not norm_values:
         return {}
 
-    db = get_job_database()
+    db = get_execution_database()
     conn = db.get_connection()
     result_map = {}
 

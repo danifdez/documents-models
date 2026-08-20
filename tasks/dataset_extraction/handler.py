@@ -1,6 +1,6 @@
 """Dataset extraction worker.
 
-Job type: `dataset.extract-row`.
+Execution type: `dataset.extract-row`.
 
 Payload (set by backend `DatasetExtractionService` in T04):
     {
@@ -16,7 +16,7 @@ Payload (set by backend `DatasetExtractionService` in T04):
       "model":             str | None            # optional model override
     }
 
-Result (consumed by backend job processor in T04):
+Result (consumed by backend execution processor in T04):
     {
       "data":         dict[str, Any] | None,         # fieldKey -> value (or null)
       "cellMetadata": dict[str, CellAnchor] | None,  # fieldKey -> anchor; omitted when value is null
@@ -37,7 +37,7 @@ from agent.llm import get_llm_for_spec
 from agent.types import ModelSpec
 from lib.llm.json import parse_json
 from lib.llm.config import get_llm_defaults, get_task_config
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 from .grammar import build_grammar
 from .prompt import PROMPT_VERSION, build_prompt
@@ -141,7 +141,7 @@ def _build_result(
     return {"data": data, "cellMetadata": cell_metadata}
 
 
-@job_handler("dataset.extract-row")
+@execution_handler("dataset.extract-row")
 def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     cfg = get_task_config("dataset.extract-row") or {}
     schema: List[Dict[str, Any]] = payload.get("schema") or []
@@ -212,7 +212,7 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
             seed=seed,
         )
         parsed = parse_json(raw, default=None)
-    except Exception as exc:  # noqa: BLE001 — surface as job failure, not crash
+    except Exception as exc:  # noqa: BLE001 — surface as execution failure, not crash
         logger.exception("dataset.extract-row: LLM generation failed")
         raw = f"<llm error: {exc}>"
         parsed = None

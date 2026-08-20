@@ -5,7 +5,7 @@ Multi-turn chat with system prompt and history. This is NOT a Q&A over a file
 
 This handler is the PERSONAL ASSISTANT only: the built-in, memory-backed agent
 with the workspace toolset (tasks, calendar, notes, workspace research). Chat
-with a user-created agent is a different job — see the `agent-chat` task
+with a user-created agent is a different execution type — see the `agent-chat` task
 (`core/tasks/agent_chat`) — even though the backend distinguishes them by
 `payload.kind`.
 
@@ -20,11 +20,9 @@ Expected payload:
     "name": str,                          # owner's display name
     "systemPrompt": str | null,           # owner's custom prompt; null => default
     "folderScope": str | null,            # working folder, passed through to tools
-    "assistantId": int,                   # legacy alias of ownerId
-    "assistantName": str,                 # legacy alias of name
-    "assistantSystem": bool,              # true => run the tool phase
+    "assistantSystem": bool,              # true => emitter the tool phase
     "memorySnippets": [...],              # injected memory
-    "extractMemory": bool,                # run memory extraction
+    "extractMemory": bool,                # emitter memory extraction
     "conversation": [{"role": ..., "content": ...}, ...]
   }
 
@@ -40,7 +38,7 @@ from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.chat import build_chat_messages, resolve_owner_id
 from lib.llm.text import strip_thinking as _strip_thinking
 from lib.backend.stream import generate_reply
-from common.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 from tools import ToolContext
 from agents import assistant
@@ -51,6 +49,7 @@ from agents.memory_agent import (
     last_user_message as _last_user_message,
     memory_for_payload as _memory_for_payload,
 )
+from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +57,10 @@ logger = logging.getLogger(__name__)
 OWNER_SEGMENT = "assistants"
 
 
-@job_handler("assistant-chat")
+@execution_handler("assistant-chat")
 def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
+    emitter = ExecutionEmitter.from_payload(payload)
+    emitter_token = activate_emitter(emitter)
     try:
         cfg = get_task_config("assistant-chat")
         messages = build_chat_messages(
@@ -69,26 +70,29 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             memory_block=_format_memory_block(_memory_for_payload(payload)),
         )
         if not messages or messages[-1]["role"] != "user":
-            return {"error": "History does not end with a user message"}
+            error = "History does not end with a user message"
+            emitter.flush_evidence()
+            return emitter.attach_summary({"error": error})
 
         max_tokens = int(cfg.get("max_tokens", 1000))
         params = get_llm_params("assistant-chat")
         llm = get_llm_service(**params)
 
-        owner_id = resolve_owner_id(payload, ("ownerId", "assistantId"))
-        job_id = payload.get("jobId")
+        owner_id = resolve_owner_id(payload)
+        execution_id = payload.get("executionId")
         folder_scope = (payload.get("folderScope") or "").strip()
 
         logger.info(
             "assistant-chat: owner=%s/%s name=%s turns=%d max_tokens=%d",
             OWNER_SEGMENT, owner_id,
-            payload.get("name") or payload.get("assistantName"),
+            payload.get("name"),
             len(messages), max_tokens,
         )
 
         ctx = ToolContext(
-            owner_segment=OWNER_SEGMENT, owner_id=owner_id, job_id=job_id,
+            owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
             folder_scope=folder_scope, payload=payload,
+            execution=emitter,
         )
 
         # Tool-call phase (non-streaming: the model has to decide whether to call
@@ -98,19 +102,21 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         # from inside the agent loop.
         if payload.get("assistantSystem"):
             logger.info("assistant-chat: entering tool phase")
-            assistant.run(messages, ctx)
+            assistant.emitter(messages, ctx)
         else:
             logger.info("assistant-chat: skipping tool phase (assistantSystem falsy)")
 
         raw = generate_reply(
             llm, messages, max_tokens,
-            owner_segment=OWNER_SEGMENT, owner_id=owner_id, job_id=job_id,
+            owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
             stream_enabled=bool(cfg.get("stream", True)),
         )
 
         reply = _strip_thinking(raw)
         if not reply:
-            return {"error": "Model returned an empty response"}
+            error = "Model returned an empty response"
+            emitter.flush_evidence()
+            return emitter.attach_summary({"error": error})
 
         result: Dict[str, Any] = {"reply": reply}
 
@@ -125,7 +131,13 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                     result["memoryAction"] = action
                     logger.info("assistant-chat: memoryAction=%r", action)
 
-        return result
+        emitter.record_final_message(reply)
+        emitter.flush_evidence()
+        return emitter.attach_summary(result)
     except Exception as e:  # noqa: BLE001
         logger.exception("assistant-chat handler failed")
-        return {"error": f"Assistant failure: {e}"}
+        error = f"Assistant failure: {e}"
+        emitter.flush_evidence()
+        return emitter.attach_summary({"error": error})
+    finally:
+        reset_emitter(emitter_token)

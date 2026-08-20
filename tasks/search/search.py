@@ -1,10 +1,10 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from rag.retriever import Retriever
 from rag.reranker import Reranker
 from rag.types import RAGContext
 
 
-@job_handler("search")
+@execution_handler("search")
 def search_snippets(payload) -> dict:
     ctx = RAGContext(
         query=payload["query"],

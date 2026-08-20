@@ -1,4 +1,4 @@
-"""Job handlers for the assistant working-folder table.
+"""Execution handlers for the assistant working-folder table.
 
 Separate from `tasks/ingest/ingest.py` because the storage scope is different
 (`indexed_file_chunks` vs. workspace `rag_chunks`) and we want the two paths to
@@ -11,7 +11,7 @@ import uuid
 from typing import List
 
 from services.text import semantic_chunk_text
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from database.rag import get_folder_rag, PointStruct
 from services.embedding_service import get_embedding_service
 
@@ -27,7 +27,7 @@ def _owner_tag(owner_type: str, owner_id: int) -> str:
     return f"{owner_type}:{int(owner_id)}"
 
 
-@job_handler("indexed-file-ingest")
+@execution_handler("indexed-file-ingest")
 def ingest_indexed_file(payload: dict) -> dict:
     """Vectorize the extracted text of an IndexedFile and upsert into the
     folder collection. Idempotent: deletes prior points for this `source_id`
@@ -44,7 +44,7 @@ def ingest_indexed_file(payload: dict) -> dict:
     """
     indexed_file_id = int(payload["indexedFileId"])
     owner_type = str(payload.get("ownerType") or "main-assistant")
-    owner_id = int(payload.get("ownerId") or payload.get("assistantId") or 0)
+    owner_id = int(payload.get("ownerId") or 0)
     content = (payload.get("content") or "").strip()
     filename = payload.get("filename") or ""
     checksum = payload.get("checksum") or ""
@@ -98,7 +98,7 @@ def ingest_indexed_file(payload: dict) -> dict:
     }
 
 
-@job_handler("indexed-file-search")
+@execution_handler("indexed-file-search")
 def search_indexed_files(payload: dict) -> dict:
     """Semantic search over an owner's folder files. Returns hits with
     `indexedFileId`, `filename`, `snippet`, `score`. Hits from the same file
@@ -112,7 +112,7 @@ def search_indexed_files(payload: dict) -> dict:
         - score_threshold (float, optional): minimum cosine score.
     """
     owner_type = str(payload.get("ownerType") or "main-assistant")
-    owner_id = int(payload.get("ownerId") or payload.get("assistantId") or 0)
+    owner_id = int(payload.get("ownerId") or 0)
     query = (payload.get("query") or "").strip()
     limit = int(payload.get("limit") or 10)
     score_threshold = payload.get("score_threshold")
@@ -158,14 +158,14 @@ def search_indexed_files(payload: dict) -> dict:
     return {"results": results}
 
 
-@job_handler("indexed-file-delete-vectors")
+@execution_handler("indexed-file-delete-vectors")
 def delete_indexed_file_vectors(payload: dict) -> dict:
     """Delete vectors for a specific IndexedFile, or for all files of an
     owner. Idempotent.
 
     The per-file mode is mostly redundant now (the FK to ``indexed_files``
     cascades on delete), but kept for manual/idempotent cleanup. The owner-scoped
-    wipe has no single parent row, so it stays job-driven.
+    wipe has no single parent row, so it stays execution-driven.
 
     Payload keys (exactly one):
         - sourceId (str): e.g. `indexed_file_42`. Deletes that file only.
@@ -186,12 +186,8 @@ def delete_indexed_file_vectors(payload: dict) -> dict:
         rag.delete_by_column("indexed_file_id", int(indexed_file_id))
         return {"success": True, "indexedFileId": int(indexed_file_id)}
 
-    # Owner-scoped wipe: backward-compatible with the older `assistantId` key.
     owner_type = payload.get("ownerType")
     owner_id = payload.get("ownerId")
-    if owner_id is None and payload.get("assistantId") is not None:
-        owner_type = owner_type or "main-assistant"
-        owner_id = payload["assistantId"]
     if owner_id is not None and owner_type:
         rag.delete_by_column("owner_tag", _owner_tag(owner_type, int(owner_id)))
         return {"success": True, "ownerType": owner_type, "ownerId": int(owner_id)}

@@ -143,8 +143,9 @@ def run_agent_loop(
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
-        and isinstance(ctx.job_id, int)
+        and isinstance(ctx.execution_id, str)
     )
+    execution = getattr(ctx, "execution", None)
 
     logger.info(
         "agent[%s]: enter — tools=%s rounds=%d", spec.name,
@@ -179,13 +180,40 @@ def run_agent_loop(
                 args_obj = json.loads(args_json or "{}")
                 args_label = str(args_obj.get("query") or next(iter(args_obj.values()), ""))
             except (json.JSONDecodeError, StopIteration):
+                args_obj = {}
                 args_label = ""
+            tool_trace = None
+            if execution:
+                tool_trace = execution.start_tool(
+                    name,
+                    args_obj,
+                    str(call.get("id") or "") or None,
+                )
             if can_emit:
                 post_tool_event(
-                    ctx.owner_segment, ctx.owner_id, ctx.job_id, name, args_label,
+                    ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
                     status="running",
                 )
-            result = dispatch(name, args_json, ctx)
+            try:
+                result = dispatch(name, args_json, ctx)
+            except Exception as error:
+                if execution and tool_trace:
+                    execution.finish_tool(
+                        tool_trace,
+                        {},
+                        None,
+                        error=str(error),
+                    )
+                raise
+            source_event_id = None
+            if execution and tool_trace:
+                source_event_id = execution.observe_tool_result(tool_trace, result)
+                execution.finish_tool(
+                    tool_trace,
+                    result,
+                    source_event_id,
+                    error=str(result.get("error")) if isinstance(result, dict) and result.get("error") else None,
+                )
             summary, entity = _summarize(name, result)
             logger.info("agent[%s]: tool=%s → %s", spec.name, name, summary)
             messages.append({
@@ -197,7 +225,7 @@ def run_agent_loop(
             pending = isinstance(result, dict) and result.get("pendingConfirmation")
             if can_emit and not pending:
                 post_tool_event(
-                    ctx.owner_segment, ctx.owner_id, ctx.job_id, name, args_label,
+                    ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
                     status="done", summary=summary, entity=entity,
                 )
             # A schema agent invoked as a tool must yield control the moment an

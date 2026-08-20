@@ -20,7 +20,7 @@ Per-task overrides can also be placed in `config/tasks/<task-name>/`.
   "name": "documents",
   "user": "postgres",
   "password": "example",
-  "jobs_table": "jobs"
+  "executions_table": "executions"
 }
 ```
 
@@ -108,7 +108,7 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
 | `background_hours_start` | `2` | Hour (0-23) when background window opens |
 | `background_hours_end` | `6` | Hour (0-23) when background window closes |
 
-`background` priority jobs are processed only when no `high`/`normal` jobs are pending, **or** when the current time falls inside the background window.
+`background` priority executions are completed only when no `high`/`normal` executions are queued, **or** when the current time falls inside the background window.
 
 ## tasks.json
 

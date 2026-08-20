@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/source-observed.schema.json",
+  "title": "source.observed payload v1",
+  "type": "object",
+  "required": ["sourceId", "kind", "originComponent", "observedAt", "contentHash", "trustLevel", "dataClassification"],
+  "properties": {
+    "sourceId": { "$ref": "../common.schema.json#/$defs/id" },
+    "kind": {
+      "enum": ["user_input", "web_page", "web_excerpt", "document", "document_chunk", "project_resource", "memory", "tool_output", "model_output", "external_record"]
+    },
+    "originComponent": { "type": "string", "minLength": 1 },
+    "canonicalLocator": { "type": "string", "minLength": 1 },
+    "observedAt": { "$ref": "../common.schema.json#/$defs/timestamp" },
+    "contentHash": { "$ref": "../common.schema.json#/$defs/hash" },
+    "snapshotArtifactId": { "$ref": "../common.schema.json#/$defs/id" },
+    "trustLevel": { "$ref": "../common.schema.json#/$defs/trustLevel" },
+    "dataClassification": { "$ref": "../common.schema.json#/$defs/dataClassification" },
+    "permissionScope": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "enum": ["web_page", "web_excerpt"] } }, "required": ["kind"] },
+      "then": {
+        "required": ["canonicalLocator", "snapshotArtifactId"],
+        "properties": {
+          "canonicalLocator": true,
+          "snapshotArtifactId": true,
+          "trustLevel": { "const": "untrusted_data" }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

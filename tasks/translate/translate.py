@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional, Tuple
 from transformers import pipeline as hf_pipeline
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from utils.device import get_device
 from services.text import chunk_units
 
@@ -42,7 +42,7 @@ def _split_long_item(item: str, max_words: int) -> List[str]:
     return chunk_units([item], max_size=max_words) or [item]
 
 
-@job_handler("translate")
+@execution_handler("translate")
 def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Translate texts from source language to target language(s).
 

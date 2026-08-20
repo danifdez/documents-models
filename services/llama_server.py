@@ -4,14 +4,14 @@ Every worker used to load its own .gguf through llama-cpp-python, and the
 embedded browser started a llama-server of its own: two copies of the same model
 fighting over the RAM and VRAM of one machine. Now there is a single
 llama-server, it belongs to documents-dev, and everything on the machine — every
-job in this worker plus the embedded browser — generates through it over HTTP.
+execution in this worker plus the embedded browser — generates through it over HTTP.
 
 Who starts it:
 
   - `manage llama start` (the normal way): documents-dev runs the engine as one
     more of its services, from `python -m services.llama_server`, which execs the
     binary in the foreground so the service manager owns the process.
-  - a job, as a last resort: if nothing answers when the first job needs the LLM,
+  - a execution, as a last resort: if nothing answers when the first execution needs the LLM,
     it starts the same engine with the same settings rather than failing. See
     `ensure_server`.
 
@@ -53,7 +53,7 @@ STARTUP_TIMEOUT_S = float(os.environ.get("LLAMA_SERVER_STARTUP_TIMEOUT", "300"))
 
 # Where the engine answers when nobody said otherwise. Unlike the backend — which
 # refuses to guess, because announcing a URL makes clients kill their own engine —
-# the worker needs a default: a job that can't find the engine can't run at all.
+# the worker needs a default: a execution that can't find the engine can't run at all.
 DEFAULT_URL = "http://127.0.0.1:18080"
 
 _lock = threading.Lock()
@@ -219,7 +219,7 @@ def _most_used_model() -> str:
 def engine_defaults() -> Dict[str, Any]:
     """The one definition of documents-dev's engine: what to load and how.
 
-    Used both by `manage llama start` and by the last-resort spawn from a job, so
+    Used both by `manage llama start` and by the last-resort spawn from a execution, so
     the engine is the same server no matter who happened to start it. Every field
     can be overridden from the environment, which is how the service manager (or
     a one-off run) changes the engine without touching the config.
@@ -282,7 +282,7 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
     context and long prompts would start getting truncated.
     """
     host, port = _split_host_port(url)
-    # One slot per concurrent caller: the browser's chat and this worker's jobs
+    # One slot per concurrent caller: the browser's chat and this worker's executions
     # land on the same server and would otherwise queue behind each other. Each
     # slot keeps its own KV cache, which is what makes `cache_prompt` worth
     # anything.
@@ -364,7 +364,7 @@ def _spawn(url: str, task_model_path: str) -> None:
 
     engine = engine_defaults()
     if not os.path.isfile(engine["model_path"]):
-        # The installation's model is missing but the job's is there: serve that
+        # The installation's model is missing but the execution's is there: serve that
         # rather than refuse to run.
         if task_model_path and os.path.isfile(task_model_path):
             logger.warning(

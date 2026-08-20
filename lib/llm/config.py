@@ -158,7 +158,7 @@ def active_deployments() -> dict:
 
     Read on every call rather than cached: deploying an adapter is an
     interactive action, and a long-lived worker has to pick it up on the next
-    job instead of on the next restart. A missing or malformed file simply means
+    execution instead of on the next restart. A missing or malformed file simply means
     no deployments — never an error, because inference must keep working.
     """
     try:

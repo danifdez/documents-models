@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/execution-state-changed.schema.json",
+  "title": "execution.state_changed payload v1",
+  "type": "object",
+  "required": ["from", "to"],
+  "properties": {
+    "from": {
+      "oneOf": [
+        { "$ref": "../common.schema.json#/$defs/executionStatus" },
+        { "type": "null" }
+      ]
+    },
+    "to": { "$ref": "../common.schema.json#/$defs/executionStatus" },
+    "phase": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "completionKind": { "enum": ["full", "partial"] },
+    "completionReason": { "type": "string", "minLength": 1 },
+    "result": { "$ref": "../common.schema.json#/$defs/jsonValue" },
+    "error": {
+      "oneOf": [
+        { "$ref": "../common.schema.json#/$defs/error" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "to": { "enum": ["completed", "failed", "cancelled"] } }, "required": ["to"] },
+      "then": {
+        "required": ["completionKind", "completionReason", "result", "error"],
+        "properties": {
+          "completionKind": true,
+          "completionReason": true,
+          "result": true,
+          "error": true
+        }
+      }
+    },
+    {
+      "if": { "properties": { "to": { "const": "failed" } }, "required": ["to"] },
+      "then": { "properties": { "error": { "$ref": "../common.schema.json#/$defs/error" } } }
+    }
+  ],
+  "additionalProperties": true
+}

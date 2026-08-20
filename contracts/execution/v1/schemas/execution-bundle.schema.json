@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/execution-bundle.schema.json",
+  "title": "ExecutionBundle manifest v1",
+  "type": "object",
+  "required": [
+    "bundleSchema", "bundleId", "rootExecutionId", "executionSchema", "product",
+    "eventRange", "events", "artifacts", "environment", "redactionProfile",
+    "bundleCompleteness", "integrity", "purpose", "exportedAt", "manifestHash"
+  ],
+  "properties": {
+    "bundleSchema": { "const": "execution-bundle/1" },
+    "bundleId": { "$ref": "common.schema.json#/$defs/id" },
+    "rootExecutionId": { "$ref": "common.schema.json#/$defs/id" },
+    "executionSchema": { "const": "execution-event/1" },
+    "product": { "enum": ["documents", "ia-browser"] },
+    "eventRange": {
+      "type": "object",
+      "required": ["firstSequence", "lastSequence"],
+      "properties": {
+        "firstSequence": { "type": "integer", "minimum": 1 },
+        "lastSequence": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "execution-event.schema.json" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "artifact-manifest.schema.json" }
+    },
+    "embeddedArtifacts": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/id" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["encoding", "data"],
+        "properties": {
+          "encoding": { "const": "base64" },
+          "data": { "type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["featureFlags"],
+      "properties": {
+        "documentsRevision": { "type": "string" },
+        "browserRevision": { "type": "string" },
+        "promptPackages": { "type": "array", "items": { "type": "string" } },
+        "toolVersions": { "type": "array", "items": { "type": "string" } },
+        "modelFingerprint": { "type": ["string", "null"] },
+        "runtimeFingerprint": { "type": ["string", "null"] },
+        "featureFlags": { "type": "object", "additionalProperties": { "type": "boolean" } }
+      },
+      "additionalProperties": true
+    },
+    "redactionProfile": { "type": "string", "minLength": 1 },
+    "bundleCompleteness": {
+      "type": "object",
+      "required": ["status", "reproducible", "missing"],
+      "properties": {
+        "status": { "enum": ["reproducible", "evaluable_partial", "diagnostic_only", "metadata_only", "invalid"] },
+        "reproducible": { "type": "boolean" },
+        "missing": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      },
+      "additionalProperties": true
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["eventsHash", "schemaManifestHash"],
+      "properties": {
+        "eventsHash": { "$ref": "common.schema.json#/$defs/hash" },
+        "schemaManifestHash": { "$ref": "common.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": true
+    },
+    "purpose": { "enum": ["diagnostic", "evaluation"] },
+    "accessScope": {
+      "type": "object",
+      "properties": {
+        "ownerPrincipal": { "type": "string", "minLength": 1 },
+        "workspaceId": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "exportedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "manifestHash": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "additionalProperties": true
+}

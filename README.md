@@ -4,17 +4,17 @@
 
 ## Overview
 
-The models service is the AI/ML processing layer of the [documents](https://github.com/danifdez/documents-dev) project.
-It runs as a background worker that picks up jobs from a PostgreSQL queue, processes documents using a set of
+The models service is the AI/ML running layer of the [documents](https://github.com/danifdez/documents-dev) project.
+It runs as a background worker that picks up executions from a PostgreSQL queue, processes documents using a set of
 AI and NLP models, and writes results back for the rest of the system to consume.
 
 It is designed to run alongside the backend service and can be deployed on any machine — including CPU-only,
 GPU-accelerated, or multi-worker setups. Workers automatically detect hardware capabilities and only claim
-the jobs they are able to handle.
+the executions they are able to handle.
 
 ## What it does
 
-### Document processing
+### Document running
 
 - **Extraction** — Converts uploaded files (PDF, DOC/DOCX, HTML, plain text, ODT, EML, audio/video) into
   clean, normalized HTML. Audio and video files return a metadata summary card.
@@ -34,16 +34,16 @@ the jobs they are able to handle.
 
 ### Infrastructure
 
-- **Priority queue** — Jobs are processed in order: `high` → `normal` → `background`. Background jobs run
+- **Priority queue** — Executions are completed in order: `high` → `normal` → `background`. Background executions run
   only when the queue is idle or during configured off-peak hours.
 - **Multi-worker support** — Multiple instances can run on different machines, all sharing the same
   PostgreSQL database. Load is distributed automatically.
 - **Hardware detection** — At startup each worker detects CPU cores, RAM, GPU and VRAM, and registers
-  its capabilities. Workers without a GPU or LLM skip jobs that require them.
-- **Atomic job claiming** — Uses `SELECT FOR UPDATE SKIP LOCKED` to prevent two workers from processing
-  the same job.
-- **Heartbeat & recovery** — Workers send a heartbeat every 15 seconds. If a worker dies mid-job,
-  the job is automatically requeued after 60 seconds.
+  its capabilities. Workers without a GPU or LLM skip executions that require them.
+- **Atomic execution claiming** — Uses `SELECT FOR UPDATE SKIP LOCKED` to prevent two workers from running
+  the same execution.
+- **Heartbeat & recovery** — Workers send a heartbeat every 15 seconds. If a worker dies mid-execution,
+  the execution is automatically requeued after 60 seconds.
 
 ## Models used
 
@@ -77,7 +77,7 @@ those that explicitly need a GPU.
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Tasks](docs/tasks.md)
-- [Job types](docs/job-types.md)
+- [Execution types](docs/execution-types.md)
 - [NLP tasks](docs/nlp-tasks.md)
 - [RAG pipeline](docs/rag-pipeline.md)
 - [Document extraction](docs/document-extraction.md)

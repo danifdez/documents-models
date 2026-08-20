@@ -1,47 +1,47 @@
 # Data Storage
 
-The models service uses **PostgreSQL** for everything: the job queue and worker management, and — via the `vector` (pgvector) extension — vector storage for semantic search and RAG.
+The models service uses **PostgreSQL** for everything: the execution queue and worker management, and — via the `vector` (pgvector) extension — vector storage for semantic search and RAG.
 
-## PostgreSQL — Job Queue
+## PostgreSQL — Execution Queue
 
-### Jobs Table
+### Executions Table
 
-The `jobs` table (configurable via `JOBS_TABLE` env var) stores all processing requests and their results.
+The `executions` table (configurable via `EXECUTIONS_TABLE` env var) stores all running requests and their results.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | UUID | Job identifier |
-| `type` | string | Job type (e.g., `summarize`, `search`) |
+| `id` | UUID | Execution identifier |
+| `type` | string | Execution type (e.g., `summarize`, `search`) |
 | `payload` | JSON | Input data for the handler |
-| `status` | string | Current state: `pending`, `processing`, `processed`, or `failed` |
-| `result` | JSON | Handler output (populated after processing) |
+| `status` | string | Current state: `queued`, `running`, `completed`, or `failed` |
+| `result` | JSON | Handler output (populated after running) |
 | `priority` | string | Execution priority: `high`, `normal`, or `background` |
-| `claimed_by` | UUID | Worker ID that claimed this job (set on `processing`) |
-| `started_at` | timestamp | When the job was claimed by a worker |
-| `retry_count` | integer | Number of times the job has been requeued after a worker failure |
-| `created_at` | timestamp | When the job was created (used for FIFO ordering) |
+| `claimed_by` | UUID | Worker ID that claimed this execution (set on `running`) |
+| `started_at` | timestamp | When the execution was claimed by a worker |
+| `retry_count` | integer | Number of times the execution has been requeued after a worker failure |
+| `created_at` | timestamp | When the execution was created (used for FIFO ordering) |
 
 ### Status Lifecycle
 
 ```
-pending ──> processing ──> processed
+queued ──> running ──> completed
                       └──> failed
 ```
 
-1. **pending** — Job created by the backend, waiting to be picked up.
-2. **processing** — A worker has atomically claimed this job and is executing the handler.
-3. **processed** — Handler completed successfully and the result has been written.
-4. **failed** — Handler raised an exception, or the job exceeded the maximum retry count after worker failures.
+1. **queued** — Execution created by the backend, waiting to be picked up.
+2. **running** — A worker has atomically claimed this execution and is executing the handler.
+3. **completed** — Handler completed successfully and the result has been written.
+4. **failed** — Handler raised an exception, or the execution exceeded the maximum retry count after worker failures.
 
 ### Priority Ordering
 
-Jobs are claimed in strict priority order using `SELECT FOR UPDATE SKIP LOCKED`:
+Executions are claimed in strict priority order using `SELECT FOR UPDATE SKIP LOCKED`:
 
-1. `high` — Interactive queries, processed first
-2. `normal` — Standard background processing
-3. `background` — Only eligible when no `high`/`normal` jobs are pending, or during the configured off-peak window
+1. `high` — Interactive queries, completed first
+2. `normal` — Standard background running
+3. `background` — Only eligible when no `high`/`normal` executions are queued, or during the configured off-peak window
 
-Within the same priority level, jobs are ordered by `created_at ASC` (FIFO).
+Within the same priority level, executions are ordered by `created_at ASC` (FIFO).
 
 ### Workers Table
 
@@ -57,26 +57,26 @@ The `workers` table tracks all registered worker instances.
 | `started_at` | timestamp | When this worker instance started |
 | `metadata` | JSON | Hardware info: `cpu_count`, `ram_gb`, `has_cuda`, `gpu_name`, `vram_gb` |
 
-Workers register on startup and mark themselves `offline` on graceful shutdown. If a worker disappears without shutting down cleanly, its `last_heartbeat` goes stale, and other workers will requeue any jobs it was processing.
+Workers register on startup and mark themselves `offline` on graceful shutdown. If a worker disappears without shutting down cleanly, its `last_heartbeat` goes stale, and other workers will requeue any executions it was running.
 
 ### Connection
 
-The `Job` class (`database/job.py`) connects to PostgreSQL using `psycopg` with:
+The `Execution` class (`database/execution.py`) connects to PostgreSQL using `psycopg` with:
 
 - **Autocommit** enabled for the main connection (read and status-update queries)
-- A separate non-autocommit connection is used inside `claim_pending_job()` to wrap the `SELECT FOR UPDATE` + `UPDATE` in a single transaction
+- A separate non-autocommit connection is used inside `claim_pending_execution()` to wrap the `SELECT FOR UPDATE` + `UPDATE` in a single transaction
 - **Dict rows** (`dict_row` factory) — query results are returned as dictionaries
 
-A singleton instance is shared across the application via `get_job_database()`.
+A singleton instance is shared across the application via `get_execution_database()`.
 
 ### Operations
 
 | Method | Description |
 |--------|-------------|
-| `claim_pending_job(worker_id, capabilities)` | Atomically claim the highest-priority eligible pending job using `SELECT FOR UPDATE SKIP LOCKED` |
-| `requeue_stale_jobs(timeout_seconds, max_retries)` | Reset `processing` jobs from dead workers to `pending` (or `failed` if retries exhausted) |
-| `update_job_status(job_id, status)` | Set job status (`processing`, `processed`, `failed`) |
-| `update_job_result(job_id, result)` | Write the handler's result dict as JSON |
+| `claim_pending_execution(worker_id, capabilities)` | Atomically claim the highest-priority eligible queued execution using `SELECT FOR UPDATE SKIP LOCKED` |
+| `requeue_stale_executions(timeout_seconds, max_retries)` | Reset `running` executions from dead workers to `queued` (or `failed` if retries exhausted) |
+| `update_execution_status(execution_id, status)` | Set execution status (`running`, `completed`, `failed`) |
+| `update_execution_result(execution_id, result)` | Write the handler's result dict as JSON |
 | `get_connection()` | Return a new independent database connection |
 
 ## Vector Storage — pgvector

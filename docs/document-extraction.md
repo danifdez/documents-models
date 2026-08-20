@@ -1,6 +1,6 @@
 # Document Extraction
 
-The `document-extraction` job type extracts text content from uploaded files and normalizes all formats to clean HTML. The extraction pipeline is implemented in `tasks/extraction/`.
+The `document-extraction` execution type extracts text content from uploaded files and normalizes all formats to clean HTML. The extraction pipeline is implemented in `tasks/extraction/`.
 
 ## Supported Formats
 
@@ -52,7 +52,7 @@ Uses Docling's `DocumentConverter` with `StandardPdfPipeline`:
 - **OCR**: Disabled (`do_ocr = False`)
 - **Images**: Generated at 2x scale (`images_scale = 2.0`), embedded as base64 in the HTML output
 - **HTML export**: Uses `export_to_html(image_mode='embedded')`
-- **Post-processing**: Strips attributes, unwraps unnecessary divs, converts leaf divs to `<p>` tags
+- **Post-running**: Strips attributes, unwraps unnecessary divs, converts leaf divs to `<p>` tags
 
 **Output fields:**
 
@@ -63,7 +63,7 @@ Uses Docling's `DocumentConverter` with `StandardPdfPipeline`:
 
 ### DOC/DOCX Processor
 
-Uses the same Docling pipeline and post-processing as PDF. Docling handles the format conversion internally.
+Uses the same Docling pipeline and post-running as PDF. Docling handles the format conversion internally.
 
 **Output fields:**
 
@@ -95,7 +95,7 @@ Uses Trafilatura for main content extraction, with BeautifulSoup for metadata an
 
 ### Plain Text Processor
 
-Minimal processing — reads the file and wraps each non-empty paragraph in `<p>` tags:
+Minimal running — reads the file and wraps each non-empty paragraph in `<p>` tags:
 
 ```
 Line one text     →   <p>Line one text</p>

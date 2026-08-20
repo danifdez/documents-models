@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/operation-finished.schema.json",
+  "title": "operation.finished payload v1",
+  "type": "object",
+  "required": ["operationKind", "status", "result", "error"],
+  "properties": {
+    "operationKind": { "$ref": "../common.schema.json#/$defs/operationKind" },
+    "status": { "enum": ["succeeded", "failed", "cancelled", "unknown"] },
+    "outcome": { "enum": ["tool_requests", "final_text", "structured_result", "invalid"] },
+    "result": { "$ref": "../common.schema.json#/$defs/jsonValue" },
+    "error": {
+      "oneOf": [
+        { "$ref": "../common.schema.json#/$defs/error" },
+        { "type": "null" }
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "durationMs": { "$ref": "../common.schema.json#/$defs/metricValue" },
+        "timeToFirstTokenMs": { "$ref": "../common.schema.json#/$defs/metricValue" },
+        "promptTokens": { "$ref": "../common.schema.json#/$defs/metricValue" },
+        "generatedTokens": { "$ref": "../common.schema.json#/$defs/metricValue" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operationKind": { "const": "inference" } }, "required": ["operationKind"] },
+      "then": { "required": ["outcome"], "properties": { "outcome": true } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "properties": { "error": { "$ref": "../common.schema.json#/$defs/error" } } }
+    }
+  ],
+  "additionalProperties": true
+}

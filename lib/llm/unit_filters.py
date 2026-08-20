@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class FilterContext:
     """Everything a filter may need beyond the units themselves: the task config
-    (thresholds, model, …) and the job payload."""
+    (thresholds, model, …) and the execution payload."""
 
     cfg: Dict[str, Any]
     payload: Dict[str, Any]

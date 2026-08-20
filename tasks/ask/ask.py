@@ -1,5 +1,5 @@
 import logging
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from rag.pipeline import create_ask_pipeline
 from rag.types import RAGContext
 from lib.llm.config import get_rag_config, get_task_config
@@ -7,7 +7,7 @@ from lib.llm.config import get_rag_config, get_task_config
 logger = logging.getLogger(__name__)
 
 
-@job_handler("ask")
+@execution_handler("ask")
 def ask_question(payload) -> dict:
     rag = get_rag_config()
     task = get_task_config("ask")

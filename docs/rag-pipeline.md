@@ -1,6 +1,6 @@
 # RAG Pipeline
 
-The Retrieval-Augmented Generation (RAG) system enables semantic search and AI-powered question answering over ingested documents. It involves three job types: `ingest-content`, `search`, and `ask`.
+The Retrieval-Augmented Generation (RAG) system enables semantic search and AI-powered question answering over ingested documents. It involves three execution types: `ingest-content`, `search`, and `ask`.
 
 ## Pipeline Overview
 
@@ -144,7 +144,7 @@ The `LLMService` class (`services/llm_service.py`) is an HTTP client for the sha
 - Cached per model path via `get_llm_service()` — one instance shared across requests for the same model
 - Provides `generate(prompt, max_tokens)` for completion and `chat(messages, max_tokens)` for chat completion
 - `n_threads`, `n_batch`, `n_gpu_layers` and LoRA adapters no longer decide anything here — the engine was started with its own. A task whose config names a different model still gets an answer from whatever is loaded, and says so in the log.
-- Where the engine is, and how it comes up, is `services/llama_server.py`: `LLAMA_SERVER_URL` (or `llm_defaults.server_url`, default `http://127.0.0.1:18080`), started as a service with `manage start llama` and, failing that, by the first job that needs it.
+- Where the engine is, and how it comes up, is `services/llama_server.py`: `LLAMA_SERVER_URL` (or `llm_defaults.server_url`, default `http://127.0.0.1:18080`), started as a service with `manage start llama` and, failing that, by the first execution that needs it.
 
 ## Configuration
 

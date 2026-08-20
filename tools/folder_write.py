@@ -92,14 +92,14 @@ def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         # card. The frontend's folder_overwrite handler reposts with overwrite.
         # For binary categories we ship contentBase64 in the payload so the
         # frontend doesn't have to re-run pandoc/openpyxl.
-        if isinstance(ctx.job_id, int):
+        if isinstance(ctx.execution_id, int):
             payload: Dict[str, Any] = {"filename": filename}
             if "content" in body_payload:
                 payload["content"] = body_payload["content"]
             else:
                 payload["contentBase64"] = body_payload["contentBase64"]
             post_tool_event(
-                ctx.owner_segment, ctx.owner_id, ctx.job_id, "folder_write", filename,
+                ctx.owner_segment, ctx.owner_id, ctx.execution_id, "folder_write", filename,
                 status="pending_confirmation",
                 summary=f"Pending: overwrite {filename}",
                 kind="folder_overwrite",

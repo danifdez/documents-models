@@ -1,0 +1,7 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    { "op": "replace", "path": "/events/0/payloadSchema", "value": "execution.created/2" }
+  ],
+  "expectedFailure": "schema"
+}

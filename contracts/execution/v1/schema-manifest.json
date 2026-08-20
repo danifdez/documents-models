@@ -1,0 +1,47 @@
+{
+  "manifestSchema": "execution-contract-manifest/1",
+  "contractVersion": "v1",
+  "contractSetHash": "sha256:34107e825299d24137d2b5add08c42a6dd5b77b4c18b991e19e7ec32c8888d76",
+  "schemas": [
+    {
+      "path": "schemas/artifact-manifest.schema.json",
+      "sha256": "sha256:76824d5754fef38f4663d22d588b1805fa4efb0a6afbe68a54cc2b17a9a1e756"
+    },
+    {
+      "path": "schemas/common.schema.json",
+      "sha256": "sha256:b9ded25f24f9478392b586cbe2c3af476c736ff9bb0fc6833a07853d44a48be7"
+    },
+    {
+      "path": "schemas/execution-bundle.schema.json",
+      "sha256": "sha256:c54491f3a6d2bfa2dc054d666f2ffd4c9e6f5e93e158a5a90fa4bc24e344df95"
+    },
+    {
+      "path": "schemas/execution-event.schema.json",
+      "sha256": "sha256:18096d0617d328657bb7f038deaf0acf445f8576f57e44098673a62ca4765cb8"
+    },
+    {
+      "path": "schemas/payload/execution-created.schema.json",
+      "sha256": "sha256:5f38617bb8ed6a960c03b123f97b8c14e40f75e8a1954fd73ab846ec23c2e896"
+    },
+    {
+      "path": "schemas/payload/execution-state-changed.schema.json",
+      "sha256": "sha256:9bc0bc647ca3f981ed211ed83ceefe59f9a35de43455ea4dfbee29f1fb366390"
+    },
+    {
+      "path": "schemas/payload/message-recorded.schema.json",
+      "sha256": "sha256:e7d7e53a7ed7c363f32ae404c5c81b71e993b211fe7b2117162cf84e1a1a12d0"
+    },
+    {
+      "path": "schemas/payload/operation-finished.schema.json",
+      "sha256": "sha256:06dd8730b10907381ff39c3a8b876b7c049d6dd3de2c11382fc8cb39f55b816e"
+    },
+    {
+      "path": "schemas/payload/operation-started.schema.json",
+      "sha256": "sha256:900a04dd9169d35edb147cbcc5846176fc1fd30311188cbf488b7c1264c95bd0"
+    },
+    {
+      "path": "schemas/payload/source-observed.schema.json",
+      "sha256": "sha256:2ea5d6f74d8fa9164f242d5cd45c2d03e9922a5eae67bb007ec8c4e527f01660"
+    }
+  ]
+}

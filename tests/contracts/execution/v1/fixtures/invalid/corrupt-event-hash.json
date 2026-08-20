@@ -1,0 +1,7 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    { "op": "replace", "path": "/events/0/contentHash", "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
+  ],
+  "expectedFailure": "invariant"
+}

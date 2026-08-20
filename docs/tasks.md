@@ -1,8 +1,8 @@
 ## Tasks
 
-This section documents all available tasks in the models service. Each task is a job handler that receives a payload and returns a result.
+This section documents all available tasks in the models service. Each task is a execution handler that receives a payload and returns a result.
 
-Tasks are grouped into two categories: **NLP tasks** for processing natural language content, and **Dataset tasks** for analyzing structured data.
+Tasks are grouped into two categories: **NLP tasks** for running natural language content, and **Dataset tasks** for analyzing structured data.
 
 ---
 

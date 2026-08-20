@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/artifact-manifest.schema.json",
+  "title": "Execution artifact manifest v1",
+  "type": "object",
+  "required": ["artifactId", "kind", "contentHash", "size", "mediaType", "dataClassification", "redaction", "retentionClass"],
+  "properties": {
+    "artifactId": { "$ref": "common.schema.json#/$defs/id" },
+    "kind": { "type": "string", "minLength": 1 },
+    "contentHash": { "$ref": "common.schema.json#/$defs/hash" },
+    "size": { "type": "integer", "minimum": 0 },
+    "mediaType": { "type": "string", "minLength": 1 },
+    "encoding": { "enum": ["identity", "gzip", "zstd"] },
+    "storageRef": { "type": "string", "minLength": 1 },
+    "bundlePath": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "createdByEventId": { "$ref": "common.schema.json#/$defs/id" },
+    "inputSourceIds": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "dataClassification": { "$ref": "common.schema.json#/$defs/dataClassification" },
+    "redaction": {
+      "type": "object",
+      "required": ["applied"],
+      "properties": {
+        "applied": { "type": "boolean" },
+        "profile": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "retentionClass": { "enum": ["operational", "diagnostic", "evaluation"] },
+    "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "omissionReason": { "enum": ["redacted", "expired", "permission_denied", "not_captured"] }
+  },
+  "anyOf": [
+    { "required": ["storageRef"], "properties": { "storageRef": true } },
+    { "required": ["bundlePath"], "properties": { "bundlePath": true } },
+    { "required": ["omissionReason"], "properties": { "omissionReason": true } }
+  ],
+  "additionalProperties": true
+}

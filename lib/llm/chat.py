@@ -13,7 +13,7 @@ about tasks, agents or the backend transport.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 # How many turns of history we keep as context. The backend persists the full
 # thread, but passing it entirely to the LLM every call blows the context and
@@ -21,17 +21,11 @@ from typing import Any, Dict, List, Optional, Sequence
 DEFAULT_HISTORY_TURNS = 16
 
 
-def resolve_owner_id(
-    payload: Dict[str, Any], keys: Sequence[str] = ("ownerId",),
-) -> Optional[int]:
+def resolve_owner_id(payload: Dict[str, Any]) -> Optional[int]:
     """Resolve the owner id that addresses this turn's streaming / tool-event
-    POSTs. Tries `keys` in order and returns the first int value; the caller
-    passes its legacy alias as a fallback (e.g. `("ownerId", "assistantId")`)."""
-    for key in keys:
-        v = payload.get(key)
-        if isinstance(v, int):
-            return v
-    return None
+    POSTs from the canonical execution payload."""
+    value = payload.get("ownerId")
+    return value if isinstance(value, int) else None
 
 
 def build_chat_messages(

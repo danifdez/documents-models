@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/operation-started.schema.json",
+  "title": "operation.started payload v1",
+  "type": "object",
+  "required": ["operationKind", "status", "name"],
+  "properties": {
+    "operationKind": { "$ref": "../common.schema.json#/$defs/operationKind" },
+    "status": { "const": "dispatched" },
+    "name": { "type": "string", "minLength": 1 },
+    "inputSummary": { "type": "object" },
+    "inputArtifactId": { "$ref": "../common.schema.json#/$defs/id" }
+  },
+  "additionalProperties": true
+}

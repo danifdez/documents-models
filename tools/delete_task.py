@@ -18,9 +18,9 @@ def _execute(args: Dict[str, Any], ctx: ToolContext) -> Dict[str, Any]:
         return {"error": "not_found", "taskId": task_id}
     title = task.get("title") or f"#{task_id}"
 
-    if isinstance(ctx.job_id, int) and isinstance(ctx.owner_id, int):
+    if isinstance(ctx.execution_id, int) and isinstance(ctx.owner_id, int):
         post_tool_event(
-            ctx.owner_segment, ctx.owner_id, ctx.job_id, "delete_task", title,
+            ctx.owner_segment, ctx.owner_id, ctx.execution_id, "delete_task", title,
             status="pending_confirmation",
             summary=f"Pending: delete {title}",
             kind="task_delete",

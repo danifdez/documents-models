@@ -28,14 +28,15 @@ SummarizeFn = Callable[[Dict[str, Any]], Optional[Tuple[str, Optional[Dict[str, 
 @dataclass
 class ToolContext:
     """Per-call context a tool executor may need beyond its own args. Built once
-    per tool-call round from the job payload. `folder_scope` travels here so
+    per tool-call round from the execution payload. `folder_scope` travels here so
     folder-aware tools can act on the caller's working folder; a tool that
     doesn't need it just ignores it."""
     owner_segment: str = "assistants"
     owner_id: Optional[int] = None
-    job_id: Optional[int] = None
+    execution_id: Optional[str] = None
     folder_scope: str = ""
     payload: Optional[Dict[str, Any]] = None
+    execution: Any = None
 
     def __post_init__(self):
         if self.payload is None:

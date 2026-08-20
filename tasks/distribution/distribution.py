@@ -1,10 +1,10 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 import numpy as np
 
 
-@job_handler("distribution")
+@execution_handler("distribution")
 def distribution(payload) -> dict:
     """Distribution of a single field: histogram for numeric, frequency for categorical."""
     try:

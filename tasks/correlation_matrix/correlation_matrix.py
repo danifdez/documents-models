@@ -1,10 +1,10 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float
 from scipy import stats as scipy_stats
 import pandas as pd
 
 
-@job_handler("correlation-matrix")
+@execution_handler("correlation-matrix")
 def correlation_matrix(payload) -> dict:
     """NxN Pearson correlation matrix for all (or selected) numeric fields."""
     try:

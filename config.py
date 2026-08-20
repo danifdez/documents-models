@@ -16,7 +16,7 @@ POSTGRES_PORT = int(_db.get("port", 5432))
 POSTGRES_DB = _db.get("name", "documents")
 POSTGRES_USER = _db.get("user", "postgres")
 POSTGRES_PASSWORD = _db.get("password", "example")
-JOBS_TABLE = _db.get("jobs_table", "jobs")
+EXECUTIONS_TABLE = _db.get("executions_table", "executions")
 
 # Vector store (pgvector) — embeddings live in PostgreSQL tables created by the
 # backend migrations. One table per scope (physically isolated, as before).

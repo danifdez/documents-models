@@ -87,17 +87,17 @@
   },
   "memory-ingest": {
     "enabled": true,
-    "type": "embedding-job",
+    "type": "embedding",
     "capabilities": ["embeddings"]
   },
   "memory-search": {
     "enabled": true,
-    "type": "embedding-job",
+    "type": "embedding",
     "capabilities": ["embeddings"]
   },
   "memory-delete-vectors": {
     "enabled": true,
-    "type": "embedding-job",
+    "type": "embedding",
     "capabilities": ["embeddings"]
   },
   "summarize": {

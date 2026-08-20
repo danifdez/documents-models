@@ -34,7 +34,7 @@ from agent.types import ModelSpec
 from lib.llm.json import parse_json
 from lib.llm.config import get_llm_defaults, get_task_config
 from lib.llm.prompts import load_prompt
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 _PROPOSE_PROMPT = load_prompt(_PROMPTS_DIR, "propose_columns.md")
@@ -117,7 +117,7 @@ def _normalize_columns(raw: List[Any]) -> List[Dict[str, Any]]:
     return out
 
 
-@job_handler("dataset.propose-columns")
+@execution_handler("dataset.propose-columns")
 def propose_dataset_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
     resources: List[Dict[str, Any]] = payload.get("resources") or []
     if not resources:

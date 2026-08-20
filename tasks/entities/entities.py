@@ -4,7 +4,7 @@ Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
 `keywords` and `date-extraction`:
 
 - The root invocation cleans the text, splits it into section units and chunks
-  them. One chunk runs inline; several fan out one child job per chunk.
+  them. One chunk runs inline; several fan out one child execution per chunk.
 - Each child returns the entities of its own chunk.
 - Once every child is done the dispatcher re-invokes the handler with the
   persisted state and the reduce step concatenates and dedupes.
@@ -25,7 +25,7 @@ from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
 from lib.llm.prompts import get_prompt
 from lib.llm.text import build_chunks, strip_dense_blobs, truncate_for_llm
 from services.llm_service import get_llm_service
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ _SPEC = MapReduceSpec(
 )
 
 
-@job_handler("entity-extraction")
+@execution_handler("entity-extraction")
 def entities(
     payload: Dict[str, Any],
     state: Optional[Dict[str, Any]] = None,

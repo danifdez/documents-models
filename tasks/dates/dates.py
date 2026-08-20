@@ -7,7 +7,7 @@ Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
   splits it into section units, optionally drops auxiliary sections via the
   shared relevance filter, and chunks the survivors. If the result is one
   chunk, the full pipeline runs inline. Otherwise, one child `date-extraction`
-  job per chunk is fanned out and the parent waits.
+  execution per chunk is fanned out and the parent waits.
 - Each child receives a single chunk plus its global character offset and
   returns a list of dated entries with global `charOffset` already applied.
 - Once all children finish, the dispatcher re-invokes the handler with the
@@ -46,7 +46,7 @@ from services.text import (
     html_to_markdown,
     strip_dense_blobs,
 )
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 
 logger = logging.getLogger(__name__)
 
@@ -710,7 +710,7 @@ _SPEC = MapReduceSpec(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@job_handler("date-extraction")
+@execution_handler("date-extraction")
 def extract_dates(
     payload: Dict[str, Any],
     state: Optional[Dict[str, Any]] = None,

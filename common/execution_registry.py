@@ -3,8 +3,8 @@ from typing import Callable, Dict, Any
 TASK_HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
 
 
-def job_handler(job_type: str) -> Callable[[Callable], Callable]:
+def execution_handler(task_type: str) -> Callable[[Callable], Callable]:
     def decorator(func: Callable) -> Callable:
-        TASK_HANDLERS[job_type] = func
+        TASK_HANDLERS[task_type] = func
         return func
     return decorator

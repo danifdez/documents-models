@@ -1,0 +1,652 @@
+{
+  "bundleSchema": "execution-bundle/1",
+  "bundleId": "tb_browser_fixture",
+  "product": "ia-browser",
+  "eventRange": {
+    "firstSequence": 1,
+    "lastSequence": 13
+  },
+  "events": [
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_001",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 1,
+      "producerSequence": 1,
+      "eventType": "execution.created",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "system"
+      },
+      "occurredAt": "2026-08-19T11:00:00Z",
+      "ingestedAt": "2026-08-19T11:00:00Z",
+      "payloadSchema": "execution.created/1",
+      "payload": {
+        "executionKind": "browser_autonomous",
+        "initialStatus": "queued"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:4bc09766153224d4099072c8defb805a656c230d288f22a386713c78e7ee24f1"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_002",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 2,
+      "producerSequence": 2,
+      "eventType": "execution.state_changed",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "causedByEventId": "browser_evt_001",
+      "occurredAt": "2026-08-19T11:00:00Z",
+      "ingestedAt": "2026-08-19T11:00:00Z",
+      "payloadSchema": "execution.state_changed/1",
+      "payload": {
+        "from": "queued",
+        "to": "running",
+        "phase": "decision"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:93f2afbf953aa5689e7518ee4ae0f5feb7c91f4fe6aec8c04ac4ddcd9273560c"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_003",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 3,
+      "producerSequence": 3,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_browser_decision",
+      "attemptId": "attempt_browser_decision",
+      "causedByEventId": "browser_evt_002",
+      "occurredAt": "2026-08-19T11:00:01Z",
+      "ingestedAt": "2026-08-19T11:00:01Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "dispatched",
+        "name": "agent-decision"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:ae922edc480162f4a01d8cd58751b9fb71b7048c42906207a53d9f236448ccf0"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_004",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 4,
+      "producerSequence": 4,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_browser_decision",
+      "attemptId": "attempt_browser_decision",
+      "causedByEventId": "browser_evt_003",
+      "occurredAt": "2026-08-19T11:00:02Z",
+      "ingestedAt": "2026-08-19T11:00:02Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "succeeded",
+        "outcome": "tool_requests",
+        "result": {
+          "action": "open_local_fixture"
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 600,
+          "promptTokens": "unknown",
+          "generatedTokens": "unknown"
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:6fd8eceee63da8f00b0e5a4bbb141e48743ab33cf5187d46d25eee08d9602f3e"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_005",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 5,
+      "producerSequence": 5,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "operationId": "op_browser_observation",
+      "parentOperationId": "op_browser_decision",
+      "attemptId": "attempt_browser_observation",
+      "causedByEventId": "browser_evt_004",
+      "occurredAt": "2026-08-19T11:00:02Z",
+      "ingestedAt": "2026-08-19T11:00:02Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "browser_observation",
+        "status": "dispatched",
+        "name": "capture-page"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:f2db9fdb8b5ef8eca90a46dcb6d138cc959276819d03bd58f7ae1ed89463cf0b"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_006",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 6,
+      "producerSequence": 6,
+      "eventType": "source.observed",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "operationId": "op_browser_observation",
+      "attemptId": "attempt_browser_observation",
+      "sourceId": "source_browser_page",
+      "causedByEventId": "browser_evt_005",
+      "occurredAt": "2026-08-19T11:00:03Z",
+      "ingestedAt": "2026-08-19T11:00:03Z",
+      "payloadSchema": "source.observed/1",
+      "payload": {
+        "sourceId": "source_browser_page",
+        "kind": "web_page",
+        "originComponent": "ia-browser",
+        "canonicalLocator": "http://127.0.0.1:8765/fixture.html",
+        "observedAt": "2026-08-19T11:00:03Z",
+        "contentHash": "sha256:8dd2c769ce7818bac90866e5841d467d26c86d626deb8047ae12ff2b3622f6b7",
+        "snapshotArtifactId": "artifact_browser_page",
+        "trustLevel": "untrusted_data",
+        "dataClassification": "workspace",
+        "permissionScope": "fixture-only"
+      },
+      "artifactRefs": [
+        "artifact_browser_page"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:9e3a9634e59cc6dd128179ba7af8bd8f0e6de6daa4763c62047e61e45fee6452"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_007",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 7,
+      "producerSequence": 7,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "operationId": "op_browser_observation",
+      "parentOperationId": "op_browser_decision",
+      "attemptId": "attempt_browser_observation",
+      "causedByEventId": "browser_evt_006",
+      "occurredAt": "2026-08-19T11:00:03Z",
+      "ingestedAt": "2026-08-19T11:00:03Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "browser_observation",
+        "status": "succeeded",
+        "result": {
+          "sourceId": "source_browser_page"
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 140
+        }
+      },
+      "artifactRefs": [
+        "artifact_browser_page"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:24378699109873e0b3bbb9a653812c6cd33cec69a3711ffc877acabadf78d1bd"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_008",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 8,
+      "producerSequence": 8,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "operationId": "op_browser_action",
+      "parentOperationId": "op_browser_decision",
+      "attemptId": "attempt_browser_action",
+      "causedByEventId": "browser_evt_007",
+      "occurredAt": "2026-08-19T11:00:04Z",
+      "ingestedAt": "2026-08-19T11:00:04Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "browser_action",
+        "status": "dispatched",
+        "name": "click",
+        "inputSummary": {
+          "target": "#confirm"
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:ef2aa1993d05a5ccde09d19aa79ea9966310522c0b22816bf81934a2dc288017"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_009",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 9,
+      "producerSequence": 9,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "browser"
+      },
+      "operationId": "op_browser_action",
+      "parentOperationId": "op_browser_decision",
+      "attemptId": "attempt_browser_action",
+      "causedByEventId": "browser_evt_008",
+      "occurredAt": "2026-08-19T11:00:04Z",
+      "ingestedAt": "2026-08-19T11:00:04Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "browser_action",
+        "status": "succeeded",
+        "result": {
+          "clicked": true
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 85
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:4dcf5b64b766b4ebe60f9d1c828a7a84a5a8bb1898218159457a7c49254f0d8d"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_010",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 10,
+      "producerSequence": 10,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_browser_synthesis",
+      "attemptId": "attempt_browser_synthesis",
+      "causedByEventId": "browser_evt_009",
+      "occurredAt": "2026-08-19T11:00:05Z",
+      "ingestedAt": "2026-08-19T11:00:05Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "dispatched",
+        "name": "final-synthesis"
+      },
+      "artifactRefs": [
+        "artifact_browser_page"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:c14bac3d82c251ff7a8f3fbd30f47df696a2d614006bed272b3d8c39c6ae531c"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_011",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 11,
+      "producerSequence": 11,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_browser_synthesis",
+      "attemptId": "attempt_browser_synthesis",
+      "causedByEventId": "browser_evt_010",
+      "occurredAt": "2026-08-19T11:00:06Z",
+      "ingestedAt": "2026-08-19T11:00:06Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "succeeded",
+        "outcome": "final_text",
+        "result": {
+          "contentArtifactId": "artifact_browser_final"
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 720,
+          "promptTokens": "unknown",
+          "generatedTokens": "unknown",
+          "timeToFirstTokenMs": "unknown"
+        }
+      },
+      "artifactRefs": [
+        "artifact_browser_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:d215315ee375cbd5d63a7c9166d9814941a8bc61c6a8921bb67a29e6ec695f04"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_012",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 12,
+      "producerSequence": 12,
+      "eventType": "message.recorded",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "causedByEventId": "browser_evt_011",
+      "occurredAt": "2026-08-19T11:00:06Z",
+      "ingestedAt": "2026-08-19T11:00:06Z",
+      "payloadSchema": "message.recorded/1",
+      "payload": {
+        "messageKind": "final_response",
+        "role": "assistant",
+        "contentPreview": "The confirmation code is ALPHA-42.",
+        "contentArtifactId": "artifact_browser_final",
+        "format": "text"
+      },
+      "artifactRefs": [
+        "artifact_browser_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:5c973572e77a4755fb05a34f621339adcda313c55caf5888c334da6a51071193"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "browser_evt_013",
+      "rootExecutionId": "exec_browser_fixture",
+      "executionId": "exec_browser_fixture",
+      "turnId": "turn_browser_fixture",
+      "sequence": 13,
+      "producerSequence": 13,
+      "eventType": "execution.state_changed",
+      "producer": {
+        "component": "ia-browser",
+        "instanceId": "browser-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "system"
+      },
+      "causedByEventId": "browser_evt_012",
+      "occurredAt": "2026-08-19T11:00:06Z",
+      "ingestedAt": "2026-08-19T11:00:06Z",
+      "payloadSchema": "execution.state_changed/1",
+      "payload": {
+        "from": "running",
+        "to": "completed",
+        "completionKind": "full",
+        "completionReason": "goal_satisfied",
+        "result": {
+          "contentArtifactId": "artifact_browser_final"
+        },
+        "error": null
+      },
+      "artifactRefs": [
+        "artifact_browser_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "ia-browser",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:a44b4a5ceae50d384ad65f65b9a5cfa5e35f8638fba60a37d2185a3f8a5ead99"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "artifact_browser_page",
+      "kind": "web_snapshot",
+      "contentHash": "sha256:8dd2c769ce7818bac90866e5841d467d26c86d626deb8047ae12ff2b3622f6b7",
+      "size": 49,
+      "mediaType": "text/plain",
+      "encoding": "identity",
+      "bundlePath": "artifacts/browser-page.txt",
+      "createdByEventId": "browser_evt_006",
+      "inputSourceIds": [
+        "source_browser_page"
+      ],
+      "dataClassification": "workspace",
+      "redaction": {
+        "applied": false
+      },
+      "retentionClass": "evaluation"
+    },
+    {
+      "artifactId": "artifact_browser_final",
+      "kind": "model_response",
+      "contentHash": "sha256:5208c13174121c2e538444cdb2b194677dacc7faea1f8a637817497e3374513b",
+      "size": 54,
+      "mediaType": "text/plain",
+      "encoding": "identity",
+      "bundlePath": "artifacts/browser-final-response.txt",
+      "createdByEventId": "browser_evt_011",
+      "inputSourceIds": [
+        "source_browser_page"
+      ],
+      "dataClassification": "workspace",
+      "redaction": {
+        "applied": false
+      },
+      "retentionClass": "evaluation"
+    }
+  ],
+  "environment": {
+    "browserRevision": "fixture",
+    "promptPackages": [],
+    "toolVersions": [
+      "cef:fixture"
+    ],
+    "modelFingerprint": "fixture-model",
+    "runtimeFingerprint": "fixture-runtime",
+    "featureFlags": {}
+  },
+  "redactionProfile": "evaluation-default",
+  "bundleCompleteness": {
+    "status": "reproducible",
+    "reproducible": true,
+    "missing": []
+  },
+  "integrity": {
+    "eventsHash": "sha256:aa3387a121aaa59705a40a3b1861bf70d63fda077968eb4fdc744ccd18ae2306",
+    "schemaManifestHash": "sha256:34107e825299d24137d2b5add08c42a6dd5b77b4c18b991e19e7ec32c8888d76"
+  },
+  "purpose": "evaluation",
+  "accessScope": {
+    "ownerPrincipal": "fixture-device-user"
+  },
+  "exportedAt": "2026-08-19T11:00:07Z",
+  "manifestHash": "sha256:8199c13b799be252cee68b5d5d45cabc32ca5b13dc36fcf7d1e327eb6aac3e4c",
+  "rootExecutionId": "exec_browser_fixture",
+  "executionSchema": "execution-event/1"
+}

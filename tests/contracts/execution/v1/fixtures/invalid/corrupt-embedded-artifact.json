@@ -1,0 +1,16 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    {
+      "op": "add",
+      "path": "/embeddedArtifacts",
+      "value": {
+        "artifact_doc_user": {
+          "encoding": "base64",
+          "data": "WA=="
+        }
+      }
+    }
+  ],
+  "expectedFailure": "invariant"
+}

@@ -1,9 +1,9 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float, apply_filters, resolve_fk_labels, normalize_fk_value
 import pandas as pd
 
 
-@job_handler("chart")
+@execution_handler("chart")
 def chart(payload) -> dict:
     """Generate chart data for a custom visualization."""
     try:

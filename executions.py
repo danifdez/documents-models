@@ -2,8 +2,8 @@ import logging
 import time
 import signal
 import sys
-from database.job import get_job_database
-from utils.process_job import process_job
+from database.execution import get_execution_database
+from utils.process_execution import process_execution
 from utils.device import log_hardware_summary, HAS_CUDA, CPU_COUNT, RAM_GB, GPU_NAME, VRAM_GB
 from worker.capabilities import detect_worker_capabilities
 from worker.identity import (
@@ -52,17 +52,13 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
-    db = get_job_database()
-    logger.info("Job service started. Polling for pending jobs...")
+    db = get_execution_database()
+    logger.info("Execution worker started. Polling queued executions...")
 
     while True:
-        # Requeue jobs from dead workers
-        db.requeue_stale_jobs()
-
-        # Claim and process a job
-        job = db.claim_pending_job(WORKER_ID, capabilities)
-        if job:
-            process_job(job)
+        execution = db.claim_pending_execution(WORKER_ID, capabilities)
+        if execution:
+            process_execution(execution)
 
         time.sleep(POLL_INTERVAL_MS / 1000.0)
 

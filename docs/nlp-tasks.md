@@ -4,7 +4,7 @@ This document covers the text analysis and transformation tasks that are not par
 
 ## Language Detection
 
-**Job type:** `detect-language`
+**Execution type:** `detect-language`
 **File:** `tasks/detect_language/detect_language.py`
 **Library:** `langdetect`
 
@@ -16,7 +16,7 @@ Detects the language of one or more text samples and returns ISO 639-1 language 
 
 ## Summarization
 
-**Job type:** `summarize`
+**Execution type:** `summarize`
 **File:** `tasks/summarize/summarize.py`
 **Model:** configured in `config/tasks.json` (default: `facebook/mbart-large-50-one-to-many-mmt`)
 
@@ -41,7 +41,7 @@ Generates a summary of the input text with cross-lingual support (source and tar
 
 ## Translation
 
-**Job type:** `translate`
+**Execution type:** `translate`
 **File:** `tasks/translate/translate.py`
 **Model:** `Helsinki-NLP/opus-mt-{source}-{target}` (prefix configured in `tasks.json`)
 
@@ -52,7 +52,7 @@ Translates a list of texts from a source language to a target language.
 1. Source and target language codes are extracted from the payload (with multiple fallback keys).
 2. The appropriate OPUS model is loaded via `transformers.pipeline("translation", model=model_name)`.
 3. Texts are normalized — both string items and `{text, path}` dict items are accepted.
-4. Texts are processed in batches of 32.
+4. Texts are completed in batches of 32.
 5. Each result includes `translation_text`, `original_text`, and `path` (if provided).
 
 **Notes:**
@@ -64,7 +64,7 @@ Translates a list of texts from a source language to a target language.
 
 ## Entity Extraction
 
-**Job type:** `entity-extraction`
+**Execution type:** `entity-extraction`
 **File:** `tasks/entities/entities.py`
 **Model:** local Qwen LLM (GGUF) configured in `config/tasks.json`
 
@@ -97,7 +97,7 @@ Extracts named entities (persons, organizations, locations, etc.) from text usin
 
 ## Key Point Extraction
 
-**Job type:** `key-point`
+**Execution type:** `key-point`
 **File:** `tasks/key_points/key_points.py`
 **Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
 
@@ -117,7 +117,7 @@ Extracts up to 5 concise key points from text content.
 
 ## Keyword Extraction
 
-**Job type:** `keywords`
+**Execution type:** `keywords`
 **File:** `tasks/keywords/keywords.py`
 **Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
 
@@ -145,7 +145,7 @@ Extracts up to 10 keywords or short topic phrases from text content.
 
 ## Dataset Statistics
 
-**Job type:** `dataset-stats`
+**Execution type:** `dataset-stats`
 **File:** `tasks/dataset_stats/stats.py`
 **Library:** pandas, scipy
 

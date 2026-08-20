@@ -1,6 +1,6 @@
 """Persistent-memory agent for the personal assistant.
 
-Two responsibilities, both driven by the job payload:
+Two responsibilities, both driven by the execution payload:
   - injection: pull the memories relevant to the user's message into the
     system prompt (`memory_for_payload` / `format_memory_block`);
   - extraction: a second LLM call that decides whether to save/forget/replace
@@ -209,7 +209,7 @@ def format_memory_block(snippets: List[Dict[str, Any]]) -> str:
 def memory_for_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not payload.get("assistantSystem"):
         return []
-    assistant_id = payload.get("assistantId")
+    assistant_id = payload.get("ownerId")
     if assistant_id is None:
         return []
     from tasks.memory.memory import relevant_for_injection

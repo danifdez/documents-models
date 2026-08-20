@@ -1,4 +1,4 @@
-"""Driver of one agent step. One Job execution = one step."""
+"""Driver for one step of an agent execution."""
 
 import json
 import logging
@@ -32,7 +32,7 @@ def _init_state(agent_def: AgentDefinition, payload: Dict[str, Any]) -> Dict[str
 
 
 def _finalize(
-    job: Dict[str, Any],
+    execution: Dict[str, Any],
     state: Dict[str, Any],
     db,
     *,
@@ -42,17 +42,24 @@ def _finalize(
     final = dict(result or {})
     final["_agent"] = {
         "reason": reason,
-        "iterations": job.get("agent_iteration", 0) + 1,
+        "iterations": execution.get("step", 0) + 1,
         "transcript_len": len(state.get("transcript", [])),
     }
-    db.update_job_result(job["id"], final)
-    db.update_job_status(job["id"], "processed")
-    logger.info("Agent job %s finalized (reason=%s)", job["id"], reason)
+    attempt_id = execution.get("attempt_id")
+    if not db.update_execution_result(execution["execution_id"], final, attempt_id=attempt_id):
+        return StepOutcome.FINISHED
+    db.update_execution_status(
+        execution["execution_id"],
+        "running",
+        phase="backend_finalization",
+        attempt_id=attempt_id,
+    )
+    logger.info("Agent execution %s finalized (reason=%s)", execution["execution_id"], reason)
     return StepOutcome.FINISHED
 
 
 def _force_finish(
-    job: Dict[str, Any],
+    execution: Dict[str, Any],
     state: Dict[str, Any],
     agent_def: AgentDefinition,
     db,
@@ -63,7 +70,7 @@ def _force_finish(
     transcript = state.get("transcript") or []
     fallback = {"partial": transcript[-1] if transcript else {}}
     if not agent_def.model:
-        return _finalize(job, state, db, reason="max_steps", result=fallback)
+        return _finalize(execution, state, db, reason="max_steps", result=fallback)
     try:
         messages = render_messages(agent_def, state)
         messages.append({
@@ -79,27 +86,32 @@ def _force_finish(
         decision = parse_decision(raw)
         if decision and "finish" in decision:
             result = decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]}
-            return _finalize(job, state, db, reason="max_steps_forced", result=result)
+            return _finalize(execution, state, db, reason="max_steps_forced", result=result)
     except Exception:
-        logger.exception("Forced finish failed for agent job %s", job["id"])
-    return _finalize(job, state, db, reason="max_steps", result=fallback)
+        logger.exception("Forced finish failed for agent execution %s", execution["execution_id"])
+    return _finalize(execution, state, db, reason="max_steps", result=fallback)
 
 
-def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOutcome:
-    """Execute exactly one agent step against the given Job row."""
-    state: Dict[str, Any] = job.get("agent_state") or _init_state(agent_def, job.get("payload"))
-    iteration = int(job.get("agent_iteration") or 0)
-    max_steps = int(job.get("agent_max_steps") or agent_def.max_steps)
+def run_one_step(execution: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOutcome:
+    """Execute exactly one agent step against the given Execution row."""
+    state: Dict[str, Any] = execution.get("checkpoint") or _init_state(agent_def, execution.get("payload"))
+    iteration = int(execution.get("step") or 0)
+    max_steps = int(execution.get("max_steps") or agent_def.max_steps)
 
     if state.get("waiting_for_child"):
         state.pop("waiting_for_child", None)
 
     if iteration >= max_steps:
-        return _force_finish(job, state, agent_def, db)
+        return _force_finish(execution, state, agent_def, db)
 
     if not agent_def.model:
         logger.error("Agent %s has no model configured", agent_def.name)
-        db.update_job_status(job["id"], "failed")
+        db.update_execution_status(
+            execution["execution_id"],
+            "failed",
+            attempt_id=execution.get("attempt_id"),
+            failure_message=f"Agent {agent_def.name} has no model configured",
+        )
         return StepOutcome.FINISHED
 
     messages = render_messages(agent_def, state)
@@ -115,12 +127,13 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
             "args": None,
             "observation": observation,
         })
-        db.update_agent_progress(job["id"], iteration + 1, state)
-        db.update_job_status(job["id"], "pending")
+        attempt_id = execution.get("attempt_id")
+        if db.update_agent_progress(execution["execution_id"], iteration + 1, state, attempt_id=attempt_id):
+            db.update_execution_status(execution["execution_id"], "queued", attempt_id=attempt_id)
         return StepOutcome.CONTINUE
 
     if "finish" in decision:
-        return _finalize(job, state, db, reason="finish", result=decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]})
+        return _finalize(execution, state, db, reason="finish", result=decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]})
 
     tool_name = decision.get("tool")
     args = decision.get("args") or {}
@@ -147,9 +160,9 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
         tool_defaults = agent_def.tool_defaults.get(spec.name, {})
         merged_args = {**tool_defaults, **args}
         ctx = ToolContext(
-            job_id=job["id"],
-            job_type=job["type"],
-            payload=job.get("payload") or {},
+            execution_id=execution["execution_id"],
+            task_type=execution["task_type"],
+            payload=execution.get("payload") or {},
             agent_def=agent_def,
             state=state,
         )
@@ -169,10 +182,12 @@ def run_one_step(job: Dict[str, Any], agent_def: AgentDefinition, db) -> StepOut
 
     if isinstance(observation, dict) and observation.get("_sub_agent_pending"):
         state["waiting_for_child"] = True
-        db.update_agent_progress(job["id"], iteration + 1, state)
-        db.update_job_status(job["id"], "waiting")
+        attempt_id = execution.get("attempt_id")
+        if db.update_agent_progress(execution["execution_id"], iteration + 1, state, attempt_id=attempt_id):
+            db.update_execution_status(execution["execution_id"], "waiting", attempt_id=attempt_id)
         return StepOutcome.WAITING
 
-    db.update_agent_progress(job["id"], iteration + 1, state)
-    db.update_job_status(job["id"], "pending")
+    attempt_id = execution.get("attempt_id")
+    if db.update_agent_progress(execution["execution_id"], iteration + 1, state, attempt_id=attempt_id):
+        db.update_execution_status(execution["execution_id"], "queued", attempt_id=attempt_id)
     return StepOutcome.CONTINUE

@@ -6,9 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 class StepOutcome(Enum):
-    CONTINUE = "continue"   # Step done, job re-enqueued as 'pending'
-    FINISHED = "finished"   # Agent emitted finish, job marked 'processed'
-    WAITING = "waiting"     # Agent dispatched a sub-agent, job is 'waiting'
+    CONTINUE = "continue"
+    FINISHED = "finished"
+    WAITING = "waiting"
 
 
 @dataclass
@@ -48,8 +48,8 @@ class AgentDefinition:
 
 @dataclass
 class ToolContext:
-    job_id: int
-    job_type: str
+    execution_id: str
+    task_type: str
     payload: Dict[str, Any]
     agent_def: AgentDefinition
     state: Dict[str, Any]

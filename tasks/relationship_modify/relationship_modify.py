@@ -1,11 +1,11 @@
 import logging
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from database.graph_db import get_graph
 
 logger = logging.getLogger(__name__)
 
 
-@job_handler("relationship-modify")
+@execution_handler("relationship-modify")
 def modify_relationship(payload) -> dict:
     action = payload.get("action")
     subject_id = payload.get("subject_id") or payload.get("subjectId")

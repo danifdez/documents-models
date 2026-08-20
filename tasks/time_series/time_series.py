@@ -1,10 +1,10 @@
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from common.dataset import load_dataset, safe_float
 import pandas as pd
 import numpy as np
 
 
-@job_handler("time-series")
+@execution_handler("time-series")
 def time_series(payload) -> dict:
     """Trend of a numeric field over a date field."""
     try:

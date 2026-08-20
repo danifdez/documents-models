@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/execution-created.schema.json",
+  "title": "execution.created payload v1",
+  "type": "object",
+  "required": ["executionKind", "initialStatus"],
+  "properties": {
+    "executionKind": { "type": "string", "minLength": 1 },
+    "initialStatus": { "$ref": "../common.schema.json#/$defs/executionStatus" },
+    "requestArtifactId": { "$ref": "../common.schema.json#/$defs/id" }
+  },
+  "additionalProperties": true
+}

@@ -3,7 +3,7 @@ import logging
 import subprocess
 import tempfile
 
-from utils.job_registry import job_handler
+from common.execution_registry import execution_handler
 from lib.llm.config import get_task_config
 
 logger = logging.getLogger(__name__)
@@ -53,12 +53,12 @@ def _extract_audio_from_video(video_path: str) -> str:
     return audio_path
 
 
-@job_handler("transcribe")
+@execution_handler("transcribe")
 def transcribe(payload) -> dict:
     ext = payload["extension"]
     input_blob = payload.get("_input_blob")
     if input_blob is None:
-        return {"error": "transcribe job is missing input_blob"}
+        return {"error": "transcribe execution is missing input_blob"}
 
     source_path = _materialize(input_blob, ext)
     is_video = ext.lower() in _VIDEO_EXTENSIONS

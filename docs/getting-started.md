@@ -36,7 +36,7 @@ Running this service on its own, without `manage`:
 ```bash
 source .venv/bin/activate
 python -m services.llama_server     # starts the engine in the foreground
-python jobs.py                      # the worker, which talks to it
+python executions.py                      # the worker, which talks to it
 ```
 
 ## Installation
@@ -48,7 +48,7 @@ cd models
 chmod +x install && ./install
 ```
 
-The script creates `config/tasks.json` from defaults (prompting for database, vector tables, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python jobs.py`.
+The script creates `config/tasks.json` from defaults (prompting for database, vector tables, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python executions.py`.
 
 ## Running the service
 
@@ -56,7 +56,7 @@ Run locally using the created virtual environment:
 
 ```bash
 source .venv/bin/activate
-python jobs.py
+python executions.py
 ```
 
 ## AI Models
@@ -83,11 +83,11 @@ Once started, the service logs hardware info, registers the worker, and then pri
 ```
 Worker registered: <name> (<id>)
 Capabilities: ['llm', 'embeddings']
-Job service started. Polling for pending jobs...
+Execution service started. Polling for queued executions...
 ```
 
-It polls the PostgreSQL `jobs` table every 1 second for pending jobs. To verify processing:
+It polls the PostgreSQL `executions` table every 1 second for queued executions. To verify running:
 
-1. Insert a test job into the `jobs` table with `status = 'pending'` and a valid `type` (e.g., `detect-language`).
-2. Watch the service logs for `Processing job: <id> of type: <type>`.
-3. Check the `jobs` table — the row should have `status = 'processed'` and a populated `result` column.
+1. Insert a test execution into the `executions` table with `status = 'queued'` and a valid `type` (e.g., `detect-language`).
+2. Watch the service logs for `Processing execution: <id> of type: <type>`.
+3. Check the `executions` table — the row should have `status = 'completed'` and a populated `result` column.

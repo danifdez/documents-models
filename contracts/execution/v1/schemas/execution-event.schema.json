@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/execution-event.schema.json",
+  "title": "Canonical execution event envelope v1",
+  "type": "object",
+  "required": [
+    "schemaVersion", "eventId", "rootExecutionId", "executionId",
+    "sequence", "producerSequence", "eventType", "producer", "actor", "occurredAt",
+    "ingestedAt", "payloadSchema", "payload", "artifactRefs", "security", "contentHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "execution-event/1" },
+    "eventId": { "$ref": "common.schema.json#/$defs/id" },
+    "rootExecutionId": { "$ref": "common.schema.json#/$defs/id" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "parentExecutionId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "turnId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "stepId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "toolCallId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "artifactId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "sourceId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "producerSequence": { "type": "integer", "minimum": 1 },
+    "eventType": {
+      "enum": ["execution.created", "execution.state_changed", "operation.started", "operation.finished", "message.recorded", "source.observed", "progress.reported"]
+    },
+    "producer": { "$ref": "common.schema.json#/$defs/producer" },
+    "actor": { "$ref": "common.schema.json#/$defs/actor" },
+    "operationId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "parentOperationId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "causedByEventId": { "$ref": "common.schema.json#/$defs/nullableId" },
+    "occurredAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "ingestedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "timing": {
+      "type": "object",
+      "properties": {
+        "durationMs": { "$ref": "common.schema.json#/$defs/metricValue" }
+      },
+      "additionalProperties": true
+    },
+    "payloadSchema": {
+      "enum": [
+        "execution.created/1", "execution.state_changed/1", "operation.started/1",
+        "operation.finished/1", "message.recorded/1", "source.observed/1", "progress.reported/1"
+      ]
+    },
+    "payload": { "type": "object" },
+    "artifactRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "security": { "$ref": "common.schema.json#/$defs/security" },
+    "contentHash": { "$ref": "common.schema.json#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "payloadSchema": { "const": "execution.created/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "execution.created" }, "payload": { "$ref": "payload/execution-created.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "execution.state_changed/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "execution.state_changed" }, "payload": { "$ref": "payload/execution-state-changed.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "operation.started/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["operationId", "attemptId"],
+        "properties": { "eventType": { "const": "operation.started" }, "operationId": { "$ref": "common.schema.json#/$defs/id" }, "attemptId": { "$ref": "common.schema.json#/$defs/id" }, "payload": { "$ref": "payload/operation-started.schema.json" } }
+      }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "operation.finished/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["operationId", "attemptId"],
+        "properties": { "eventType": { "const": "operation.finished" }, "operationId": { "$ref": "common.schema.json#/$defs/id" }, "attemptId": { "$ref": "common.schema.json#/$defs/id" }, "payload": { "$ref": "payload/operation-finished.schema.json" } }
+      }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "message.recorded/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "message.recorded" }, "payload": { "$ref": "payload/message-recorded.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "source.observed/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "source.observed" }, "payload": { "$ref": "payload/source-observed.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "progress.reported/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "progress.reported" }, "payload": { "type": "object", "required": ["message"], "properties": { "message": { "type": "string", "minLength": 1 } }, "additionalProperties": true } } }
+    }
+  ],
+  "additionalProperties": true
+}

@@ -2,13 +2,13 @@
 
 Extracts the skeleton that used to live inside `tasks/summarize/summarize.py`
 so any content task (summarize, keywords, key-point, …) can reuse the same
-pattern: chunk the input, process each chunk in parallel through the job system
+pattern: chunk the input, process each chunk in parallel through the execution system
 (fan-out) and merge the partial results (reduce), with optional recursion when
 the merge is still too large.
 
 A task is defined by declaring a `MapReduceSpec` with two functions —`leaf_fn`
 (how to process one chunk) and `reduce_fn` (how to merge partials)— and calling
-`run_map_reduce(payload, state, ctx, spec=..., cfg=...)` from its `@job_handler`.
+`run_map_reduce(payload, state, ctx, spec=..., cfg=...)` from its `@execution_handler`.
 
 Two result models coexist:
 
@@ -20,7 +20,7 @@ Two result models coexist:
   to one chunk), children never fan out again, and the merge hands `reduce_fn`
   the raw per-chunk lists without any validity filtering.
 
-Dispatcher contract (shared with documents-dev via `job_mock`/`process_job`):
+Dispatcher contract (shared with documents-dev via `job_mock`/`process_execution`):
 the fan-out returns
 `{"_sub_agent_pending_many": True, "_state": {...}, "pending_children": {...}}`
 and the `_state` keeps the shape `resume_parent_with_child` knows how to
@@ -57,7 +57,7 @@ MergePayloadFn = Callable[[Dict[str, Any]], Dict[str, Any]]
 class MapReduceSpec:
     """Everything task-specific; the orchestrator is the generic part.
 
-    - `task_name`: job type used to enqueue the children (== handler name).
+    - `task_name`: execution type used to enqueue the children (== handler name).
     - `leaf_fn` / `reduce_fn`: process one chunk / merge partials.
     - `carry_fields`: payload keys that travel to the children, into the `state`
       and into the merge (e.g. `targetLanguage`, `sourceLanguage`). Copied only
@@ -71,7 +71,7 @@ class MapReduceSpec:
     - `recursive_merge`: if the merge exceeds `chunk_word_budget *
       merge_recursion_factor` words, fan out over it again. Only honoured in the
       default string mode; `list_results` tasks never recurse.
-    - `child_max_steps`: `agent_max_steps` of each child job (leaves are
+    - `child_max_steps`: `agent_max_steps` of each child execution (leaves are
       single-step).
 
     Optional extensions (defaults preserve the original string behaviour):
@@ -181,8 +181,8 @@ def _plan_or_leaf(
     if spec.fanout_extras_fn is not None:
         chunk_extras, state_extras = spec.fanout_extras_fn(chunks, payload, cfg)
 
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "job_id", None) is None:
-        # No job queue (e.g. unit tests): process the chunks in-process and
+    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "execution_id", None) is None:
+        # No execution queue (e.g. unit tests): process the chunks in-process and
         # merge, without fan-out.
         if spec.list_results:
             partials: List[Any] = []
@@ -207,8 +207,8 @@ def _plan_or_leaf(
             child_payload = {spec.chunk_field: chunk, "_chunk_idx": i, **carry}
         if chunk_extras is not None:
             child_payload.update(chunk_extras[i])
-        child_id = ctx.db.enqueue_child_job(
-            ctx.job_id, spec.task_name,
+        child_id = ctx.db.enqueue_child_execution(
+            ctx.execution_id, spec.task_name,
             payload=child_payload, agent_max_steps=spec.child_max_steps,
         )
         if child_id is None:
@@ -220,7 +220,7 @@ def _plan_or_leaf(
     state = {
         "phase": "merging",
         "chunks_count": len(chunks),
-        "pending": pending,
+        "queued": pending,
         "results": results,
         "retries": retries,
         "chunks": chunks,

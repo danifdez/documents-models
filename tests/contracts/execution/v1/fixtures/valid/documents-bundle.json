@@ -1,0 +1,630 @@
+{
+  "bundleSchema": "execution-bundle/1",
+  "bundleId": "tb_documents_fixture",
+  "product": "documents",
+  "fixtureExtension": {
+    "compatibleUnknownField": true
+  },
+  "eventRange": {
+    "firstSequence": 1,
+    "lastSequence": 12
+  },
+  "events": [
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_001",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 1,
+      "producerSequence": 1,
+      "eventType": "execution.created",
+      "producer": {
+        "component": "documents-backend",
+        "instanceId": "backend-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "system"
+      },
+      "occurredAt": "2026-08-19T10:00:00Z",
+      "ingestedAt": "2026-08-19T10:00:00Z",
+      "payloadSchema": "execution.created/1",
+      "payload": {
+        "executionKind": "assistant_chat",
+        "initialStatus": "queued"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:7bc0de73ece0226214c46dd3861f143aa64da202ab5be5418be91653da333168"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_002",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 2,
+      "producerSequence": 2,
+      "eventType": "execution.state_changed",
+      "producer": {
+        "component": "documents-backend",
+        "instanceId": "backend-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "worker"
+      },
+      "causedByEventId": "doc_evt_001",
+      "occurredAt": "2026-08-19T10:00:00Z",
+      "ingestedAt": "2026-08-19T10:00:00Z",
+      "payloadSchema": "execution.state_changed/1",
+      "payload": {
+        "from": "queued",
+        "to": "running",
+        "phase": "model_dispatch"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:0df713f0331447777a62c69e872963071f42c4574f91e648c8189f4433f68256"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_003",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 3,
+      "producerSequence": 3,
+      "eventType": "message.recorded",
+      "producer": {
+        "component": "documents-backend",
+        "instanceId": "backend-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "user",
+        "id": "fixture-user"
+      },
+      "causedByEventId": "doc_evt_001",
+      "occurredAt": "2026-08-19T10:00:00Z",
+      "ingestedAt": "2026-08-19T10:00:00Z",
+      "payloadSchema": "message.recorded/1",
+      "payload": {
+        "messageKind": "user_input",
+        "role": "user",
+        "contentPreview": "Summarize the project notes.",
+        "contentArtifactId": "artifact_doc_user",
+        "format": "text"
+      },
+      "artifactRefs": [
+        "artifact_doc_user"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:2b742ed637f52d7bec60dc1b74c5f2ee577d873814e8d647e5f000d7ec08114e"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_004",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 4,
+      "producerSequence": 1,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_doc_inference_1",
+      "attemptId": "attempt_doc_inference_1",
+      "causedByEventId": "doc_evt_003",
+      "occurredAt": "2026-08-19T10:00:01Z",
+      "ingestedAt": "2026-08-19T10:00:01Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "dispatched",
+        "name": "assistant-tool-decision"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:662cc326b4a9c2eeb232db272777869a2ef2763d620e2512f46578f17e7c9568"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_005",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 5,
+      "producerSequence": 2,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_doc_inference_1",
+      "attemptId": "attempt_doc_inference_1",
+      "causedByEventId": "doc_evt_004",
+      "occurredAt": "2026-08-19T10:00:02Z",
+      "ingestedAt": "2026-08-19T10:00:02Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "succeeded",
+        "outcome": "tool_requests",
+        "result": {
+          "toolCallIds": [
+            "tool_call_doc_search"
+          ]
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 900,
+          "promptTokens": 64,
+          "generatedTokens": 12,
+          "timeToFirstTokenMs": "unknown"
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:8e7f846b37b2f4b60cea56f5ac6c0e24ceee4642db6bb0addc2a8f75fe91f7c1"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_006",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 6,
+      "producerSequence": 3,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "tool"
+      },
+      "operationId": "op_doc_tool_search",
+      "parentOperationId": "op_doc_inference_1",
+      "attemptId": "attempt_doc_tool_search",
+      "toolCallId": "tool_call_doc_search",
+      "causedByEventId": "doc_evt_005",
+      "occurredAt": "2026-08-19T10:00:02Z",
+      "ingestedAt": "2026-08-19T10:00:02Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "tool_call",
+        "status": "dispatched",
+        "name": "search_workspace",
+        "inputSummary": {
+          "query": "next milestone"
+        },
+        "toolCallId": "tool_call_doc_search"
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:6a35a9f6d0416214519d11131a78b573d8aee385320df67e6a568112f852b61e"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_007",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 7,
+      "producerSequence": 4,
+      "eventType": "source.observed",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "tool"
+      },
+      "operationId": "op_doc_tool_search",
+      "attemptId": "attempt_doc_tool_search",
+      "toolCallId": "tool_call_doc_search",
+      "sourceId": "source_doc_tool",
+      "causedByEventId": "doc_evt_006",
+      "occurredAt": "2026-08-19T10:00:03Z",
+      "ingestedAt": "2026-08-19T10:00:03Z",
+      "payloadSchema": "source.observed/1",
+      "payload": {
+        "sourceId": "source_doc_tool",
+        "kind": "tool_output",
+        "originComponent": "documents-models",
+        "observedAt": "2026-08-19T10:00:03Z",
+        "contentHash": "sha256:b9f0fb3cadd1180ebb9fad9f02f177353dee2fa6b1954ad359eb101b41573156",
+        "snapshotArtifactId": "artifact_doc_tool",
+        "trustLevel": "tool_observation",
+        "dataClassification": "workspace"
+      },
+      "artifactRefs": [
+        "artifact_doc_tool"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:fec1d3d11189f43638031d52be03c6b3f2c96d84c3f566663aca07f19c5d7d4e"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_008",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 8,
+      "producerSequence": 5,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "tool"
+      },
+      "operationId": "op_doc_tool_search",
+      "parentOperationId": "op_doc_inference_1",
+      "attemptId": "attempt_doc_tool_search",
+      "toolCallId": "tool_call_doc_search",
+      "causedByEventId": "doc_evt_007",
+      "occurredAt": "2026-08-19T10:00:03Z",
+      "ingestedAt": "2026-08-19T10:00:03Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "tool_call",
+        "status": "succeeded",
+        "result": {
+          "sourceId": "source_doc_tool"
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 120
+        }
+      },
+      "artifactRefs": [
+        "artifact_doc_tool"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:98117f6d9be4b04f8812b95b9205d9a42dbf07b5579d63aecce38ba8fcbd5c88"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_009",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 9,
+      "producerSequence": 6,
+      "eventType": "operation.started",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_doc_inference_2",
+      "attemptId": "attempt_doc_inference_2",
+      "causedByEventId": "doc_evt_008",
+      "occurredAt": "2026-08-19T10:00:04Z",
+      "ingestedAt": "2026-08-19T10:00:04Z",
+      "payloadSchema": "operation.started/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "dispatched",
+        "name": "generate_reply"
+      },
+      "artifactRefs": [
+        "artifact_doc_tool"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:ae619786b8adedb8abd3a62ac26d78754fb87cad4f629a49402ce305c1e7c739"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_010",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 10,
+      "producerSequence": 7,
+      "eventType": "operation.finished",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "operationId": "op_doc_inference_2",
+      "attemptId": "attempt_doc_inference_2",
+      "causedByEventId": "doc_evt_009",
+      "occurredAt": "2026-08-19T10:00:05Z",
+      "ingestedAt": "2026-08-19T10:00:05Z",
+      "payloadSchema": "operation.finished/1",
+      "payload": {
+        "operationKind": "inference",
+        "status": "succeeded",
+        "outcome": "final_text",
+        "result": {
+          "contentArtifactId": "artifact_doc_final"
+        },
+        "error": null,
+        "metrics": {
+          "durationMs": 800,
+          "promptTokens": 92,
+          "generatedTokens": 11,
+          "timeToFirstTokenMs": "unknown"
+        }
+      },
+      "artifactRefs": [
+        "artifact_doc_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:02b2103ba47ec09261ca00c9c14ff1e5a17451f32b854b83a9c85d244d7d03df"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_011",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 11,
+      "producerSequence": 8,
+      "eventType": "message.recorded",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "model"
+      },
+      "causedByEventId": "doc_evt_010",
+      "occurredAt": "2026-08-19T10:00:05Z",
+      "ingestedAt": "2026-08-19T10:00:05Z",
+      "payloadSchema": "message.recorded/1",
+      "payload": {
+        "messageKind": "final_response",
+        "role": "assistant",
+        "contentPreview": "The next milestone is contract conformance.",
+        "contentArtifactId": "artifact_doc_final",
+        "format": "text"
+      },
+      "artifactRefs": [
+        "artifact_doc_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:1e525d068c06f2f0d9ffa682b035c952d55004a649dcb26a2c3dae3505196edc"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_012",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 12,
+      "producerSequence": 4,
+      "eventType": "execution.state_changed",
+      "producer": {
+        "component": "documents-backend",
+        "instanceId": "backend-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "system"
+      },
+      "causedByEventId": "doc_evt_011",
+      "occurredAt": "2026-08-19T10:00:06Z",
+      "ingestedAt": "2026-08-19T10:00:06Z",
+      "payloadSchema": "execution.state_changed/1",
+      "payload": {
+        "from": "running",
+        "to": "completed",
+        "completionKind": "full",
+        "completionReason": "goal_satisfied",
+        "result": {
+          "messageEventId": "doc_evt_011"
+        },
+        "error": null
+      },
+      "artifactRefs": [
+        "artifact_doc_final"
+      ],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:232af1b8450349498e28f0805e5aad06d4db42c04c0b34b42f8baae7ba60a1b8"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "artifact_doc_user",
+      "kind": "user_message",
+      "contentHash": "sha256:da807b6faa396e8e86d4b83b279bd3820b09e2939a07bb3643079d2d4bc23147",
+      "size": 61,
+      "mediaType": "text/plain",
+      "encoding": "identity",
+      "bundlePath": "artifacts/documents-user-message.txt",
+      "createdByEventId": "doc_evt_003",
+      "inputSourceIds": [],
+      "dataClassification": "workspace",
+      "redaction": {
+        "applied": false
+      },
+      "retentionClass": "evaluation"
+    },
+    {
+      "artifactId": "artifact_doc_tool",
+      "kind": "tool_result",
+      "contentHash": "sha256:b9f0fb3cadd1180ebb9fad9f02f177353dee2fa6b1954ad359eb101b41573156",
+      "size": 63,
+      "mediaType": "text/plain",
+      "encoding": "identity",
+      "bundlePath": "artifacts/documents-tool-result.txt",
+      "createdByEventId": "doc_evt_007",
+      "inputSourceIds": [],
+      "dataClassification": "workspace",
+      "redaction": {
+        "applied": false
+      },
+      "retentionClass": "evaluation"
+    },
+    {
+      "artifactId": "artifact_doc_final",
+      "kind": "model_response",
+      "contentHash": "sha256:b87301ab3951ba90c308af6c883c192efa3a49697975e0193998fed41d9dc9a4",
+      "size": 65,
+      "mediaType": "text/plain",
+      "encoding": "identity",
+      "bundlePath": "artifacts/documents-final-response.txt",
+      "createdByEventId": "doc_evt_011",
+      "inputSourceIds": [
+        "source_doc_tool"
+      ],
+      "dataClassification": "workspace",
+      "redaction": {
+        "applied": false
+      },
+      "retentionClass": "evaluation"
+    }
+  ],
+  "environment": {
+    "documentsRevision": "fixture",
+    "promptPackages": [],
+    "toolVersions": [
+      "search_workspace:fixture"
+    ],
+    "modelFingerprint": "fixture-model",
+    "runtimeFingerprint": "fixture-runtime",
+    "featureFlags": {}
+  },
+  "redactionProfile": "evaluation-default",
+  "bundleCompleteness": {
+    "status": "reproducible",
+    "reproducible": true,
+    "missing": []
+  },
+  "integrity": {
+    "eventsHash": "sha256:a393baf889d972fead0d847216c45ed878e71de9908f3f87a973c9263f89d503",
+    "schemaManifestHash": "sha256:34107e825299d24137d2b5add08c42a6dd5b77b4c18b991e19e7ec32c8888d76"
+  },
+  "purpose": "evaluation",
+  "accessScope": {
+    "ownerPrincipal": "fixture-user",
+    "workspaceId": "fixture-workspace"
+  },
+  "exportedAt": "2026-08-19T10:00:07Z",
+  "manifestHash": "sha256:e9d445a00ff5eb93764bd283b98bbc286b645fc1bef7629394e1e6c68cd9f908",
+  "rootExecutionId": "exec_documents_fixture",
+  "executionSchema": "execution-event/1"
+}

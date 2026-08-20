@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/message-recorded.schema.json",
+  "title": "message.recorded payload v1",
+  "type": "object",
+  "required": ["messageKind", "role"],
+  "properties": {
+    "messageKind": { "enum": ["user_input", "preamble", "final_response", "execution_result"] },
+    "role": { "enum": ["user", "assistant", "system", "tool"] },
+    "contentPreview": { "type": "string", "maxLength": 512 },
+    "contentArtifactId": { "$ref": "../common.schema.json#/$defs/id" },
+    "format": { "enum": ["text", "markdown", "json"] }
+  },
+  "anyOf": [
+    { "required": ["contentPreview"], "properties": { "contentPreview": true } },
+    { "required": ["contentArtifactId"], "properties": { "contentArtifactId": true } }
+  ],
+  "additionalProperties": true
+}
