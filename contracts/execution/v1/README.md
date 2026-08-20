@@ -1,8 +1,7 @@
 # Canonical execution contract v1
 
-This directory is the canonical, language-neutral source for durable
-executions. Product repositories consume versioned copies of these files;
-they must not redefine the logical schema.
+This directory contains the models worker's pinned copy of the
+language-neutral contract for durable executions.
 
 ## Layout
 
@@ -10,9 +9,8 @@ they must not redefine the logical schema.
 - `schema-manifest.json`: SHA-256 inventory of every schema.
 - `validate.py`: schema, integrity, and cross-record invariant validator.
 
-Conformance fixtures are test data and live outside the distributed contract,
-under each consumer's test tree. The development reference set lives at
-`development/harness/tests/contracts/v1/fixtures/`.
+Conformance fixtures are test data and live in
+`tests/contracts/execution/v1/fixtures/`.
 
 ## Integrity rules
 
@@ -31,18 +29,18 @@ surface rejects floating-point numbers; durations and usage values use integer
 units or the string `unknown`. This constrained profile is intentionally easy
 to reproduce in TypeScript, Python, and C++.
 
-Run the conformance suite from the monorepo root:
+Run the conformance suite from the models repository:
 
 ```bash
-models/.venv/bin/python development/harness/contracts/v1/validate.py \
-  --fixtures development/harness/tests/contracts/v1/fixtures
+.venv/bin/python -B contracts/execution/v1/validate.py \
+  --fixtures tests/contracts/execution/v1/fixtures
 ```
 
 Regenerate fixture and schema hashes after an intentional contract edit:
 
 ```bash
-models/.venv/bin/python development/harness/contracts/v1/validate.py \
-  --fixtures development/harness/tests/contracts/v1/fixtures \
+.venv/bin/python -B contracts/execution/v1/validate.py \
+  --fixtures tests/contracts/execution/v1/fixtures \
   --update-hashes
 ```
 

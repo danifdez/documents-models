@@ -1,6 +1,9 @@
+import json
 import os
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from unittest.mock import patch
 
 import psycopg
@@ -119,6 +122,7 @@ class ExecutionPostgresTests(unittest.TestCase):
             **self.connection_args,
             autocommit=True,
         )
+        self.database.conn.execute("TRUNCATE execution_events, executions")
 
     def tearDown(self):
         self.database.conn.close()
@@ -188,6 +192,201 @@ class ExecutionPostgresTests(unittest.TestCase):
         )
         self.assertEqual(events[0]["payload"]["from"], "queued")
         self.assertEqual(events[1]["payload"]["phase"], "backend_finalization")
+
+    def test_two_workers_cannot_claim_the_same_execution(self):
+        execution_id = str(uuid.uuid4())
+        with self.database.conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO executions (
+                  execution_id, root_execution_id, owner_principal,
+                  workspace_id, schema_version, task_type, payload
+                ) VALUES (%s, %s, 'test', 'test', 'execution-event/1',
+                          'translate', '{}'::jsonb)
+                """,
+                (execution_id, execution_id),
+            )
+
+        barrier = Barrier(3)
+
+        def claim(worker_id):
+            database = Execution.__new__(Execution)
+            database.table = "executions"
+            database.connection_args = self.connection_args
+            barrier.wait()
+            return database.claim_pending_execution(worker_id, ["cpu"])
+
+        worker_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+        with patch(
+            "worker.capabilities.get_supported_task_types",
+            return_value=["translate"],
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(claim, worker_id) for worker_id in worker_ids]
+                barrier.wait()
+                claimed = [future.result() for future in futures]
+
+        winners = [item for item in claimed if item is not None]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(str(winners[0]["execution_id"]), execution_id)
+        stored = self.database.get_execution(execution_id)
+        self.assertEqual(stored["status"], "running")
+        self.assertIn(str(stored["claimed_by"]), worker_ids)
+
+    def test_child_result_is_integrated_and_wakes_the_waiting_parent(self):
+        parent_id = str(uuid.uuid4())
+        with self.database.conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO executions (
+                  execution_id, root_execution_id, owner_principal,
+                  workspace_id, schema_version, task_type, payload
+                ) VALUES (%s, %s, 'test', 'test', 'execution-event/1',
+                          'relationship-extraction', '{}'::jsonb)
+                """,
+                (parent_id, parent_id),
+            )
+
+        child_id = self.database.enqueue_child_execution(
+            parent_id,
+            "relationship-extraction",
+            {"text": "chunk", "_chunk_idx": 0},
+        )
+        checkpoint = {
+            "chunks_count": 1,
+            "chunks": ["chunk"],
+            "chunk_field": "text",
+            "chunk_payload_template": {},
+            "waiting_for_children": {child_id: 0},
+            "pending": {child_id: 0},
+            "results": {"0": None},
+            "retries": {"0": 0},
+        }
+        self.assertTrue(self.database.update_agent_state(parent_id, checkpoint))
+        self.assertTrue(self.database.update_execution_status(parent_id, "waiting"))
+
+        outcome = self.database.resume_parent_with_child(
+            parent_id,
+            child_id,
+            success_result={"relationships": [{"type": "mentions"}]},
+        )
+
+        self.assertEqual(outcome, {"action": "result_recorded", "all_done": True})
+        parent = self.database.get_execution(parent_id)
+        child = self.database.get_execution(child_id)
+        self.assertEqual(parent["status"], "queued")
+        self.assertEqual(parent["checkpoint"]["waiting_for_children"], {})
+        self.assertEqual(
+            parent["checkpoint"]["results"]["0"],
+            {"relationships": [{"type": "mentions"}]},
+        )
+        self.assertEqual(str(child["root_execution_id"]), parent_id)
+        self.assertEqual(str(child["parent_execution_id"]), parent_id)
+
+    def test_chat_translation_and_extraction_use_the_same_worker_flow(self):
+        from utils.process_execution import process_execution
+
+        class EvidenceRecorder:
+            def record_final_message(self, _reply):
+                return None
+
+            def flush_evidence(self):
+                return None
+
+            def attach_summary(self, result):
+                return result
+
+        def run(task_type, payload, patches):
+            execution_id = str(uuid.uuid4())
+            with self.database.conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO executions (
+                      execution_id, root_execution_id, owner_principal,
+                      workspace_id, schema_version, task_type, payload
+                    ) VALUES (%s, %s, 'test', 'test', 'execution-event/1',
+                              %s, %s::jsonb)
+                    """,
+                    (execution_id, execution_id, task_type, json.dumps(payload)),
+                )
+            with patch(
+                "worker.capabilities.get_supported_task_types",
+                return_value=[task_type],
+            ):
+                claimed = self.database.claim_pending_execution(
+                    str(uuid.uuid4()),
+                    ["cpu", "llm"],
+                )
+            with patch(
+                "database.execution.get_execution_database",
+                return_value=self.database,
+            ):
+                with patches:
+                    process_execution(claimed)
+            stored = self.database.get_execution(execution_id)
+            self.assertEqual(stored["status"], "running")
+            self.assertEqual(stored["phase"], "backend_finalization")
+            self.assertIsNone(stored["attempt_id"])
+            return stored
+
+        class TranslationPipeline:
+            def __call__(self, texts):
+                return [
+                    {"translation_text": f"translated:{text}"}
+                    for text in texts
+                ]
+
+        translated = run(
+            "translate",
+            {
+                "sourceLanguage": "es",
+                "targetLanguage": "en",
+                "texts": [{"text": "Hola", "path": "0"}],
+            },
+            patch(
+                "tasks.translate.translate._get_translation_pipeline",
+                return_value=TranslationPipeline(),
+            ),
+        )
+        self.assertEqual(
+            translated["result"]["response"][0]["translation_text"],
+            "translated:Hola",
+        )
+
+        extracted = run(
+            "entity-extraction",
+            {"texts": [{"text": "Madrid está en España."}]},
+            patch(
+                "tasks.entities.entities._extract_entities",
+                return_value=[{"word": "Madrid", "entity": "GPE"}],
+            ),
+        )
+        self.assertEqual(
+            extracted["result"],
+            {"entities": [{"word": "Madrid", "entity": "GPE"}]},
+        )
+
+        chat_patches = patch.multiple(
+            "tasks.assistant_chat.assistant_chat",
+            get_task_config=lambda _task: {"max_tokens": 20, "stream": False},
+            get_llm_service=lambda **_kwargs: object(),
+            generate_reply=lambda *_args, **_kwargs: "Hello from the assistant",
+        )
+        with patch(
+            "tasks.assistant_chat.assistant_chat.ExecutionEmitter.from_payload",
+            return_value=EvidenceRecorder(),
+        ):
+            chatted = run(
+                "assistant-chat",
+                {
+                    "ownerId": 1,
+                    "name": "Assistant",
+                    "assistantSystem": False,
+                    "conversation": [{"role": "user", "content": "Hello"}],
+                },
+                chat_patches,
+            )
+        self.assertEqual(chatted["result"], {"reply": "Hello from the assistant"})
 
 
 if __name__ == "__main__":

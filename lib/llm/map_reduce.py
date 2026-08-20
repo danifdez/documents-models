@@ -20,7 +20,7 @@ Two result models coexist:
   to one chunk), children never fan out again, and the merge hands `reduce_fn`
   the raw per-chunk lists without any validity filtering.
 
-Dispatcher contract (shared with documents-dev via `job_mock`/`process_execution`):
+Dispatcher contract (shared with documents-dev via `execution_mock`/`process_execution`):
 the fan-out returns
 `{"_sub_agent_pending_many": True, "_state": {...}, "pending_children": {...}}`
 and the `_state` keeps the shape `resume_parent_with_child` knows how to

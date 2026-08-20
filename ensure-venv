@@ -9,7 +9,7 @@
 # (no --clear) — installed packages are untouched.
 #
 # Used by install (idempotent re-runs) and by anything that starts a models
-# process (jobs.py, services.llama_server, voice.run_pool) — whoever that
+# process (executions.py, services.llama_server, voice.run_pool) — whoever that
 # is, monorepo `manage` or a standalone checkout, calls this first.
 set -euo pipefail
 
