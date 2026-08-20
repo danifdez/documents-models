@@ -100,6 +100,7 @@ def extract_memory_action(
     user_message: str,
     memory_snippets: List[Dict[str, Any]],
     cfg: Dict[str, Any],
+    trace_metadata: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Post-response LLM call: decide save/forget/none based on the user
     message and existing memory. Returns a dict shaped like::
@@ -127,7 +128,10 @@ def extract_memory_action(
             max_tokens=int(cfg.get("memory_extract_max_tokens", 256)),
             allow_thinking=extract_thinking,
             inference_name="memory_extraction",
-            trace_metadata={"phase": "memory_extraction"},
+            trace_metadata={
+                **(trace_metadata or {}),
+                "phase": "memory_extraction",
+            },
         ) or ""
     except Exception:
         logger.exception("assistant-chat: memory extraction failed")

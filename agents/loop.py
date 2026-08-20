@@ -16,6 +16,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lib.framework.agent import AgentRunResult, AgentSpec
+from lib.execution import ProgressLoopContext
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.text import strip_thinking as _strip_thinking
 from lib.backend.http import post_tool_event
@@ -83,7 +84,12 @@ def _json_object_or_none(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _coerce_output(
-    spec: AgentSpec, llm, messages: List[Dict[str, Any]], content: str, max_tokens: int,
+    spec: AgentSpec,
+    llm,
+    messages: List[Dict[str, Any]],
+    content: str,
+    max_tokens: int,
+    trace_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Turn the agent's final text into the JSON object its output schema
     promises. Fast path: the reply is usually already that object (the schema is
@@ -110,6 +116,11 @@ def _coerce_output(
         forced = llm.chat(
             followup, max_tokens=max_tokens,
             response_format={"type": "json_object", "schema": spec.output_schema},
+            inference_name="structured_output_repair",
+            trace_metadata={
+                **(trace_metadata or {}),
+                "phase": "structured_output_repair",
+            },
         ) or ""
         parsed = _json_object_or_none(_strip_thinking(forced))
         if parsed is not None:
@@ -143,6 +154,7 @@ def run_agent_loop(
     ctx,
     tools: List[Dict[str, Any]],
     dispatch: DispatchFn,
+    loop_kind: str = "top_level",
 ) -> AgentRunResult:
     """Run tool-call rounds until the model replies without calling a tool or the
     round budget runs out. Mutates `messages` in place (appends assistant/tool
@@ -161,6 +173,15 @@ def run_agent_loop(
     )
     execution = getattr(ctx, "execution", None)
     output_repair_used = False
+    progress = ProgressLoopContext.start(
+        execution,
+        agent_name=spec.name,
+        loop_kind=loop_kind,
+        max_rounds=max_rounds,
+        max_output_repairs=2 if spec.output_schema is not None else 1,
+        forced_finalization_available=spec.output_schema is None,
+        max_tokens_per_inference=round_max_tokens,
+    )
 
     logger.info(
         "agent[%s]: enter — tools=%s rounds=%d", spec.name,
@@ -168,7 +189,18 @@ def run_agent_loop(
     )
 
     for round_idx in range(max_rounds):
-        msg = llm.chat_with_tools(messages, tools, max_tokens=round_max_tokens)
+        round_trace = progress.trace(
+            round=round_idx + 1,
+            phase="agent_loop",
+        )
+        msg = llm.chat_with_tools(
+            messages,
+            tools,
+            max_tokens=round_max_tokens,
+            inference_name="chat_with_tools",
+            trace_metadata=round_trace,
+        )
+        operation_phase = "agent_loop"
         content, tool_calls = _normalize_message(msg)
         logger.info(
             "agent[%s]: round %d → tool_calls=%d content_head=%r",
@@ -192,13 +224,17 @@ def run_agent_loop(
                 tools,
                 max_tokens=round_max_tokens,
                 inference_name="output_repair",
-                trace_metadata={
-                    "phase": "output_repair",
-                    "reason": "empty_model_response",
-                    "attempt": 1,
-                    "maxAttempts": 1,
-                },
+                trace_metadata=progress.trace(
+                    round=round_idx + 1,
+                    phase="output_repair",
+                    extra={
+                        "reason": "empty_model_response",
+                        "attempt": 1,
+                        "maxAttempts": 1,
+                    },
+                ),
             )
+            operation_phase = "output_repair"
             content, tool_calls = _normalize_message(msg)
             logger.info(
                 "agent[%s]: output repair → tool_calls=%d content_head=%r",
@@ -207,7 +243,14 @@ def run_agent_loop(
         if not tool_calls:
             if spec.output_schema is not None:
                 return AgentRunResult.structured_result(
-                    _coerce_output(spec, llm, messages, content, round_max_tokens)
+                    _coerce_output(
+                        spec,
+                        llm,
+                        messages,
+                        content,
+                        round_max_tokens,
+                        round_trace,
+                    )
                 )
             if content:
                 return AgentRunResult.final_text(content)
@@ -239,7 +282,12 @@ def run_agent_loop(
                     name,
                     args_obj,
                     str(call.get("id") or "") or None,
+                    progress.trace(
+                        round=round_idx + 1,
+                        phase=operation_phase,
+                    ),
                 )
+                execution.flush_evidence()
             if can_emit:
                 post_tool_event(
                     ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
@@ -255,6 +303,7 @@ def run_agent_loop(
                         None,
                         error=str(error),
                     )
+                    execution.flush_evidence()
                 raise
             source_event_id = None
             if execution and tool_trace:
@@ -274,6 +323,8 @@ def run_agent_loop(
                 "content": json.dumps(result, ensure_ascii=False),
             })
             pending = isinstance(result, dict) and result.get("pendingConfirmation")
+            if pending and execution and tool_trace:
+                execution.flush_evidence()
             if can_emit and not pending:
                 post_tool_event(
                     ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
@@ -295,17 +346,28 @@ def run_agent_loop(
     logger.info("agent[%s]: rounds exhausted", spec.name)
     if spec.output_schema is not None:
         return AgentRunResult.structured_result(
-            _coerce_output(spec, llm, messages, "", round_max_tokens)
+            _coerce_output(
+                spec,
+                llm,
+                messages,
+                "",
+                round_max_tokens,
+                progress.trace(
+                    round=max_rounds,
+                    phase="structured_output_repair",
+                ),
+            )
         )
     forced = llm.chat(
         messages,
         max_tokens=round_max_tokens,
         allow_thinking=True,
         inference_name="forced_finalization",
-        trace_metadata={
-            "phase": "forced_finalization",
-            "reason": "step_budget_exhausted",
-        },
+        trace_metadata=progress.trace(
+            round=max_rounds,
+            phase="forced_finalization",
+            extra={"reason": "step_budget_exhausted"},
+        ),
     ) or ""
     content = _strip_thinking(forced)
     if content:

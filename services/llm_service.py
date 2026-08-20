@@ -45,10 +45,11 @@ def _begin_inference(
 ):
     from lib.execution import get_active_emitter
     emitter = get_active_emitter()
-    return (
-        (emitter, emitter.start_inference(name, request, trace_metadata))
-        if emitter else (None, None)
-    )
+    if not emitter:
+        return None, None
+    handle = emitter.start_inference(name, request, trace_metadata)
+    emitter.flush_evidence()
+    return emitter, handle
 
 
 def _response_metrics(response: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,6 +104,7 @@ def _finish_inference(
         metrics=_response_metrics(raw_response or {}),
         raw_response=raw_response,
     )
+    emitter.flush_evidence()
 
 
 def strip_thinking(text: str) -> str:
@@ -449,7 +451,13 @@ class LLMService:
         )
         return message
 
-    def chat_stream(self, messages: list, max_tokens: int = 1000) -> Iterator[str]:
+    def chat_stream(
+        self,
+        messages: list,
+        max_tokens: int = 1000,
+        inference_name: str = "chat_stream",
+        trace_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Iterator[str]:
         """Chat completion as a token stream. Yields content chunks as the
         model produces them. The caller is responsible for accumulating the
         full reply if they need it. Each yielded value is a (possibly empty)
@@ -469,7 +477,11 @@ class LLMService:
         }
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        emitter, trace = _begin_inference("chat_stream", body)
+        emitter, trace = _begin_inference(
+            inference_name,
+            body,
+            trace_metadata,
+        )
         parts: List[str] = []
         last_chunk: Dict[str, Any] = {}
         try:

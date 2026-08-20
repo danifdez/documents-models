@@ -12,6 +12,7 @@ from tasks.agent_chat.agent_chat import agent_chat
 from tasks.assistant_chat.assistant_chat import assistant_chat
 
 from tests.execution.test_emitter import CONTEXT
+from tests.execution.support import RecordingExecutionEmitter
 
 
 class AssistantChatExecutionTest(unittest.TestCase):
@@ -158,7 +159,7 @@ class AssistantChatExecutionTest(unittest.TestCase):
             emitter.finish_inference(handle, "loop reply", outcome="final_text")
             return AgentRunResult.final_text("loop reply")
 
-        def extract_memory(*_args):
+        def extract_memory(*_args, **_kwargs):
             emitter = get_active_emitter()
             handle = emitter.start_inference(
                 "memory_extraction",
@@ -198,7 +199,12 @@ class AssistantChatExecutionTest(unittest.TestCase):
             result = assistant_chat(payload)
 
         self.assertEqual(result["reply"], "loop reply")
-        events = next(body["events"] for suffix, body in requests if suffix == "events")
+        events = [
+            event
+            for suffix, body in requests
+            if suffix == "events"
+            for event in body["events"]
+        ]
         response_finish = next(
             event for event in events
             if event["eventType"] == "operation.finished"
@@ -288,7 +294,7 @@ class ToolRunTest(unittest.TestCase):
             "EXECUTION_INGEST_TOKEN": "test-token",
         }
         with patch.dict(os.environ, environment, clear=False):
-            return ExecutionEmitter(copy.deepcopy(CONTEXT))
+            return RecordingExecutionEmitter(copy.deepcopy(CONTEXT))
 
     def run_loop(self, dispatch):
         class Llm:
@@ -323,6 +329,7 @@ class ToolRunTest(unittest.TestCase):
         ), patch("agents.loop.get_llm_service", return_value=Llm()):
             try:
                 result = run_agent_loop(spec, [], ctx, [], dispatch)
+                emitter.flush_evidence()
                 return emitter, result, None
             except Exception as error:  # noqa: BLE001
                 return emitter, None, error
@@ -332,9 +339,9 @@ class ToolRunTest(unittest.TestCase):
             lambda *_: {"summary": "fixture value"})
 
         self.assertIsNone(error)
-        operation = [event for event in emitter.pending_events
+        operation = [event for event in emitter.sent_events
                      if event["eventType"].startswith("operation.")]
-        source = next(event for event in emitter.pending_events
+        source = next(event for event in emitter.sent_events
                       if event["eventType"] == "source.observed")
         self.assertEqual([event["eventType"] for event in operation], [
             "operation.started", "operation.finished",
@@ -343,6 +350,18 @@ class ToolRunTest(unittest.TestCase):
         self.assertEqual(source["operationId"], operation[0]["operationId"])
         self.assertEqual(operation[1]["causedByEventId"], source["eventId"])
         self.assertEqual(operation[1]["payload"]["status"], "succeeded")
+        policy = next(
+            event
+            for event in emitter.sent_events
+            if event["eventType"] == "progress.reported"
+        )
+        self.assertEqual(policy["payload"]["kind"], "policy_snapshot")
+        self.assertEqual(
+            operation[0]["payload"]["loopId"],
+            policy["payload"]["policy"]["loopId"],
+        )
+        self.assertEqual(operation[0]["payload"]["agentName"], "test-agent")
+        self.assertEqual(operation[0]["payload"]["round"], 1)
 
     def test_tool_exception_closes_the_operation_as_failed(self):
         def fail(*_args):
@@ -352,7 +371,7 @@ class ToolRunTest(unittest.TestCase):
 
         self.assertIsInstance(error, RuntimeError)
         self.assertEqual(str(error), "tool unavailable")
-        finish = next(event for event in emitter.pending_events
+        finish = next(event for event in emitter.sent_events
                       if event["eventType"] == "operation.finished")
         self.assertEqual(finish["payload"]["status"], "failed")
         self.assertEqual(finish["payload"]["error"]["message"], "tool unavailable")

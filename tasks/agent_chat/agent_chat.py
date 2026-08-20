@@ -49,7 +49,12 @@ from agents.user_agent import (
     MULTI_TOOL_ORIENTATION,
     user_agent_for,
 )
-from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
+from lib.execution import (
+    ExecutionEmitter,
+    ProgressLoopContext,
+    activate_emitter,
+    reset_emitter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +105,24 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             raw = outcome.content if outcome.kind == "final_text" else ""
         else:
             logger.info("agent-chat: direct response without effective tools")
+            direct_progress = ProgressLoopContext.start(
+                emitter,
+                agent_name="user_agent",
+                loop_kind="top_level",
+                max_rounds=1,
+                max_output_repairs=0,
+                forced_finalization_available=False,
+                max_tokens_per_inference=max_tokens,
+            )
             raw = generate_reply(
                 llm, messages, max_tokens,
                 owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
                 stream_enabled=bool(cfg.get("stream", True)),
+                inference_name="direct_response",
+                trace_metadata=direct_progress.trace(
+                    round=1,
+                    phase="direct_response",
+                ),
             )
 
         reply = _strip_thinking(raw)

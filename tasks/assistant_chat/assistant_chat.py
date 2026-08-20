@@ -48,7 +48,12 @@ from agents.memory_agent import (
     last_user_message as _last_user_message,
     memory_for_payload as _memory_for_payload,
 )
-from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
+from lib.execution import (
+    ExecutionEmitter,
+    ProgressLoopContext,
+    activate_emitter,
+    reset_emitter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +106,24 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             raw = outcome.content if outcome.kind == "final_text" else ""
         else:
             logger.info("assistant-chat: direct response without effective tools")
+            direct_progress = ProgressLoopContext.start(
+                emitter,
+                agent_name="assistant",
+                loop_kind="top_level",
+                max_rounds=1,
+                max_output_repairs=0,
+                forced_finalization_available=False,
+                max_tokens_per_inference=max_tokens,
+            )
             raw = generate_reply(
                 llm, messages, max_tokens,
                 owner_segment=OWNER_SEGMENT, owner_id=owner_id, execution_id=execution_id,
                 stream_enabled=bool(cfg.get("stream", True)),
+                inference_name="direct_response",
+                trace_metadata=direct_progress.trace(
+                    round=1,
+                    phase="direct_response",
+                ),
             )
 
         reply = _strip_thinking(raw)
@@ -113,19 +132,42 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             emitter.flush_evidence()
             return emitter.attach_summary({"error": error})
 
-        emitter.record_final_message(reply)
         result: Dict[str, Any] = {"reply": reply}
+        user_message = ""
+        memory_trace = None
 
-        # Persistent user memory: extract after replying.
         if payload.get("assistantSystem"):
             user_message = _last_user_message(payload)
             if user_message:
-                action = _extract_memory_action(
-                    llm, user_message, payload.get("memorySnippets") or [], cfg,
+                memory_max_tokens = int(cfg.get("memory_extract_max_tokens", 256))
+                memory_progress = ProgressLoopContext.start(
+                    emitter,
+                    agent_name="memory_agent",
+                    loop_kind="synchronous_subagent",
+                    max_rounds=1,
+                    max_output_repairs=0,
+                    forced_finalization_available=False,
+                    max_tokens_per_inference=memory_max_tokens,
                 )
-                if action:
-                    result["memoryAction"] = action
-                    logger.info("assistant-chat: memoryAction=%r", action)
+                memory_trace = memory_progress.trace(
+                    round=1,
+                    phase="memory_extraction",
+                )
+
+        emitter.record_final_message(reply)
+
+        # Persistent user memory: extract after the final response is durable.
+        if user_message and memory_trace:
+            action = _extract_memory_action(
+                llm,
+                user_message,
+                payload.get("memorySnippets") or [],
+                cfg,
+                trace_metadata=memory_trace,
+            )
+            if action:
+                result["memoryAction"] = action
+                logger.info("assistant-chat: memoryAction=%r", action)
 
         emitter.flush_evidence()
         return emitter.attach_summary(result)

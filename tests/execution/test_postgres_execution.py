@@ -287,6 +287,9 @@ class ExecutionPostgresTests(unittest.TestCase):
         from utils.process_execution import process_execution
 
         class EvidenceRecorder:
+            def record_progress_policy(self, _policy):
+                return None
+
             def record_final_message(self, _reply):
                 return None
 

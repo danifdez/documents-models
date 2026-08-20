@@ -77,6 +77,8 @@ def generate_reply(
     owner_id: Any,
     execution_id: Any,
     stream_enabled: bool = True,
+    inference_name: str = "direct_response",
+    trace_metadata: Dict[str, Any] | None = None,
 ) -> str:
     """Produce the model's reply, streaming it live to the UI when possible.
 
@@ -94,7 +96,13 @@ def generate_reply(
             "chat: streaming disabled (owner=%s/%s execution=%r stream=%r)",
             owner_segment, owner_id, execution_id, stream_enabled,
         )
-        return llm.chat(messages, max_tokens=max_tokens, allow_thinking=True) or ""
+        return llm.chat(
+            messages,
+            max_tokens=max_tokens,
+            allow_thinking=True,
+            inference_name=inference_name,
+            trace_metadata=trace_metadata,
+        ) or ""
 
     logger.info("chat: streaming (owner=%s/%s execution=%s)", owner_segment, owner_id, execution_id)
     think = _ThinkFilter()
@@ -103,7 +111,12 @@ def generate_reply(
     chunks_sent = 0
     last_flush_ms = time.monotonic() * 1000
 
-    for piece in llm.chat_stream(messages, max_tokens=max_tokens):
+    for piece in llm.chat_stream(
+        messages,
+        max_tokens=max_tokens,
+        inference_name=inference_name,
+        trace_metadata=trace_metadata,
+    ):
         raw_parts.append(piece)
         visible = think.feed(piece)
         if visible:

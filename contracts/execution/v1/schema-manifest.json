@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:34107e825299d24137d2b5add08c42a6dd5b77b4c18b991e19e7ec32c8888d76",
+  "contractSetHash": "sha256:389f8342ad266a65fead0ec8e61e03811f781f4e419bc02f8740bcd4d8e98e1e",
   "schemas": [
     {
       "path": "schemas/artifact-manifest.schema.json",
@@ -17,7 +17,7 @@
     },
     {
       "path": "schemas/execution-event.schema.json",
-      "sha256": "sha256:18096d0617d328657bb7f038deaf0acf445f8576f57e44098673a62ca4765cb8"
+      "sha256": "sha256:d420bf4e2e26fe0283dbb3054dd69e7124261e799318a5096fdd96911ae98fef"
     },
     {
       "path": "schemas/payload/execution-created.schema.json",
@@ -37,7 +37,11 @@
     },
     {
       "path": "schemas/payload/operation-started.schema.json",
-      "sha256": "sha256:900a04dd9169d35edb147cbcc5846176fc1fd30311188cbf488b7c1264c95bd0"
+      "sha256": "sha256:4ef65db4b67ebc24856df0722830237c0d5065811de73c8a245abca8cccec0cd"
+    },
+    {
+      "path": "schemas/payload/progress-reported.schema.json",
+      "sha256": "sha256:f077b1ab541514381c49b5a99ae092c06ab2d2fdf71ba387e62ad8eafa1668ca"
     },
     {
       "path": "schemas/payload/source-observed.schema.json",

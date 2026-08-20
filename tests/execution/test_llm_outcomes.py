@@ -3,14 +3,14 @@ import copy
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lib.execution import activate_emitter, reset_emitter
-from lib.execution.emitter import ExecutionEmitter
 from agents.memory_agent import extract_memory_action
 from services.llm_service import LLMService
 
 from tests.execution.test_emitter import CONTEXT
+from tests.execution.support import RecordingExecutionEmitter
 
 
 class LlmOutcomeTraceTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class LlmOutcomeTraceTest(unittest.TestCase):
 
     def emitter(self):
         with patch.dict(os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False):
-            return ExecutionEmitter(copy.deepcopy(CONTEXT))
+            return RecordingExecutionEmitter(copy.deepcopy(CONTEXT))
 
     def test_forced_finalization_records_its_reason_and_final_text_outcome(self):
         emitter = self.emitter()
@@ -47,7 +47,7 @@ class LlmOutcomeTraceTest(unittest.TestCase):
 
         self.assertEqual(result, "budget answer")
         start, finish = [
-            event for event in emitter.pending_events
+            event for event in emitter.sent_events
             if event["eventType"].startswith("operation.")
         ]
         self.assertEqual(start["payload"]["name"], "forced_finalization")
@@ -79,7 +79,7 @@ class LlmOutcomeTraceTest(unittest.TestCase):
             reset_emitter(token)
 
         finish = next(
-            event for event in emitter.pending_events
+            event for event in emitter.sent_events
             if event["eventType"] == "operation.finished"
         )
         self.assertEqual(finish["payload"]["outcome"], "tool_requests")
@@ -130,7 +130,7 @@ class LlmOutcomeTraceTest(unittest.TestCase):
         self.assertEqual(invalid["content"], "")
         self.assertEqual(result["content"], "repaired answer")
         invalid_start, invalid_finish, repair_start, repair_finish = [
-            event for event in emitter.pending_events
+            event for event in emitter.sent_events
             if event["eventType"].startswith("operation.")
         ]
         self.assertEqual(invalid_finish["payload"]["outcome"], "invalid")
@@ -157,7 +157,7 @@ class LlmOutcomeTraceTest(unittest.TestCase):
             artifact["artifactId"]: json.loads(
                 base64.b64decode(artifact["bodyBase64"])
             )
-            for artifact in emitter.pending_artifacts
+            for artifact in emitter.sent_artifacts
         }
         self.assertEqual(
             artifacts[invalid_result["responseArtifactId"]],
@@ -198,16 +198,34 @@ class LlmOutcomeTraceTest(unittest.TestCase):
 
         self.assertIsNone(result)
         start = next(
-            event for event in emitter.pending_events
+            event for event in emitter.sent_events
             if event["eventType"] == "operation.started"
         )
         finish = next(
-            event for event in emitter.pending_events
+            event for event in emitter.sent_events
             if event["eventType"] == "operation.finished"
         )
         self.assertEqual(start["payload"]["name"], "memory_extraction")
         self.assertEqual(start["payload"]["phase"], "memory_extraction")
         self.assertEqual(finish["payload"]["outcome"], "final_text")
+
+    def test_required_start_evidence_fails_before_model_dispatch(self):
+        emitter = self.emitter()
+        emitter.recording_client.responder = lambda *_args, **_kwargs: None
+        token = activate_emitter(emitter)
+        model_post = Mock()
+        try:
+            with patch("services.llm_service._post", model_post):
+                with self.assertRaisesRegex(RuntimeError, "artifact ingestion"):
+                    self.llm().chat(
+                        [{"role": "user", "content": "question"}],
+                        inference_name="direct_response",
+                        trace_metadata={"phase": "direct_response"},
+                    )
+        finally:
+            reset_emitter(token)
+
+        model_post.assert_not_called()
 
 
 if __name__ == "__main__":

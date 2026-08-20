@@ -7,7 +7,7 @@
   },
   "eventRange": {
     "firstSequence": 1,
-    "lastSequence": 12
+    "lastSequence": 14
   },
   "events": [
     {
@@ -129,12 +129,60 @@
     },
     {
       "schemaVersion": "execution-event/1",
-      "eventId": "doc_evt_004",
+      "eventId": "doc_evt_policy",
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
       "sequence": 4,
       "producerSequence": 1,
+      "eventType": "progress.reported",
+      "producer": {
+        "component": "documents-models",
+        "instanceId": "models-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "worker"
+      },
+      "causedByEventId": "doc_evt_003",
+      "occurredAt": "2026-08-19T10:00:01Z",
+      "ingestedAt": "2026-08-19T10:00:01Z",
+      "payloadSchema": "progress.reported/1",
+      "payload": {
+        "message": "Effective progress policy recorded",
+        "kind": "policy_snapshot",
+        "policy": {
+          "version": "1",
+          "source": "models.task_config",
+          "loopId": "loop_documents_fixture",
+          "agentName": "assistant",
+          "loopKind": "top_level",
+          "maxRounds": 3,
+          "maxOutputRepairs": 1,
+          "forcedFinalizationAvailable": true,
+          "maxTokensPerInference": 1000
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:4f8f57c596679fc53e792b86f715399e0397d708667a12ce5659c3de451d5d02"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_004",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 5,
+      "producerSequence": 2,
       "eventType": "operation.started",
       "producer": {
         "component": "documents-models",
@@ -153,7 +201,13 @@
       "payload": {
         "operationKind": "inference",
         "status": "dispatched",
-        "name": "assistant-tool-decision"
+        "name": "assistant-tool-decision",
+        "loopId": "loop_documents_fixture",
+        "agentName": "assistant",
+        "loopKind": "top_level",
+        "round": 1,
+        "maxRounds": 3,
+        "phase": "agent_loop"
       },
       "artifactRefs": [],
       "security": {
@@ -165,7 +219,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:662cc326b4a9c2eeb232db272777869a2ef2763d620e2512f46578f17e7c9568"
+      "contentHash": "sha256:0602c73b183b2535ea950a581a84f5870c4f47fa4bdca9ab635353d2087b52c0"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -173,8 +227,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 5,
-      "producerSequence": 2,
+      "sequence": 6,
+      "producerSequence": 3,
       "eventType": "operation.finished",
       "producer": {
         "component": "documents-models",
@@ -217,7 +271,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:8e7f846b37b2f4b60cea56f5ac6c0e24ceee4642db6bb0addc2a8f75fe91f7c1"
+      "contentHash": "sha256:212a79f523dea6ffde32c3319a8151b7a5fb9e95a1e2513e5ac2e88b37183094"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -225,8 +279,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 6,
-      "producerSequence": 3,
+      "sequence": 7,
+      "producerSequence": 4,
       "eventType": "operation.started",
       "producer": {
         "component": "documents-models",
@@ -251,7 +305,13 @@
         "inputSummary": {
           "query": "next milestone"
         },
-        "toolCallId": "tool_call_doc_search"
+        "toolCallId": "tool_call_doc_search",
+        "loopId": "loop_documents_fixture",
+        "agentName": "assistant",
+        "loopKind": "top_level",
+        "round": 1,
+        "maxRounds": 3,
+        "phase": "agent_loop"
       },
       "artifactRefs": [],
       "security": {
@@ -263,7 +323,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:6a35a9f6d0416214519d11131a78b573d8aee385320df67e6a568112f852b61e"
+      "contentHash": "sha256:cd6a5a912c648c3e8dbfd15da80365230d4e6eff810ecc2638cb2c08901c98cc"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -271,8 +331,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 7,
-      "producerSequence": 4,
+      "sequence": 8,
+      "producerSequence": 5,
       "eventType": "source.observed",
       "producer": {
         "component": "documents-models",
@@ -312,7 +372,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:fec1d3d11189f43638031d52be03c6b3f2c96d84c3f566663aca07f19c5d7d4e"
+      "contentHash": "sha256:29d3922113e0e4daaacec7f9b9971eed59dbe11efc6a9821fde4e47d07ee36fa"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -320,8 +380,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 8,
-      "producerSequence": 5,
+      "sequence": 9,
+      "producerSequence": 6,
       "eventType": "operation.finished",
       "producer": {
         "component": "documents-models",
@@ -362,7 +422,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:98117f6d9be4b04f8812b95b9205d9a42dbf07b5579d63aecce38ba8fcbd5c88"
+      "contentHash": "sha256:80746823b878a6a631e706b773007238beffc0292fe3173dc4417ab6f008fe98"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -370,8 +430,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 9,
-      "producerSequence": 6,
+      "sequence": 10,
+      "producerSequence": 7,
       "eventType": "operation.started",
       "producer": {
         "component": "documents-models",
@@ -390,7 +450,13 @@
       "payload": {
         "operationKind": "inference",
         "status": "dispatched",
-        "name": "generate_reply"
+        "name": "generate_reply",
+        "loopId": "loop_documents_fixture",
+        "agentName": "assistant",
+        "loopKind": "top_level",
+        "round": 2,
+        "maxRounds": 3,
+        "phase": "agent_loop"
       },
       "artifactRefs": [
         "artifact_doc_tool"
@@ -404,7 +470,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:ae619786b8adedb8abd3a62ac26d78754fb87cad4f629a49402ce305c1e7c739"
+      "contentHash": "sha256:4ac05c19dbbe0c42c78d41fb3221704ebde62557631363223882cfc3095a7fb3"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -412,8 +478,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 10,
-      "producerSequence": 7,
+      "sequence": 11,
+      "producerSequence": 8,
       "eventType": "operation.finished",
       "producer": {
         "component": "documents-models",
@@ -456,7 +522,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:02b2103ba47ec09261ca00c9c14ff1e5a17451f32b854b83a9c85d244d7d03df"
+      "contentHash": "sha256:b598b71d976816cceaab1622ec767b920a987e061ad29073caeef65f983eb7ed"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -464,8 +530,8 @@
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 11,
-      "producerSequence": 8,
+      "sequence": 12,
+      "producerSequence": 9,
       "eventType": "message.recorded",
       "producer": {
         "component": "documents-models",
@@ -498,17 +564,17 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:1e525d068c06f2f0d9ffa682b035c952d55004a649dcb26a2c3dae3505196edc"
+      "contentHash": "sha256:458c12d56fadead19a8b1c9e2aa8c440a5ba80f85ee1b548b72bba12f04b26bd"
     },
     {
       "schemaVersion": "execution-event/1",
-      "eventId": "doc_evt_012",
+      "eventId": "doc_evt_ledger",
       "rootExecutionId": "exec_documents_fixture",
       "executionId": "exec_documents_fixture",
       "turnId": "turn_documents_fixture",
-      "sequence": 12,
+      "sequence": 13,
       "producerSequence": 4,
-      "eventType": "execution.state_changed",
+      "eventType": "progress.reported",
       "producer": {
         "component": "documents-backend",
         "instanceId": "backend-fixture",
@@ -518,6 +584,109 @@
         "type": "system"
       },
       "causedByEventId": "doc_evt_011",
+      "occurredAt": "2026-08-19T10:00:06Z",
+      "ingestedAt": "2026-08-19T10:00:06Z",
+      "payloadSchema": "progress.reported/1",
+      "payload": {
+        "message": "Durable progress ledger recorded",
+        "kind": "ledger_snapshot",
+        "ledger": {
+          "version": "1",
+          "lastSequence": 12,
+          "operations": {
+            "inference": {
+              "started": 2,
+              "finished": 2,
+              "unfinished": 0,
+              "failed": 0
+            },
+            "tool_call": {
+              "started": 1,
+              "finished": 1,
+              "unfinished": 0,
+              "failed": 0
+            }
+          },
+          "inferencePhases": {
+            "agent_loop": {
+              "started": 2,
+              "finished": 2,
+              "unfinished": 0,
+              "failed": 0
+            }
+          },
+          "loops": {
+            "loop_documents_fixture": {
+              "agentName": "assistant",
+              "loopKind": "top_level",
+              "maxRounds": 3,
+              "operations": {
+                "inference": {
+                  "started": 2,
+                  "finished": 2,
+                  "unfinished": 0,
+                  "failed": 0
+                },
+                "tool_call": {
+                  "started": 1,
+                  "finished": 1,
+                  "unfinished": 0,
+                  "failed": 0
+                }
+              },
+              "inferencePhases": {
+                "agent_loop": {
+                  "started": 2,
+                  "finished": 2,
+                  "unfinished": 0,
+                  "failed": 0
+                }
+              }
+            }
+          },
+          "promptTokens": {
+            "known": true,
+            "total": 156,
+            "unknownOperations": 0
+          },
+          "generatedTokens": {
+            "known": true,
+            "total": 23,
+            "unknownOperations": 0
+          },
+          "completeness": "complete"
+        }
+      },
+      "artifactRefs": [],
+      "security": {
+        "dataClassification": "workspace",
+        "purpose": "evaluation",
+        "allowedDestinations": [
+          "documents",
+          "ai-train"
+        ],
+        "redactionApplied": false
+      },
+      "contentHash": "sha256:81a8cbbed664e2bfc2f0d0a9df2dae664dd1174eebc9690f87147ef1844f9666"
+    },
+    {
+      "schemaVersion": "execution-event/1",
+      "eventId": "doc_evt_012",
+      "rootExecutionId": "exec_documents_fixture",
+      "executionId": "exec_documents_fixture",
+      "turnId": "turn_documents_fixture",
+      "sequence": 14,
+      "producerSequence": 5,
+      "eventType": "execution.state_changed",
+      "producer": {
+        "component": "documents-backend",
+        "instanceId": "backend-fixture",
+        "version": "fixture"
+      },
+      "actor": {
+        "type": "system"
+      },
+      "causedByEventId": "doc_evt_ledger",
       "occurredAt": "2026-08-19T10:00:06Z",
       "ingestedAt": "2026-08-19T10:00:06Z",
       "payloadSchema": "execution.state_changed/1",
@@ -543,7 +712,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:232af1b8450349498e28f0805e5aad06d4db42c04c0b34b42f8baae7ba60a1b8"
+      "contentHash": "sha256:d325415e56429dd868ffde30cdd23c06f0eaa622dcb3b4fae097a33030c6d3c2"
     }
   ],
   "artifacts": [
@@ -615,7 +784,7 @@
     "missing": []
   },
   "integrity": {
-    "eventsHash": "sha256:a393baf889d972fead0d847216c45ed878e71de9908f3f87a973c9263f89d503",
+    "eventsHash": "sha256:a5d0fe8c5b9a80b543b87ab8fb628007805f612e9f469de6eabc8d4b61dc5ecf",
     "schemaManifestHash": "sha256:389f8342ad266a65fead0ec8e61e03811f781f4e419bc02f8740bcd4d8e98e1e"
   },
   "purpose": "evaluation",
@@ -624,7 +793,7 @@
     "workspaceId": "fixture-workspace"
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:54d1fd8248d70ce9d8d89cf44a2fce7325efcd9a6f1e762f3b02ef12cc84a586",
+  "manifestHash": "sha256:9ad53380d6f097aef8dc8cf85ffa750ff836a8adb6ac209f5ea3bfb65ac0d372",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

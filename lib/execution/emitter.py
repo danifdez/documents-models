@@ -7,12 +7,12 @@ import os
 import re
 import socket
 import time
-import urllib.error
-import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+from .ingest_client import ExecutionIngestClient
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:34107e825299d24137d2b5add08c42a6dd5b77b4c18b991e19e7ec32c8888d76"
+CONTRACT_SET_HASH = "sha256:389f8342ad266a65fead0ec8e61e03811f781f4e419bc02f8740bcd4d8e98e1e"
 
 
 def _utc_now() -> str:
@@ -102,19 +102,19 @@ class OperationHandle:
 
 
 class ExecutionEmitter:
-    def __init__(self, context: Optional[Dict[str, Any]]):
+    def __init__(
+        self,
+        context: Optional[Dict[str, Any]],
+        *,
+        ingest_client=None,
+    ):
         self.context = context if isinstance(context, dict) else None
         self.token = os.environ.get("EXECUTION_INGEST_TOKEN", "")
-        self.backend_url = os.environ.get("BACKEND_URL", "http://localhost:3000").rstrip("/")
-        try:
-            self.http_timeout = max(
-                0.05,
-                float(os.environ.get("EXECUTION_HTTP_TIMEOUT_SECONDS", "2")),
-            )
-        except ValueError:
-            self.http_timeout = 2
         if self.context and not self.token:
             raise RuntimeError("EXECUTION_INGEST_TOKEN is required")
+        self._ingest_client = ingest_client or ExecutionIngestClient.from_environment(
+            self.token
+        )
         self.producer_sequence = 0
         self.attempted_events = 0
         self.accepted_events = 0
@@ -123,7 +123,6 @@ class ExecutionEmitter:
         self.errors = []
         self.pending_artifacts = []
         self.pending_events = []
-        self.flushed = False
         self.last_event_id = self.context.get("causedByEventId") if self.context else None
         worker_id = os.environ.get(
             "WORKER_ID",
@@ -166,6 +165,21 @@ class ExecutionEmitter:
             input_artifact_id=artifact_id,
             extra_payload=_safe_value(metadata or {}),
         )
+
+    def record_progress_policy(self, policy: Dict[str, Any]) -> Optional[str]:
+        previous_event_id = self.last_event_id
+        event_id = self.emit(
+            "progress.reported",
+            "progress.reported/1",
+            {
+                "message": "Effective progress policy recorded",
+                "kind": "policy_snapshot",
+                "policy": policy,
+            },
+            actor={"type": "worker"},
+        )
+        self.last_event_id = previous_event_id
+        return event_id
 
     def finish_inference(
         self,
@@ -213,6 +227,7 @@ class ExecutionEmitter:
         name: str,
         arguments: Any,
         provider_tool_call_id: Optional[str],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[OperationHandle]:
         tool_call_id = str(uuid.uuid4())
         handle = self.start_operation(
@@ -221,6 +236,7 @@ class ExecutionEmitter:
             extra_payload={
                 "inputSummary": _safe_value(arguments),
                 "providerToolCallId": provider_tool_call_id,
+                **_safe_value(metadata or {}),
             },
             tool_call_id=tool_call_id,
         )
@@ -453,79 +469,38 @@ class ExecutionEmitter:
         return event_id
 
     def flush(self) -> None:
-        if self.flushed or not self.context:
+        if not self.context:
             return
-        self.flushed = True
-        failed_artifacts = set()
-        for start in range(0, len(self.pending_artifacts), 100):
-            batch = self.pending_artifacts[start:start + 100]
+        while self.pending_artifacts:
+            batch = self.pending_artifacts[:100]
             started = time.monotonic()
             response = self._post("artifacts", {"artifacts": batch})
             self.instrumentation_ms += int(round((time.monotonic() - started) * 1000))
             if response is None:
-                failed_artifacts.update(item["artifactId"] for item in batch)
-                self.errors.append(f"artifact_batch:{start // 100 + 1}")
+                self.errors.append("artifact_batch")
+                raise RuntimeError("Required execution artifact ingestion failed")
+            del self.pending_artifacts[:len(batch)]
 
-        events = [self._without_failed_artifacts(event, failed_artifacts)
-                  for event in self.pending_events]
-        for start in range(0, len(events), 200):
-            batch = events[start:start + 200]
+        while self.pending_events:
+            batch = self.pending_events[:200]
             started = time.monotonic()
             response = self._post("events", {"events": batch})
             self.instrumentation_ms += int(round((time.monotonic() - started) * 1000))
             if response is None:
-                self.errors.append(f"event_batch:{start // 200 + 1}")
-                continue
+                self.errors.append("event_batch")
+                raise RuntimeError("Required execution event ingestion failed")
             self.accepted_events += int(response.get("accepted", 0))
             self.accepted_events += int(response.get("duplicates", 0))
-
-    def _without_failed_artifacts(self, event: Dict[str, Any], failed: set) -> Dict[str, Any]:
-        if not failed:
-            return event
-
-        def scrub(value):
-            if isinstance(value, list):
-                return [
-                    scrub(child) for child in value
-                    if not (isinstance(child, str) and child in failed)
-                ]
-            if isinstance(value, dict):
-                return {
-                    key: scrub(child)
-                    for key, child in value.items()
-                    if not (
-                        key.lower().endswith("artifactid")
-                        and isinstance(child, str)
-                        and child in failed
-                    )
-                }
-            return value
-
-        scrubbed = scrub(event)
-        scrubbed["artifactRefs"] = [
-            artifact_id for artifact_id in event.get("artifactRefs", [])
-            if artifact_id not in failed
-        ]
-        return scrubbed
+            del self.pending_events[:len(batch)]
 
     def _post(self, suffix: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not self.context:
             return None
-        root_execution_id = self.context["rootExecutionId"]
-        url = f"{self.backend_url}/executions/internal/{root_execution_id}/{suffix}"
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-Execution-Ingest-Token": self.token,
-            },
+        return self._ingest_client.post(
+            self.context["rootExecutionId"],
+            suffix,
+            body,
         )
-        with urllib.request.urlopen(request, timeout=self.http_timeout) as response:
-            raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
 
 def activate_emitter(emitter: ExecutionEmitter):
     return _ACTIVE_EMITTER.set(emitter)

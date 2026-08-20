@@ -9,7 +9,31 @@
     "status": { "const": "dispatched" },
     "name": { "type": "string", "minLength": 1 },
     "inputSummary": { "type": "object" },
-    "inputArtifactId": { "$ref": "../common.schema.json#/$defs/id" }
+    "inputArtifactId": { "$ref": "../common.schema.json#/$defs/id" },
+    "loopId": { "$ref": "../common.schema.json#/$defs/id" },
+    "agentName": { "type": "string", "minLength": 1 },
+    "loopKind": { "$ref": "progress-reported.schema.json#/$defs/loopKind" },
+    "round": { "type": "integer", "minimum": 1 },
+    "maxRounds": { "type": "integer", "minimum": 1 },
+    "phase": { "type": "string", "minLength": 1 }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "loopId": true },
+        "required": ["loopId"]
+      },
+      "then": {
+        "required": ["agentName", "loopKind", "round", "maxRounds", "phase"],
+        "properties": {
+          "agentName": true,
+          "loopKind": true,
+          "round": true,
+          "maxRounds": true,
+          "phase": { "$ref": "progress-reported.schema.json#/$defs/inferencePhase" }
+        }
+      }
+    }
+  ],
   "additionalProperties": true
 }

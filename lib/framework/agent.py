@@ -107,7 +107,14 @@ class AgentSpec:
         from agents import dispatch_tool
         from agents.loop import run_agent_loop
 
-        return run_agent_loop(self, messages, ctx, self.tools(ctx), dispatch_tool)
+        return run_agent_loop(
+            self,
+            messages,
+            ctx,
+            self.tools(ctx),
+            dispatch_tool,
+            loop_kind="top_level",
+        )
 
     def run_as_tool(self, args_json: str, ctx) -> Dict[str, Any]:
         """Run this agent when it is invoked as a tool by another agent: parse
@@ -152,7 +159,12 @@ class AgentSpec:
         for attempt in range(2):
             try:
                 result = run_agent_loop(
-                    self, messages, ctx, self.tools(ctx), dispatch_tool,
+                    self,
+                    messages,
+                    ctx,
+                    self.tools(ctx),
+                    dispatch_tool,
+                    loop_kind="synchronous_subagent",
                 )
                 if result.kind == "structured_result":
                     return result.value or {}

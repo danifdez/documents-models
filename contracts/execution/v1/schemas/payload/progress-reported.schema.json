@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/progress-reported.schema.json",
+  "title": "progress.reported payload v1",
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["policy_snapshot", "ledger_snapshot"] },
+    "policy": { "$ref": "#/$defs/policy" },
+    "ledger": { "$ref": "#/$defs/ledger" },
+    "visibleEvent": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "policy_snapshot" } }, "required": ["kind"] },
+      "then": { "required": ["policy"], "properties": { "policy": true } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "ledger_snapshot" } }, "required": ["kind"] },
+      "then": { "required": ["ledger"], "properties": { "ledger": true } }
+    }
+  ],
+  "$defs": {
+    "loopKind": { "enum": ["top_level", "synchronous_subagent"] },
+    "inferencePhase": {
+      "enum": [
+        "direct_response",
+        "agent_loop",
+        "output_repair",
+        "forced_finalization",
+        "structured_output_repair",
+        "memory_extraction"
+      ]
+    },
+    "counter": {
+      "type": "object",
+      "required": ["started", "finished", "unfinished", "failed"],
+      "properties": {
+        "started": { "type": "integer", "minimum": 0 },
+        "finished": { "type": "integer", "minimum": 0 },
+        "unfinished": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "tokenUsage": {
+      "type": "object",
+      "required": ["known", "total", "unknownOperations"],
+      "properties": {
+        "known": { "type": "boolean" },
+        "total": { "type": "integer", "minimum": 0 },
+        "unknownOperations": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "loopLedger": {
+      "type": "object",
+      "required": [
+        "agentName",
+        "loopKind",
+        "maxRounds",
+        "operations",
+        "inferencePhases"
+      ],
+      "properties": {
+        "agentName": { "type": "string", "minLength": 1 },
+        "loopKind": { "$ref": "#/$defs/loopKind" },
+        "maxRounds": { "type": "integer", "minimum": 1 },
+        "operations": {
+          "type": "object",
+          "required": ["inference", "tool_call"],
+          "properties": {
+            "inference": { "$ref": "#/$defs/counter" },
+            "tool_call": { "$ref": "#/$defs/counter" }
+          },
+          "additionalProperties": false
+        },
+        "inferencePhases": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/inferencePhase" },
+          "additionalProperties": { "$ref": "#/$defs/counter" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "version",
+        "source",
+        "loopId",
+        "agentName",
+        "loopKind",
+        "maxRounds",
+        "maxOutputRepairs",
+        "forcedFinalizationAvailable",
+        "maxTokensPerInference"
+      ],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "configVersion": { "type": "string", "minLength": 1 },
+        "loopId": { "$ref": "../common.schema.json#/$defs/id" },
+        "agentName": { "type": "string", "minLength": 1 },
+        "loopKind": { "$ref": "#/$defs/loopKind" },
+        "maxRounds": { "type": "integer", "minimum": 1 },
+        "maxOutputRepairs": { "type": "integer", "minimum": 0 },
+        "forcedFinalizationAvailable": { "type": "boolean" },
+        "maxTokensPerInference": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ledger": {
+      "type": "object",
+      "required": [
+        "version",
+        "lastSequence",
+        "operations",
+        "inferencePhases",
+        "loops",
+        "promptTokens",
+        "generatedTokens",
+        "completeness"
+      ],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "lastSequence": { "type": "integer", "minimum": 0 },
+        "operations": {
+          "type": "object",
+          "required": ["inference", "tool_call"],
+          "properties": {
+            "inference": { "$ref": "#/$defs/counter" },
+            "tool_call": { "$ref": "#/$defs/counter" }
+          },
+          "additionalProperties": false
+        },
+        "inferencePhases": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/inferencePhase" },
+          "additionalProperties": { "$ref": "#/$defs/counter" }
+        },
+        "loops": {
+          "type": "object",
+          "propertyNames": { "$ref": "../common.schema.json#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/loopLedger" }
+        },
+        "promptTokens": { "$ref": "#/$defs/tokenUsage" },
+        "generatedTokens": { "$ref": "#/$defs/tokenUsage" },
+        "completeness": { "enum": ["complete", "partial"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

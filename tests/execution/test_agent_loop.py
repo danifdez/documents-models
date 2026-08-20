@@ -144,12 +144,20 @@ class AgentLoopResultTest(unittest.TestCase):
         self.assertEqual(len(llm.tool_calls), 2)
         repair_args, repair_kwargs = llm.tool_calls[1]
         self.assertEqual(repair_kwargs["inference_name"], "output_repair")
-        self.assertEqual(repair_kwargs["trace_metadata"], {
-            "phase": "output_repair",
-            "reason": "empty_model_response",
-            "attempt": 1,
-            "maxAttempts": 1,
-        })
+        self.assertEqual(
+            {
+                key: repair_kwargs["trace_metadata"][key]
+                for key in ("phase", "reason", "attempt", "maxAttempts")
+            },
+            {
+                "phase": "output_repair",
+                "reason": "empty_model_response",
+                "attempt": 1,
+                "maxAttempts": 1,
+            },
+        )
+        self.assertEqual(repair_kwargs["trace_metadata"]["agentName"], "test-agent")
+        self.assertEqual(repair_kwargs["trace_metadata"]["round"], 1)
         self.assertEqual(repair_args[0][-1]["role"], "system")
         self.assertIn("previous model output was empty", repair_args[0][-1]["content"])
 
@@ -197,7 +205,7 @@ class AgentLoopResultTest(unittest.TestCase):
         ])
         self.assertEqual(
             [kwargs.get("inference_name") for _, kwargs in llm.tool_calls],
-            [None, None, "output_repair", None],
+            ["chat_with_tools", "chat_with_tools", "output_repair", "chat_with_tools"],
         )
         repair_prompt = llm.tool_calls[2][0][0][-1]["content"]
         final_messages = llm.tool_calls[3][0][0]
@@ -266,8 +274,16 @@ class AgentLoopResultTest(unittest.TestCase):
         self.assertEqual(len(llm.chat_calls), 1)
         self.assertEqual(llm.chat_calls[0][1]["inference_name"], "forced_finalization")
         self.assertEqual(
-            llm.chat_calls[0][1]["trace_metadata"],
-            {"phase": "forced_finalization", "reason": "step_budget_exhausted"},
+            {
+                key: llm.chat_calls[0][1]["trace_metadata"][key]
+                for key in ("phase", "reason", "round", "maxRounds")
+            },
+            {
+                "phase": "forced_finalization",
+                "reason": "step_budget_exhausted",
+                "round": 1,
+                "maxRounds": 1,
+            },
         )
 
     def test_empty_forced_finalization_is_not_repaired(self):
