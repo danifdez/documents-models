@@ -10,6 +10,7 @@ from lib.execution.emitter import (
     CONTRACT_SET_HASH,
     ExecutionEmitter,
     InferenceBudgetDenied,
+    ToolBudgetDenied,
     _safe_value,
 )
 from lib.execution.ingest_client import ExecutionIngestClient
@@ -180,6 +181,7 @@ class ExecutionEmitterTest(unittest.TestCase):
                     "repair": 0,
                     "closing": 0,
                     "maxTokensPerInference": 64,
+                    "toolCalls": 1,
                 }
             return response
 
@@ -198,6 +200,7 @@ class ExecutionEmitterTest(unittest.TestCase):
         self.assertEqual(progress.max_output_repairs, 0)
         self.assertFalse(progress.forced_finalization_available)
         self.assertEqual(progress.max_tokens_per_inference, 64)
+        self.assertEqual(progress.max_tool_calls, 1)
 
     def test_reserved_inference_records_budget_references_on_its_start(self):
         client = RecordingIngestClient()
@@ -238,7 +241,7 @@ class ExecutionEmitterTest(unittest.TestCase):
                  if request[0] == "artifacts"),
         )
 
-    def test_tool_operation_does_not_inherit_inference_budget_grant(self):
+    def test_tool_operation_reserves_budget_before_its_start(self):
         client = RecordingIngestClient()
         emitter = self.emitter(client)
         progress = ProgressLoopContext.start(
@@ -249,6 +252,7 @@ class ExecutionEmitterTest(unittest.TestCase):
             max_output_repairs=1,
             forced_finalization_available=True,
             max_tokens_per_inference=64,
+            max_tool_calls=1,
         )
 
         emitter.start_tool(
@@ -266,9 +270,15 @@ class ExecutionEmitterTest(unittest.TestCase):
         )
         self.assertEqual(start["payload"]["operationKind"], "tool_call")
         self.assertEqual(start["payload"]["loopId"], progress.loop_id)
-        self.assertNotIn("budgetGrantId", start["payload"])
-        self.assertNotIn("budgetReservationId", start["payload"])
-        self.assertNotIn("budgetBucket", start["payload"])
+        self.assertEqual(start["payload"]["budgetGrantId"], progress.grant_id)
+        self.assertEqual(start["payload"]["budgetBucket"], "tool")
+        reservation_request = next(
+            body for suffix, body in client.requests
+            if suffix == "progress/reservations"
+        )
+        self.assertEqual(reservation_request["operationKind"], "tool_call")
+        self.assertEqual(reservation_request["toolCallId"], start["toolCallId"])
+        self.assertEqual(reservation_request["operationId"], start["operationId"])
 
     def test_denied_budget_stops_before_prompt_artifact_and_operation_start(self):
         fallback = RecordingIngestClient()
@@ -317,6 +327,60 @@ class ExecutionEmitterTest(unittest.TestCase):
             )
 
         self.assertEqual(emitter.pending_artifacts, [])
+        self.assertFalse(any(
+            event["eventType"] == "operation.started"
+            for event in emitter.pending_events
+        ))
+
+    def test_denied_tool_budget_stops_before_operation_start(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                return {
+                    "granted": False,
+                    "eventId": "00000000-0000-4000-8000-000000000020",
+                    "reservation": {
+                        "version": "1",
+                        "reservationId": "00000000-0000-4000-8000-000000000021",
+                        "grantId": body["grantId"],
+                        "operationId": body["operationId"],
+                        "executionAttemptId": body["executionAttemptId"],
+                        "operationKind": "tool_call",
+                        "bucket": "tool",
+                        "toolCallId": body["toolCallId"],
+                        "phase": body["phase"],
+                        "round": body["round"],
+                        "name": body["name"],
+                        "status": "denied",
+                        "reason": "tool_budget_hard_limit_reached",
+                        "decidedAt": "2026-08-20T10:00:02Z",
+                    },
+                }
+            return fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+
+        emitter = self.emitter(RecordingIngestClient(respond))
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=1,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=1,
+        )
+
+        with self.assertRaisesRegex(
+            ToolBudgetDenied, "tool_budget_hard_limit_reached"
+        ):
+            emitter.start_tool(
+                "folder_read",
+                {"path": "fixture.txt"},
+                "provider-call-1",
+                progress.trace(round=1, phase="agent_loop"),
+            )
+
         self.assertFalse(any(
             event["eventType"] == "operation.started"
             for event in emitter.pending_events

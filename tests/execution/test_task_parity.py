@@ -106,6 +106,45 @@ class AssistantChatExecutionTest(unittest.TestCase):
         agent.run.assert_called_once()
         generate.assert_not_called()
 
+    def test_tool_budget_partial_preserves_terminal_metadata(self):
+        payload = {
+            "ownerId": 1,
+            "assistantSystem": True,
+            "conversation": [{"role": "user", "content": "hello"}],
+            "execution": copy.deepcopy(CONTEXT),
+        }
+        agent = Mock()
+        agent.tools.return_value = [{"type": "function"}]
+        agent.run.return_value = AgentRunResult.partial_text(
+            "partial reply", "tool_budget_exhausted"
+        )
+
+        with patch.dict(os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False), patch(
+            "tasks.assistant_chat.assistant_chat.get_task_config",
+            return_value={"max_tokens": 32, "stream": False},
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_params", return_value={}
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_service", return_value=object()
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.build_chat_messages",
+            return_value=[{"role": "user", "content": "hello"}],
+        ), patch(
+            "tasks.assistant_chat.assistant_chat._memory_for_payload", return_value=[]
+        ), patch(
+            "tasks.assistant_chat.assistant_chat._extract_memory_action", return_value=None
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.assistant", agent
+        ), patch(
+            "lib.execution.emitter.ExecutionEmitter._post",
+            side_effect=budget_aware_post,
+        ):
+            result = assistant_chat(payload)
+
+        self.assertEqual(result["reply"], "partial reply")
+        self.assertEqual(result["completionKind"], "partial")
+        self.assertEqual(result["completionReason"], "tool_budget_exhausted")
+
     def test_invalid_loop_result_does_not_trigger_hidden_regeneration(self):
         payload = {
             "ownerId": 1,
@@ -332,6 +371,20 @@ class AgentChatExecutionTest(unittest.TestCase):
 
         self.assertEqual(result["error"], "budget_reservation_consumed")
         self.assertEqual(result["completionReason"], "budget_exhausted")
+        agent.run.assert_called_once()
+        generate.assert_not_called()
+
+    def test_agent_tool_budget_partial_preserves_terminal_metadata(self):
+        result, agent, generate = self.run_handler(
+            [{"type": "function"}],
+            AgentRunResult.partial_text(
+                "partial reply", "tool_budget_exhausted"
+            ),
+        )
+
+        self.assertEqual(result["reply"], "partial reply")
+        self.assertEqual(result["completionKind"], "partial")
+        self.assertEqual(result["completionReason"], "tool_budget_exhausted")
         agent.run.assert_called_once()
         generate.assert_not_called()
 

@@ -88,6 +88,25 @@
     {
       "if": { "properties": { "payloadSchema": { "const": "progress.reported/1" } }, "required": ["payloadSchema"] },
       "then": { "properties": { "eventType": { "const": "progress.reported" }, "payload": { "$ref": "payload/progress-reported.schema.json" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "payloadSchema": { "const": "operation.started/1" },
+          "payload": {
+            "type": "object",
+            "properties": { "budgetBucket": { "const": "tool" } },
+            "required": ["budgetBucket"]
+          }
+        },
+        "required": ["payloadSchema", "payload"]
+      },
+      "then": {
+        "required": ["toolCallId"],
+        "properties": {
+          "toolCallId": { "$ref": "common.schema.json#/$defs/id" }
+        }
+      }
     }
   ],
   "additionalProperties": true

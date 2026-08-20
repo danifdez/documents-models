@@ -106,11 +106,14 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             outcome = assistant.run(messages, ctx)
             if outcome.kind == "invalid":
                 reason = outcome.reason or "invalid_agent_result"
-                if reason.startswith("budget_"):
+                if reason.startswith(("budget_", "tool_budget_")):
                     emitter.flush_evidence()
                     return emitter.attach_summary({
                         "error": reason,
-                        "completionReason": "budget_exhausted",
+                        "completionReason": (
+                            reason if reason.startswith("tool_budget_")
+                            else "budget_exhausted"
+                        ),
                     })
             raw = outcome.content if outcome.kind == "final_text" else ""
         else:
@@ -123,6 +126,7 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                 max_output_repairs=0,
                 forced_finalization_available=False,
                 max_tokens_per_inference=max_tokens,
+                max_tool_calls=0,
             )
             raw = generate_reply(
                 llm, messages, max_tokens,
@@ -160,6 +164,7 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                     max_output_repairs=0,
                     forced_finalization_available=False,
                     max_tokens_per_inference=memory_max_tokens,
+                    max_tool_calls=0,
                 )
                 memory_trace = memory_progress.trace(
                     round=1,

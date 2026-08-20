@@ -16,7 +16,11 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lib.framework.agent import AgentRunResult, AgentSpec
-from lib.execution import InferenceBudgetDenied, ProgressLoopContext
+from lib.execution import (
+    InferenceBudgetDenied,
+    ProgressLoopContext,
+    ToolBudgetDenied,
+)
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.text import strip_thinking as _strip_thinking
 from lib.backend.http import post_tool_event
@@ -166,6 +170,7 @@ def run_agent_loop(
     round_max_tokens = int(
         cfg.get("tool_max_tokens") or cfg.get("max_tokens") or spec.fallback_max_tokens
     )
+    max_tool_calls = int(cfg.get("max_tool_calls", 6))
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
@@ -181,6 +186,7 @@ def run_agent_loop(
         max_output_repairs=2 if spec.output_schema is not None else 1,
         forced_finalization_available=spec.output_schema is None,
         max_tokens_per_inference=round_max_tokens,
+        max_tool_calls=max_tool_calls,
     )
     max_rounds = progress.max_rounds
     round_max_tokens = progress.max_tokens_per_inference
@@ -190,6 +196,9 @@ def run_agent_loop(
         sorted(spec.tool_names), max_rounds,
     )
 
+    closing_reason = "step_budget_exhausted"
+    closing_round = max_rounds
+    tool_budget_exhausted = False
     for round_idx in range(max_rounds):
         round_trace = progress.trace(
             round=round_idx + 1,
@@ -275,7 +284,7 @@ def run_agent_loop(
             "content": msg.get("content") or None,
             "tool_calls": tool_calls,
         })
-        for call in tool_calls:
+        for call_index, call in enumerate(tool_calls):
             fn = call.get("function") or {}
             name = str(fn.get("name") or "")
             args_json = fn.get("arguments") or "{}"
@@ -287,15 +296,32 @@ def run_agent_loop(
                 args_label = ""
             tool_trace = None
             if execution:
-                tool_trace = execution.start_tool(
-                    name,
-                    args_obj,
-                    str(call.get("id") or "") or None,
-                    progress.trace(
-                        round=round_idx + 1,
-                        phase=operation_phase,
-                    ),
-                )
+                try:
+                    tool_trace = execution.start_tool(
+                        name,
+                        args_obj,
+                        str(call.get("id") or "") or None,
+                        progress.trace(
+                            round=round_idx + 1,
+                            phase=operation_phase,
+                        ),
+                    )
+                except ToolBudgetDenied:
+                    for skipped_call in tool_calls[call_index:]:
+                        skipped_fn = skipped_call.get("function") or {}
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": skipped_call.get("id") or "",
+                            "name": str(skipped_fn.get("name") or ""),
+                            "content": json.dumps({
+                                "error": "tool_budget_hard_limit_reached",
+                                "skipped": True,
+                            }),
+                        })
+                    tool_budget_exhausted = True
+                    closing_reason = "tool_budget_exhausted"
+                    closing_round = round_idx + 1
+                    break
                 execution.flush_evidence()
             if can_emit:
                 post_tool_event(
@@ -323,6 +349,7 @@ def run_agent_loop(
                     source_event_id,
                     error=str(result.get("error")) if isinstance(result, dict) and result.get("error") else None,
                 )
+                execution.flush_evidence()
             summary, entity = _summarize(name, result)
             logger.info("agent[%s]: tool=%s → %s", spec.name, name, summary)
             messages.append({
@@ -332,8 +359,6 @@ def run_agent_loop(
                 "content": json.dumps(result, ensure_ascii=False),
             })
             pending = isinstance(result, dict) and result.get("pendingConfirmation")
-            if pending and execution and tool_trace:
-                execution.flush_evidence()
             if can_emit and not pending:
                 post_tool_event(
                     ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
@@ -350,9 +375,10 @@ def run_agent_loop(
                         "card has been shown to the user."
                     ),
                 })
+        if tool_budget_exhausted:
+            break
 
-    # Out of rounds. A schema agent still owes a structured object.
-    logger.info("agent[%s]: rounds exhausted", spec.name)
+    logger.info("agent[%s]: closing after %s", spec.name, closing_reason)
     if spec.output_schema is not None:
         return AgentRunResult.structured_result(
             _coerce_output(
@@ -362,13 +388,16 @@ def run_agent_loop(
                 "",
                 round_max_tokens,
                 progress.trace(
-                    round=max_rounds,
+                    round=closing_round,
                     phase="structured_output_repair",
                 ),
             )
         )
     if not progress.forced_finalization_available:
-        return AgentRunResult.invalid("budget_hard_limit_reached")
+        return AgentRunResult.invalid(
+            "tool_budget_exhausted_without_closing"
+            if tool_budget_exhausted else "budget_hard_limit_reached"
+        )
     try:
         forced = llm.chat(
             messages,
@@ -376,14 +405,27 @@ def run_agent_loop(
             allow_thinking=True,
             inference_name="forced_finalization",
             trace_metadata=progress.trace(
-                round=max_rounds,
+                round=closing_round,
                 phase="forced_finalization",
-                extra={"reason": "step_budget_exhausted"},
+                extra={"reason": closing_reason},
             ),
         ) or ""
     except InferenceBudgetDenied as error:
+        if tool_budget_exhausted and error.reason in {
+            "budget_hard_limit_reached",
+            "budget_reservation_consumed",
+        }:
+            return AgentRunResult.invalid(
+                "tool_budget_exhausted_without_closing"
+            )
         return AgentRunResult.invalid(error.reason)
     content = _strip_thinking(forced)
     if content:
-        return AgentRunResult.partial_text(content, "budget_exhausted")
-    return AgentRunResult.invalid("budget_empty_forced_finalization")
+        return AgentRunResult.partial_text(
+            content,
+            "tool_budget_exhausted" if tool_budget_exhausted else "budget_exhausted",
+        )
+    return AgentRunResult.invalid(
+        "tool_budget_empty_forced_finalization"
+        if tool_budget_exhausted else "budget_empty_forced_finalization"
+    )

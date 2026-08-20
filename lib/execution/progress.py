@@ -12,6 +12,7 @@ class ProgressLoopContext:
     max_output_repairs: int
     forced_finalization_available: bool
     max_tokens_per_inference: int
+    max_tool_calls: int
     grant_id: Optional[str] = None
 
     @classmethod
@@ -25,6 +26,7 @@ class ProgressLoopContext:
         max_output_repairs: int,
         forced_finalization_available: bool,
         max_tokens_per_inference: int,
+        max_tool_calls: int = 0,
     ) -> "ProgressLoopContext":
         loop_id = (
             str(emitter.context.get("executionId"))
@@ -36,6 +38,7 @@ class ProgressLoopContext:
             "repair": max_output_repairs,
             "closing": 1 if forced_finalization_available else 0,
             "maxTokensPerInference": max_tokens_per_inference,
+            "toolCalls": max_tool_calls,
         }
         grant = None
         if (
@@ -62,6 +65,7 @@ class ProgressLoopContext:
             max_output_repairs=int(effective["repair"]),
             forced_finalization_available=int(effective["closing"]) > 0,
             max_tokens_per_inference=int(effective["maxTokensPerInference"]),
+            max_tool_calls=int(effective.get("toolCalls", max_tool_calls)),
             grant_id=(grant or {}).get("grantId"),
         )
         if emitter:
@@ -84,6 +88,7 @@ class ProgressLoopContext:
             "maxOutputRepairs": self.max_output_repairs,
             "forcedFinalizationAvailable": self.forced_finalization_available,
             "maxTokensPerInference": self.max_tokens_per_inference,
+            "maxToolCalls": self.max_tool_calls,
         }
         if self.grant_id:
             value["grantId"] = self.grant_id

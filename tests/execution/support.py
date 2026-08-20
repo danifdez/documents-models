@@ -51,7 +51,12 @@ class RecordingIngestClient:
                     "grantId": copied["grantId"],
                     "operationId": copied["operationId"],
                     "executionAttemptId": copied["executionAttemptId"],
+                    "operationKind": copied["operationKind"],
                     "bucket": copied["bucket"],
+                    **(
+                        {"toolCallId": copied["toolCallId"]}
+                        if copied.get("toolCallId") else {}
+                    ),
                     "phase": copied["phase"],
                     "round": copied["round"],
                     "name": copied["name"],

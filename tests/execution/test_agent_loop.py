@@ -1,9 +1,10 @@
 import copy
+import json
 import unittest
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
-from lib.execution import InferenceBudgetDenied
+from lib.execution import InferenceBudgetDenied, ToolBudgetDenied
 from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.framework.tool import ToolContext
 
@@ -132,6 +133,208 @@ class AgentLoopResultTest(unittest.TestCase):
             ("first", '{"index":1}'),
             ("second", '{"index":2}'),
         ])
+
+    def test_persists_each_tool_finish_before_starting_the_next_tool(self):
+        class OrderedExecution:
+            context = None
+
+            def __init__(self):
+                self.calls = []
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, name, *_args, **_kwargs):
+                self.calls.append(("start", name))
+                return name
+
+            def flush_evidence(self):
+                self.calls.append(("flush", None))
+
+            def observe_tool_result(self, *_args):
+                return None
+
+            def finish_tool(self, handle, *_args, **_kwargs):
+                self.calls.append(("finish", handle))
+
+        llm = FakeLlm([
+            {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "function": {"name": "first", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call-2",
+                        "function": {"name": "second", "arguments": "{}"},
+                    },
+                ],
+            },
+            {"content": "done", "tool_calls": []},
+        ])
+        execution = OrderedExecution()
+        dispatched = []
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"first", "second"}),
+        )
+        with patch(
+            "agents.loop.get_task_config", return_value={"max_rounds": 2}
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                spec,
+                [],
+                ToolContext(execution=execution),
+                [],
+                lambda name, *_args: dispatched.append(name) or {"value": name},
+            )
+
+        self.assertEqual(result, AgentRunResult.final_text("done"))
+        self.assertEqual(dispatched, ["first", "second"])
+        first_finish = execution.calls.index(("finish", "first"))
+        second_start = execution.calls.index(("start", "second"))
+        self.assertEqual(execution.calls[first_finish + 1], ("flush", None))
+        self.assertLess(first_finish, second_start)
+
+    def test_tool_budget_denial_skips_remaining_calls_and_uses_closing(self):
+        class BudgetedExecution:
+            context = None
+
+            def __init__(self):
+                self.starts = 0
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, *_args, **_kwargs):
+                self.starts += 1
+                if self.starts == 2:
+                    raise ToolBudgetDenied("tool_budget_hard_limit_reached")
+                return object()
+
+            def flush_evidence(self):
+                pass
+
+            def observe_tool_result(self, *_args):
+                return None
+
+            def finish_tool(self, *_args, **_kwargs):
+                pass
+
+        llm = FakeLlm([{
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {"name": "first", "arguments": '{}'},
+                },
+                {
+                    "id": "call-2",
+                    "function": {"name": "second", "arguments": '{}'},
+                },
+                {
+                    "id": "call-3",
+                    "function": {"name": "third", "arguments": '{}'},
+                },
+            ],
+        }], forced_reply="partial answer")
+        dispatched = []
+        execution = BudgetedExecution()
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"first", "second", "third"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 3, "max_tokens": 32},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=execution),
+                [],
+                lambda name, *_args: dispatched.append(name) or {"value": name},
+            )
+
+        self.assertEqual(
+            result,
+            AgentRunResult.partial_text(
+                "partial answer", "tool_budget_exhausted"
+            ),
+        )
+        self.assertEqual(dispatched, ["first"])
+        self.assertEqual(execution.starts, 2)
+        self.assertEqual(len(llm.tool_calls), 1)
+        self.assertEqual(len(llm.chat_calls), 1)
+        closing_messages = llm.chat_calls[0][0][0]
+        technical_results = [
+            json.loads(message["content"])
+            for message in closing_messages
+            if message.get("role") == "tool" and message.get("name") != "first"
+        ]
+        self.assertEqual(technical_results, [
+            {"error": "tool_budget_hard_limit_reached", "skipped": True},
+            {"error": "tool_budget_hard_limit_reached", "skipped": True},
+        ])
+        self.assertEqual(
+            llm.chat_calls[0][1]["trace_metadata"]["reason"],
+            "tool_budget_exhausted",
+        )
+
+    def test_tool_budget_denial_without_closing_slot_keeps_tool_reason(self):
+        class DeniedToolExecution:
+            context = None
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, *_args, **_kwargs):
+                raise ToolBudgetDenied("tool_budget_hard_limit_reached")
+
+        class DeniedClosingLlm(FakeLlm):
+            def chat(self, *_args, **_kwargs):
+                raise InferenceBudgetDenied("budget_hard_limit_reached")
+
+        llm = DeniedClosingLlm([{
+            "content": "",
+            "tool_calls": [{
+                "id": "call-1",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }])
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"read_fixture"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 1, "max_tokens": 32},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=DeniedToolExecution()),
+                [],
+                lambda *_args: self.fail("denied tool was dispatched"),
+            )
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("tool_budget_exhausted_without_closing"),
+        )
 
     def test_repairs_one_empty_output_and_returns_final_text(self):
         llm = FakeLlm([

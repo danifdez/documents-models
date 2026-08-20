@@ -65,7 +65,8 @@
         "memory_extraction"
       ]
     },
-    "budgetBucket": { "enum": ["normal", "repair", "closing"] },
+    "toolPhase": { "enum": ["agent_loop", "output_repair"] },
+    "budgetBucket": { "enum": ["normal", "repair", "closing", "tool"] },
     "budgetPolicy": {
       "type": "object",
       "required": ["normal", "repair", "closing", "maxTokensPerInference"],
@@ -73,7 +74,8 @@
         "normal": { "type": "integer", "minimum": 0 },
         "repair": { "type": "integer", "minimum": 0 },
         "closing": { "type": "integer", "minimum": 0, "maximum": 1 },
-        "maxTokensPerInference": { "type": "integer", "minimum": 1 }
+        "maxTokensPerInference": { "type": "integer", "minimum": 1 },
+        "toolCalls": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -133,7 +135,9 @@
         "grantId": { "$ref": "../common.schema.json#/$defs/id" },
         "operationId": { "$ref": "../common.schema.json#/$defs/id" },
         "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationKind": { "enum": ["inference", "tool_call"] },
         "bucket": { "$ref": "#/$defs/budgetBucket" },
+        "toolCallId": { "$ref": "../common.schema.json#/$defs/id" },
         "phase": { "$ref": "#/$defs/inferencePhase" },
         "round": { "type": "integer", "minimum": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -141,6 +145,48 @@
         "reason": { "type": "string", "minLength": 1 },
         "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "bucket": { "const": "tool" } },
+            "required": ["bucket"]
+          },
+          "then": {
+            "required": ["operationKind", "toolCallId"],
+            "properties": {
+              "operationKind": { "const": "tool_call" },
+              "phase": { "$ref": "#/$defs/toolPhase" },
+              "toolCallId": true
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "operationKind": { "const": "inference" } },
+            "required": ["operationKind"]
+          },
+          "then": {
+            "properties": {
+              "bucket": { "enum": ["normal", "repair", "closing"] },
+              "toolCallId": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "operationKind": { "const": "tool_call" } },
+            "required": ["operationKind"]
+          },
+          "then": {
+            "required": ["toolCallId"],
+            "properties": {
+              "bucket": { "const": "tool" },
+              "phase": { "$ref": "#/$defs/toolPhase" },
+              "toolCallId": true
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "budgetUsage": {
@@ -154,7 +200,7 @@
       },
       "additionalProperties": false
     },
-    "inferenceBudget": {
+    "operationBudget": {
       "type": "object",
       "required": ["grants", "reservations"],
       "properties": {
@@ -246,6 +292,7 @@
         "maxOutputRepairs": { "type": "integer", "minimum": 0 },
         "forcedFinalizationAvailable": { "type": "boolean" },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
+        "maxToolCalls": { "type": "integer", "minimum": 0 },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false
@@ -287,8 +334,18 @@
         "promptTokens": { "$ref": "#/$defs/tokenUsage" },
         "generatedTokens": { "$ref": "#/$defs/tokenUsage" },
         "completeness": { "enum": ["complete", "partial"] },
-        "inferenceBudget": { "$ref": "#/$defs/inferenceBudget" }
+        "inferenceBudget": { "$ref": "#/$defs/operationBudget" },
+        "operationBudget": { "$ref": "#/$defs/operationBudget" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "inferenceBudget": true },
+            "required": ["inferenceBudget"]
+          },
+          "then": { "properties": { "operationBudget": false } }
+        }
+      ],
       "additionalProperties": false
     }
   },

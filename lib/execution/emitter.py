@@ -41,10 +41,16 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:44e59df419ba71389ea7edb47bb31d48f45c73be8166ae2b9c7809d009f3220c"
+CONTRACT_SET_HASH = "sha256:13dbef9a0c6bbe1f902f796c2c31572819157e3f1a32aa32f491d10dab5bd6e2"
 
 
 class InferenceBudgetDenied(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class ToolBudgetDenied(RuntimeError):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
@@ -172,10 +178,11 @@ class ExecutionEmitter:
             and trace.get("loopKind") == "top_level"
             and trace.get("budgetGrantId")
         ):
-            reservation = self.reserve_inference_budget(
+            reservation = self.reserve_operation_budget(
                 grant_id=str(trace["budgetGrantId"]),
                 loop_id=str(trace["loopId"]),
                 operation_id=operation_id,
+                operation_kind="inference",
                 bucket=self._budget_bucket(str(trace.get("phase") or "")),
                 phase=str(trace.get("phase") or ""),
                 round=int(trace.get("round") or 1),
@@ -207,16 +214,18 @@ class ExecutionEmitter:
         self.last_event_id = str(event_id)
         return grant
 
-    def reserve_inference_budget(
+    def reserve_operation_budget(
         self,
         *,
         grant_id: str,
         loop_id: str,
         operation_id: str,
+        operation_kind: str,
         bucket: str,
         phase: str,
         round: int,
         name: str,
+        tool_call_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not self.context or not self.context.get("attemptId"):
             raise RuntimeError("Execution attempt is required for budget reservation")
@@ -227,11 +236,13 @@ class ExecutionEmitter:
                 "loopId": loop_id,
                 "grantId": grant_id,
                 "operationId": operation_id,
+                "operationKind": operation_kind,
                 "bucket": bucket,
                 "phase": phase,
                 "round": round,
                 "name": name,
                 "executionAttemptId": self.context["attemptId"],
+                **({"toolCallId": tool_call_id} if tool_call_id else {}),
             })
         except Exception as error:
             raise InferenceBudgetDenied("budget_reservation_failed") from error
@@ -241,9 +252,10 @@ class ExecutionEmitter:
             raise RuntimeError("Required inference budget reservation failed")
         self.last_event_id = str(event_id)
         if not response.get("granted"):
-            raise InferenceBudgetDenied(
-                str(reservation.get("reason") or "budget_reservation_failed")
-            )
+            reason = str(reservation.get("reason") or "budget_reservation_failed")
+            if operation_kind == "tool_call":
+                raise ToolBudgetDenied(reason)
+            raise InferenceBudgetDenied(reason)
         return reservation
 
     @staticmethod
@@ -318,8 +330,32 @@ class ExecutionEmitter:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[OperationHandle]:
         tool_call_id = str(uuid.uuid4())
+        operation_id = str(uuid.uuid4())
+        attempt_id = str(uuid.uuid4())
         trace = _safe_value(metadata or {})
-        trace.pop("budgetGrantId", None)
+        budget_payload: Dict[str, Any] = {}
+        if (
+            self.context
+            and trace.get("loopKind") == "top_level"
+            and trace.get("budgetGrantId")
+        ):
+            reservation = self.reserve_operation_budget(
+                grant_id=str(trace["budgetGrantId"]),
+                loop_id=str(trace["loopId"]),
+                operation_id=operation_id,
+                operation_kind="tool_call",
+                bucket="tool",
+                phase=str(trace.get("phase") or ""),
+                round=int(trace.get("round") or 1),
+                name=name,
+                tool_call_id=tool_call_id,
+            )
+            budget_payload = {
+                "budgetGrantId": reservation["grantId"],
+                "budgetReservationId": reservation["reservationId"],
+                "budgetBucket": reservation["bucket"],
+                "executionAttemptId": reservation["executionAttemptId"],
+            }
         handle = self.start_operation(
             "tool_call",
             name,
@@ -327,8 +363,11 @@ class ExecutionEmitter:
                 "inputSummary": _safe_value(arguments),
                 "providerToolCallId": provider_tool_call_id,
                 **trace,
+                **budget_payload,
             },
             tool_call_id=tool_call_id,
+            operation_id=operation_id,
+            attempt_id=attempt_id,
         )
         return handle
 

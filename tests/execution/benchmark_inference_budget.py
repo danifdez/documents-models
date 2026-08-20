@@ -128,9 +128,9 @@ def create_emitter(backend_url, assistant_id, budget_protocol):
 
 
 def budget_usage(progress):
-    grants = ((progress.get("ledger") or {}).get("inferenceBudget") or {}).get(
-        "grants", {}
-    )
+    ledger = progress.get("ledger") or {}
+    budget = ledger.get("operationBudget") or ledger.get("inferenceBudget") or {}
+    grants = budget.get("grants", {})
     if len(grants) != 1:
         return None
     grant = next(iter(grants.values()))

@@ -47,7 +47,8 @@
     "n_ctx": 8192,
     "n_gpu_layers": -1,
     "max_tokens": 1000,
-    "history_turns": 16
+    "history_turns": 16,
+    "max_tool_calls": 6
   },
   "agent-chat": {
     "enabled": true,
@@ -57,7 +58,8 @@
     "n_ctx": 8192,
     "n_gpu_layers": -1,
     "max_tokens": 1000,
-    "history_turns": 16
+    "history_turns": 16,
+    "max_tool_calls": 6
   },
   "workspace-research-agent": {
     "enabled": true,

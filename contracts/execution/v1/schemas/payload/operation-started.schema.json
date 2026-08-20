@@ -65,6 +65,29 @@
           "phase": true
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "budgetBucket": { "const": "tool" } },
+      "required": ["budgetBucket"]
+      },
+      "then": {
+        "properties": {
+          "operationKind": { "const": "tool_call" },
+          "phase": {
+            "$ref": "progress-reported.schema.json#/$defs/toolPhase"
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": { "budgetBucket": true },
+          "required": ["budgetBucket"]
+        },
+        "then": {
+          "properties": { "operationKind": { "const": "inference" } }
+        }
+      }
     }
   ],
   "additionalProperties": true
