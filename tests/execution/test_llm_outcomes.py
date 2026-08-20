@@ -5,7 +5,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
-from lib.execution import activate_emitter, reset_emitter
+from lib.execution import InferenceBudgetDenied, activate_emitter, reset_emitter
 from agents.memory_agent import extract_memory_action
 from services.llm_service import LLMService
 
@@ -221,6 +221,59 @@ class LlmOutcomeTraceTest(unittest.TestCase):
                         [{"role": "user", "content": "question"}],
                         inference_name="direct_response",
                         trace_metadata={"phase": "direct_response"},
+                    )
+        finally:
+            reset_emitter(token)
+
+        model_post.assert_not_called()
+
+    def test_budget_denial_does_not_dispatch_to_model_transport(self):
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                return {
+                    "granted": False,
+                    "eventId": "00000000-0000-4000-8000-000000000020",
+                    "reservation": {
+                        "version": "1",
+                        "reservationId": "00000000-0000-4000-8000-000000000021",
+                        "grantId": body["grantId"],
+                        "operationId": body["operationId"],
+                        "executionAttemptId": body["executionAttemptId"],
+                        "bucket": body["bucket"],
+                        "phase": body["phase"],
+                        "round": body["round"],
+                        "name": body["name"],
+                        "status": "denied",
+                        "reason": "budget_hard_limit_reached",
+                        "decidedAt": "2026-08-20T10:00:02Z",
+                    },
+                }
+            items = body.get("events", body.get("artifacts", []))
+            return {"accepted": len(items), "duplicates": 0}
+
+        with patch.dict(
+            os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False
+        ):
+            emitter = RecordingExecutionEmitter(copy.deepcopy(CONTEXT), respond)
+        token = activate_emitter(emitter)
+        model_post = Mock()
+        try:
+            with patch("services.llm_service._post", model_post):
+                with self.assertRaisesRegex(
+                    InferenceBudgetDenied, "budget_hard_limit_reached"
+                ):
+                    self.llm().chat(
+                        [{"role": "user", "content": "question"}],
+                        inference_name="direct_response",
+                        trace_metadata={
+                            "loopId": CONTEXT["executionId"],
+                            "loopKind": "top_level",
+                            "budgetGrantId": (
+                                "00000000-0000-4000-8000-000000000011"
+                            ),
+                            "phase": "direct_response",
+                            "round": 1,
+                        },
                     )
         finally:
             reset_emitter(token)

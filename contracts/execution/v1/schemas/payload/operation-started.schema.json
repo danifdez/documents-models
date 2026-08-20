@@ -15,7 +15,13 @@
     "loopKind": { "$ref": "progress-reported.schema.json#/$defs/loopKind" },
     "round": { "type": "integer", "minimum": 1 },
     "maxRounds": { "type": "integer", "minimum": 1 },
-    "phase": { "type": "string", "minLength": 1 }
+    "phase": { "type": "string", "minLength": 1 },
+    "budgetGrantId": { "$ref": "../common.schema.json#/$defs/id" },
+    "budgetReservationId": { "$ref": "../common.schema.json#/$defs/id" },
+    "budgetBucket": {
+      "$ref": "progress-reported.schema.json#/$defs/budgetBucket"
+    },
+    "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" }
   },
   "allOf": [
     {
@@ -30,7 +36,33 @@
           "loopKind": true,
           "round": true,
           "maxRounds": true,
-          "phase": { "$ref": "progress-reported.schema.json#/$defs/inferencePhase" }
+          "phase": {
+            "$ref": "progress-reported.schema.json#/$defs/inferencePhase"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "budgetGrantId": true },
+        "required": ["budgetGrantId"]
+      },
+      "then": {
+        "required": [
+          "budgetReservationId",
+          "budgetBucket",
+          "executionAttemptId",
+          "loopId",
+          "loopKind",
+          "phase"
+        ],
+        "properties": {
+          "budgetReservationId": true,
+          "budgetBucket": true,
+          "executionAttemptId": true,
+          "loopId": true,
+          "loopKind": true,
+          "phase": true
         }
       }
     }

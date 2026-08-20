@@ -34,10 +34,21 @@ class AgentRunResult:
     content: Optional[str] = None
     value: Optional[Dict[str, Any]] = None
     reason: Optional[str] = None
+    completion_kind: Optional[Literal["full", "partial"]] = None
+    completion_reason: Optional[str] = None
 
     @classmethod
     def final_text(cls, content: str) -> "AgentRunResult":
         return cls(kind="final_text", content=content)
+
+    @classmethod
+    def partial_text(cls, content: str, reason: str) -> "AgentRunResult":
+        return cls(
+            kind="final_text",
+            content=content,
+            completion_kind="partial",
+            completion_reason=reason,
+        )
 
     @classmethod
     def structured_result(cls, value: Dict[str, Any]) -> "AgentRunResult":

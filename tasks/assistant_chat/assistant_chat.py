@@ -50,6 +50,7 @@ from agents.memory_agent import (
 )
 from lib.execution import (
     ExecutionEmitter,
+    InferenceBudgetDenied,
     ProgressLoopContext,
     activate_emitter,
     reset_emitter,
@@ -103,6 +104,14 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         if effective_tools:
             logger.info("assistant-chat: entering tool phase")
             outcome = assistant.run(messages, ctx)
+            if outcome.kind == "invalid":
+                reason = outcome.reason or "invalid_agent_result"
+                if reason.startswith("budget_"):
+                    emitter.flush_evidence()
+                    return emitter.attach_summary({
+                        "error": reason,
+                        "completionReason": "budget_exhausted",
+                    })
             raw = outcome.content if outcome.kind == "final_text" else ""
         else:
             logger.info("assistant-chat: direct response without effective tools")
@@ -133,6 +142,9 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             return emitter.attach_summary({"error": error})
 
         result: Dict[str, Any] = {"reply": reply}
+        if effective_tools and outcome.completion_kind:
+            result["completionKind"] = outcome.completion_kind
+            result["completionReason"] = outcome.completion_reason
         user_message = ""
         memory_trace = None
 
@@ -171,6 +183,12 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         emitter.flush_evidence()
         return emitter.attach_summary(result)
+    except InferenceBudgetDenied as e:
+        emitter.flush_evidence()
+        return emitter.attach_summary({
+            "error": e.reason,
+            "completionReason": "budget_exhausted",
+        })
     except Exception as e:  # noqa: BLE001
         logger.exception("assistant-chat handler failed")
         error = f"Assistant failure: {e}"

@@ -6,19 +6,51 @@
   "required": ["message"],
   "properties": {
     "message": { "type": "string", "minLength": 1 },
-    "kind": { "enum": ["policy_snapshot", "ledger_snapshot"] },
+    "kind": {
+      "enum": [
+        "policy_snapshot",
+        "ledger_snapshot",
+        "budget_grant",
+        "budget_reservation"
+      ]
+    },
     "policy": { "$ref": "#/$defs/policy" },
     "ledger": { "$ref": "#/$defs/ledger" },
+    "grant": { "$ref": "#/$defs/grant" },
+    "reservation": { "$ref": "#/$defs/reservation" },
     "visibleEvent": { "type": "object" }
   },
   "allOf": [
     {
-      "if": { "properties": { "kind": { "const": "policy_snapshot" } }, "required": ["kind"] },
+      "if": {
+        "properties": { "kind": { "const": "policy_snapshot" } },
+        "required": ["kind"]
+      },
       "then": { "required": ["policy"], "properties": { "policy": true } }
     },
     {
-      "if": { "properties": { "kind": { "const": "ledger_snapshot" } }, "required": ["kind"] },
+      "if": {
+        "properties": { "kind": { "const": "ledger_snapshot" } },
+        "required": ["kind"]
+      },
       "then": { "required": ["ledger"], "properties": { "ledger": true } }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "budget_grant" } },
+        "required": ["kind"]
+      },
+      "then": { "required": ["grant"], "properties": { "grant": true } }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "budget_reservation" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["reservation"],
+        "properties": { "reservation": true }
+      }
     }
   ],
   "$defs": {
@@ -32,6 +64,112 @@
         "structured_output_repair",
         "memory_extraction"
       ]
+    },
+    "budgetBucket": { "enum": ["normal", "repair", "closing"] },
+    "budgetPolicy": {
+      "type": "object",
+      "required": ["normal", "repair", "closing", "maxTokensPerInference"],
+      "properties": {
+        "normal": { "type": "integer", "minimum": 0 },
+        "repair": { "type": "integer", "minimum": 0 },
+        "closing": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "maxTokensPerInference": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "grant": {
+      "type": "object",
+      "required": [
+        "version",
+        "grantId",
+        "executionId",
+        "turnId",
+        "loopId",
+        "executionAttemptId",
+        "profileId",
+        "policyVersion",
+        "requestedPolicy",
+        "effectivePolicy",
+        "grantedAt"
+      ],
+      "properties": {
+        "version": { "const": "1" },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" },
+        "executionId": { "$ref": "../common.schema.json#/$defs/id" },
+        "turnId": { "$ref": "../common.schema.json#/$defs/nullableId" },
+        "loopId": { "$ref": "../common.schema.json#/$defs/id" },
+        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "profileId": { "const": "documents_chat_v1" },
+        "policyVersion": { "const": "1" },
+        "requestedPolicy": { "$ref": "#/$defs/budgetPolicy" },
+        "effectivePolicy": { "$ref": "#/$defs/budgetPolicy" },
+        "grantedAt": { "$ref": "../common.schema.json#/$defs/timestamp" },
+        "usage": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/budgetBucket" },
+          "additionalProperties": { "$ref": "#/$defs/budgetUsage" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "reservation": {
+      "type": "object",
+      "required": [
+        "version",
+        "reservationId",
+        "grantId",
+        "operationId",
+        "executionAttemptId",
+        "bucket",
+        "phase",
+        "round",
+        "name",
+        "status",
+        "decidedAt"
+      ],
+      "properties": {
+        "version": { "const": "1" },
+        "reservationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "bucket": { "$ref": "#/$defs/budgetBucket" },
+        "phase": { "$ref": "#/$defs/inferencePhase" },
+        "round": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["reserved", "denied", "consumed"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "budgetUsage": {
+      "type": "object",
+      "required": ["granted", "reserved", "consumed", "available"],
+      "properties": {
+        "granted": { "type": "integer", "minimum": 0 },
+        "reserved": { "type": "integer", "minimum": 0 },
+        "consumed": { "type": "integer", "minimum": 0 },
+        "available": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "inferenceBudget": {
+      "type": "object",
+      "required": ["grants", "reservations"],
+      "properties": {
+        "grants": {
+          "type": "object",
+          "propertyNames": { "$ref": "../common.schema.json#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/grant" }
+        },
+        "reservations": {
+          "type": "object",
+          "propertyNames": { "$ref": "../common.schema.json#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/reservation" }
+        }
+      },
+      "additionalProperties": false
     },
     "counter": {
       "type": "object",
@@ -107,7 +245,8 @@
         "maxRounds": { "type": "integer", "minimum": 1 },
         "maxOutputRepairs": { "type": "integer", "minimum": 0 },
         "forcedFinalizationAvailable": { "type": "boolean" },
-        "maxTokensPerInference": { "type": "integer", "minimum": 1 }
+        "maxTokensPerInference": { "type": "integer", "minimum": 1 },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false
     },
@@ -147,7 +286,8 @@
         },
         "promptTokens": { "$ref": "#/$defs/tokenUsage" },
         "generatedTokens": { "$ref": "#/$defs/tokenUsage" },
-        "completeness": { "enum": ["complete", "partial"] }
+        "completeness": { "enum": ["complete", "partial"] },
+        "inferenceBudget": { "$ref": "#/$defs/inferenceBudget" }
       },
       "additionalProperties": false
     }

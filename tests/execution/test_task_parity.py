@@ -12,7 +12,11 @@ from tasks.agent_chat.agent_chat import agent_chat
 from tasks.assistant_chat.assistant_chat import assistant_chat
 
 from tests.execution.test_emitter import CONTEXT
-from tests.execution.support import RecordingExecutionEmitter
+from tests.execution.support import RecordingExecutionEmitter, RecordingIngestClient
+
+
+def budget_aware_post(suffix, body):
+    return RecordingIngestClient().post(CONTEXT["rootExecutionId"], suffix, body)
 
 
 class AssistantChatExecutionTest(unittest.TestCase):
@@ -44,7 +48,7 @@ class AssistantChatExecutionTest(unittest.TestCase):
             "tasks.assistant_chat.assistant_chat.generate_reply", generate
         ), patch(
             "lib.execution.emitter.ExecutionEmitter._post",
-            return_value={"accepted": 100, "duplicates": 0},
+            side_effect=budget_aware_post,
         ):
             return assistant_chat(payload)
 
@@ -94,7 +98,7 @@ class AssistantChatExecutionTest(unittest.TestCase):
             "tasks.assistant_chat.assistant_chat.generate_reply", generate
         ), patch(
             "lib.execution.emitter.ExecutionEmitter._post",
-            return_value={"accepted": 100, "duplicates": 0},
+            side_effect=budget_aware_post,
         ):
             result = assistant_chat(payload)
 
@@ -136,12 +140,45 @@ class AssistantChatExecutionTest(unittest.TestCase):
             "tasks.assistant_chat.assistant_chat.generate_reply", generate
         ), patch(
             "lib.execution.emitter.ExecutionEmitter._post",
-            return_value={"accepted": 100, "duplicates": 0},
+            side_effect=budget_aware_post,
         ):
             result = assistant_chat(payload)
 
         self.assertEqual(result["error"], "Model returned an empty response")
         generate.assert_not_called()
+
+    def test_budget_failure_is_returned_with_an_explicit_completion_reason(self):
+        payload = {
+            "ownerId": 1,
+            "assistantSystem": True,
+            "conversation": [{"role": "user", "content": "hello"}],
+            "execution": copy.deepcopy(CONTEXT),
+        }
+        agent = Mock()
+        agent.tools.return_value = [{"type": "function"}]
+        agent.run.return_value = AgentRunResult.invalid(
+            "budget_empty_forced_finalization"
+        )
+
+        with patch.dict(os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False), patch(
+            "tasks.assistant_chat.assistant_chat.get_task_config",
+            return_value={"max_tokens": 32, "stream": False},
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_params", return_value={}
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_service", return_value=object()
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.build_chat_messages",
+            return_value=[{"role": "user", "content": "hello"}],
+        ), patch(
+            "tasks.assistant_chat.assistant_chat._memory_for_payload", return_value=[]
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.assistant", agent
+        ):
+            result = assistant_chat(payload)
+
+        self.assertEqual(result["error"], "budget_empty_forced_finalization")
+        self.assertEqual(result["completionReason"], "budget_exhausted")
 
     def test_final_message_precedes_and_causes_the_memory_phase(self):
         payload = {
@@ -253,7 +290,7 @@ class AgentChatExecutionTest(unittest.TestCase):
             "tasks.agent_chat.agent_chat.generate_reply", generate
         ), patch(
             "lib.execution.emitter.ExecutionEmitter._post",
-            return_value={"accepted": 100, "duplicates": 0},
+            side_effect=budget_aware_post,
         ):
             result = agent_chat(payload)
         return result, agent, generate
@@ -284,6 +321,17 @@ class AgentChatExecutionTest(unittest.TestCase):
         )
 
         self.assertEqual(result["error"], "Model returned an empty response")
+        agent.run.assert_called_once()
+        generate.assert_not_called()
+
+    def test_agent_budget_failure_has_the_same_terminal_metadata(self):
+        result, agent, generate = self.run_handler(
+            [{"type": "function"}],
+            AgentRunResult.invalid("budget_reservation_consumed"),
+        )
+
+        self.assertEqual(result["error"], "budget_reservation_consumed")
+        self.assertEqual(result["completionReason"], "budget_exhausted")
         agent.run.assert_called_once()
         generate.assert_not_called()
 

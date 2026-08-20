@@ -16,7 +16,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lib.framework.agent import AgentRunResult, AgentSpec
-from lib.execution import ProgressLoopContext
+from lib.execution import InferenceBudgetDenied, ProgressLoopContext
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.text import strip_thinking as _strip_thinking
 from lib.backend.http import post_tool_event
@@ -182,6 +182,8 @@ def run_agent_loop(
         forced_finalization_available=spec.output_schema is None,
         max_tokens_per_inference=round_max_tokens,
     )
+    max_rounds = progress.max_rounds
+    round_max_tokens = progress.max_tokens_per_inference
 
     logger.info(
         "agent[%s]: enter — tools=%s rounds=%d", spec.name,
@@ -193,13 +195,16 @@ def run_agent_loop(
             round=round_idx + 1,
             phase="agent_loop",
         )
-        msg = llm.chat_with_tools(
-            messages,
-            tools,
-            max_tokens=round_max_tokens,
-            inference_name="chat_with_tools",
-            trace_metadata=round_trace,
-        )
+        try:
+            msg = llm.chat_with_tools(
+                messages,
+                tools,
+                max_tokens=round_max_tokens,
+                inference_name="chat_with_tools",
+                trace_metadata=round_trace,
+            )
+        except InferenceBudgetDenied as error:
+            return AgentRunResult.invalid(error.reason)
         operation_phase = "agent_loop"
         content, tool_calls = _normalize_message(msg)
         logger.info(
@@ -212,6 +217,7 @@ def run_agent_loop(
             and spec.output_schema is None
             and tools
             and not output_repair_used
+            and progress.max_output_repairs > 0
         ):
             output_repair_used = True
             repair_messages = list(messages)
@@ -219,21 +225,24 @@ def run_agent_loop(
                 "role": "system",
                 "content": _OUTPUT_REPAIR_PROMPT,
             })
-            msg = llm.chat_with_tools(
-                repair_messages,
-                tools,
-                max_tokens=round_max_tokens,
-                inference_name="output_repair",
-                trace_metadata=progress.trace(
-                    round=round_idx + 1,
-                    phase="output_repair",
-                    extra={
-                        "reason": "empty_model_response",
-                        "attempt": 1,
-                        "maxAttempts": 1,
-                    },
-                ),
-            )
+            try:
+                msg = llm.chat_with_tools(
+                    repair_messages,
+                    tools,
+                    max_tokens=round_max_tokens,
+                    inference_name="output_repair",
+                    trace_metadata=progress.trace(
+                        round=round_idx + 1,
+                        phase="output_repair",
+                        extra={
+                            "reason": "empty_model_response",
+                            "attempt": 1,
+                            "maxAttempts": 1,
+                        },
+                    ),
+                )
+            except InferenceBudgetDenied as error:
+                return AgentRunResult.invalid(error.reason)
             operation_phase = "output_repair"
             content, tool_calls = _normalize_message(msg)
             logger.info(
@@ -358,18 +367,23 @@ def run_agent_loop(
                 ),
             )
         )
-    forced = llm.chat(
-        messages,
-        max_tokens=round_max_tokens,
-        allow_thinking=True,
-        inference_name="forced_finalization",
-        trace_metadata=progress.trace(
-            round=max_rounds,
-            phase="forced_finalization",
-            extra={"reason": "step_budget_exhausted"},
-        ),
-    ) or ""
+    if not progress.forced_finalization_available:
+        return AgentRunResult.invalid("budget_hard_limit_reached")
+    try:
+        forced = llm.chat(
+            messages,
+            max_tokens=round_max_tokens,
+            allow_thinking=True,
+            inference_name="forced_finalization",
+            trace_metadata=progress.trace(
+                round=max_rounds,
+                phase="forced_finalization",
+                extra={"reason": "step_budget_exhausted"},
+            ),
+        ) or ""
+    except InferenceBudgetDenied as error:
+        return AgentRunResult.invalid(error.reason)
     content = _strip_thinking(forced)
     if content:
-        return AgentRunResult.final_text(content)
-    return AgentRunResult.invalid("empty_forced_finalization")
+        return AgentRunResult.partial_text(content, "budget_exhausted")
+    return AgentRunResult.invalid("budget_empty_forced_finalization")

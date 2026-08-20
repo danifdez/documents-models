@@ -41,7 +41,13 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:389f8342ad266a65fead0ec8e61e03811f781f4e419bc02f8740bcd4d8e98e1e"
+CONTRACT_SET_HASH = "sha256:44e59df419ba71389ea7edb47bb31d48f45c73be8166ae2b9c7809d009f3220c"
+
+
+class InferenceBudgetDenied(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def _utc_now() -> str:
@@ -157,14 +163,96 @@ class ExecutionEmitter:
         request: Any,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[OperationHandle]:
+        operation_id = str(uuid.uuid4())
+        attempt_id = str(uuid.uuid4())
+        budget_payload: Dict[str, Any] = {}
+        trace = metadata or {}
+        if (
+            self.context
+            and trace.get("loopKind") == "top_level"
+            and trace.get("budgetGrantId")
+        ):
+            reservation = self.reserve_inference_budget(
+                grant_id=str(trace["budgetGrantId"]),
+                loop_id=str(trace["loopId"]),
+                operation_id=operation_id,
+                bucket=self._budget_bucket(str(trace.get("phase") or "")),
+                phase=str(trace.get("phase") or ""),
+                round=int(trace.get("round") or 1),
+                name=name,
+            )
+            budget_payload = {
+                "budgetGrantId": reservation["grantId"],
+                "budgetReservationId": reservation["reservationId"],
+                "budgetBucket": reservation["bucket"],
+                "executionAttemptId": reservation["executionAttemptId"],
+            }
         artifact_id = self.record_artifact("materialized_prompt", request, "application/json")
         return self.start_operation(
             "inference",
             name,
             artifact_refs=[artifact_id] if artifact_id else [],
             input_artifact_id=artifact_id,
-            extra_payload=_safe_value(metadata or {}),
+            extra_payload={**_safe_value(trace), **budget_payload},
+            operation_id=operation_id,
+            attempt_id=attempt_id,
         )
+
+    def request_progress_grant(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        response = self._post("progress/grants", request)
+        grant = (response or {}).get("grant")
+        event_id = (response or {}).get("eventId")
+        if not isinstance(grant, dict) or not grant.get("grantId") or not event_id:
+            raise RuntimeError("Required progress grant failed")
+        self.last_event_id = str(event_id)
+        return grant
+
+    def reserve_inference_budget(
+        self,
+        *,
+        grant_id: str,
+        loop_id: str,
+        operation_id: str,
+        bucket: str,
+        phase: str,
+        round: int,
+        name: str,
+    ) -> Dict[str, Any]:
+        if not self.context or not self.context.get("attemptId"):
+            raise RuntimeError("Execution attempt is required for budget reservation")
+        self.flush_evidence()
+        try:
+            response = self._post("progress/reservations", {
+                "executionId": self.context["executionId"],
+                "loopId": loop_id,
+                "grantId": grant_id,
+                "operationId": operation_id,
+                "bucket": bucket,
+                "phase": phase,
+                "round": round,
+                "name": name,
+                "executionAttemptId": self.context["attemptId"],
+            })
+        except Exception as error:
+            raise InferenceBudgetDenied("budget_reservation_failed") from error
+        reservation = (response or {}).get("reservation")
+        event_id = (response or {}).get("eventId")
+        if not isinstance(reservation, dict) or not event_id:
+            raise RuntimeError("Required inference budget reservation failed")
+        self.last_event_id = str(event_id)
+        if not response.get("granted"):
+            raise InferenceBudgetDenied(
+                str(reservation.get("reason") or "budget_reservation_failed")
+            )
+        return reservation
+
+    @staticmethod
+    def _budget_bucket(phase: str) -> str:
+        if phase == "output_repair":
+            return "repair"
+        if phase == "forced_finalization":
+            return "closing"
+        return "normal"
 
     def record_progress_policy(self, policy: Dict[str, Any]) -> Optional[str]:
         previous_event_id = self.last_event_id
@@ -230,13 +318,15 @@ class ExecutionEmitter:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[OperationHandle]:
         tool_call_id = str(uuid.uuid4())
+        trace = _safe_value(metadata or {})
+        trace.pop("budgetGrantId", None)
         handle = self.start_operation(
             "tool_call",
             name,
             extra_payload={
                 "inputSummary": _safe_value(arguments),
                 "providerToolCallId": provider_tool_call_id,
-                **_safe_value(metadata or {}),
+                **trace,
             },
             tool_call_id=tool_call_id,
         )
@@ -313,9 +403,11 @@ class ExecutionEmitter:
         input_artifact_id: Optional[str] = None,
         extra_payload: Optional[Dict[str, Any]] = None,
         tool_call_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
     ) -> Optional[OperationHandle]:
-        operation_id = str(uuid.uuid4())
-        attempt_id = str(uuid.uuid4())
+        operation_id = operation_id or str(uuid.uuid4())
+        attempt_id = attempt_id or str(uuid.uuid4())
         payload = {"operationKind": kind, "status": "dispatched", "name": name}
         if input_artifact_id:
             payload["inputArtifactId"] = input_artifact_id

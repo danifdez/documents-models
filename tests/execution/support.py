@@ -23,6 +23,42 @@ class RecordingIngestClient:
             self.sent_artifacts.extend(copied["artifacts"])
         if self.responder:
             return self.responder(suffix, copied)
+        if suffix == "progress/grants":
+            requested = copied["requestedPolicy"]
+            return {
+                "eventId": "00000000-0000-4000-8000-000000000010",
+                "grant": {
+                    "version": "1",
+                    "grantId": "00000000-0000-4000-8000-000000000011",
+                    "executionId": copied["executionId"],
+                    "turnId": copied.get("turnId"),
+                    "loopId": copied["loopId"],
+                    "executionAttemptId": copied["executionAttemptId"],
+                    "profileId": "documents_chat_v1",
+                    "policyVersion": "1",
+                    "requestedPolicy": requested,
+                    "effectivePolicy": requested,
+                    "grantedAt": "2026-08-20T10:00:00Z",
+                },
+            }
+        if suffix == "progress/reservations":
+            return {
+                "granted": True,
+                "eventId": "00000000-0000-4000-8000-000000000012",
+                "reservation": {
+                    "version": "1",
+                    "reservationId": "00000000-0000-4000-8000-000000000013",
+                    "grantId": copied["grantId"],
+                    "operationId": copied["operationId"],
+                    "executionAttemptId": copied["executionAttemptId"],
+                    "bucket": copied["bucket"],
+                    "phase": copied["phase"],
+                    "round": copied["round"],
+                    "name": copied["name"],
+                    "status": "reserved",
+                    "decidedAt": "2026-08-20T10:00:01Z",
+                },
+            }
         items = copied.get("events", copied.get("artifacts", []))
         return {"accepted": len(items), "duplicates": 0}
 

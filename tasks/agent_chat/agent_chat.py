@@ -51,6 +51,7 @@ from agents.user_agent import (
 )
 from lib.execution import (
     ExecutionEmitter,
+    InferenceBudgetDenied,
     ProgressLoopContext,
     activate_emitter,
     reset_emitter,
@@ -99,9 +100,18 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         agent = user_agent_for(payload)
-        if agent.tools(ctx):
+        effective_tools = agent.tools(ctx)
+        if effective_tools:
             logger.info("agent-chat: entering tool phase")
             outcome = agent.run(messages, ctx)
+            if outcome.kind == "invalid":
+                reason = outcome.reason or "invalid_agent_result"
+                if reason.startswith("budget_"):
+                    emitter.flush_evidence()
+                    return emitter.attach_summary({
+                        "error": reason,
+                        "completionReason": "budget_exhausted",
+                    })
             raw = outcome.content if outcome.kind == "final_text" else ""
         else:
             logger.info("agent-chat: direct response without effective tools")
@@ -131,9 +141,19 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             emitter.flush_evidence()
             return emitter.attach_summary({"error": error})
 
+        result: Dict[str, Any] = {"reply": reply}
+        if effective_tools and outcome.completion_kind:
+            result["completionKind"] = outcome.completion_kind
+            result["completionReason"] = outcome.completion_reason
         emitter.record_final_message(reply)
         emitter.flush_evidence()
-        return emitter.attach_summary({"reply": reply})
+        return emitter.attach_summary(result)
+    except InferenceBudgetDenied as e:
+        emitter.flush_evidence()
+        return emitter.attach_summary({
+            "error": e.reason,
+            "completionReason": "budget_exhausted",
+        })
     except Exception as e:  # noqa: BLE001
         logger.exception("agent-chat handler failed")
         error = f"Agent failure: {e}"

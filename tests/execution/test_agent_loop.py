@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
+from lib.execution import InferenceBudgetDenied
 from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.framework.tool import ToolContext
 
@@ -229,6 +230,22 @@ class AgentLoopResultTest(unittest.TestCase):
         self.assertEqual(len(llm.tool_calls), 2)
         self.assertEqual(llm.tool_calls[1][1]["inference_name"], "output_repair")
 
+    def test_repair_budget_denial_stops_the_loop(self):
+        class DeniedRepairLlm(FakeLlm):
+            def chat_with_tools(self, *_args, **_kwargs):
+                if _kwargs.get("inference_name") == "output_repair":
+                    raise InferenceBudgetDenied("budget_hard_limit_reached")
+                return super().chat_with_tools(*_args, **_kwargs)
+
+        llm = DeniedRepairLlm([{"content": "", "tool_calls": []}])
+
+        result = self.run_loop(llm)
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("budget_hard_limit_reached"),
+        )
+
     def test_later_empty_output_does_not_receive_a_second_repair(self):
         llm = FakeLlm([
             {"content": "", "tool_calls": []},
@@ -270,7 +287,10 @@ class AgentLoopResultTest(unittest.TestCase):
 
         result = self.run_loop(llm, max_rounds=1)
 
-        self.assertEqual(result, AgentRunResult.final_text("budget answer"))
+        self.assertEqual(
+            result,
+            AgentRunResult.partial_text("budget answer", "budget_exhausted"),
+        )
         self.assertEqual(len(llm.chat_calls), 1)
         self.assertEqual(llm.chat_calls[0][1]["inference_name"], "forced_finalization")
         self.assertEqual(
@@ -300,10 +320,32 @@ class AgentLoopResultTest(unittest.TestCase):
 
         self.assertEqual(
             result,
-            AgentRunResult.invalid("empty_forced_finalization"),
+            AgentRunResult.invalid("budget_empty_forced_finalization"),
         )
         self.assertEqual(len(llm.tool_calls), 1)
         self.assertEqual(len(llm.chat_calls), 1)
+
+    def test_consumed_closing_reservation_fails_without_another_inference(self):
+        class ConsumedClosingLlm(FakeLlm):
+            def chat(self, *_args, **_kwargs):
+                raise InferenceBudgetDenied("budget_reservation_consumed")
+
+        tool_request = {
+            "content": "",
+            "tool_calls": [{
+                "id": "call-1",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }
+        llm = ConsumedClosingLlm([tool_request])
+
+        result = self.run_loop(llm, max_rounds=1)
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("budget_reservation_consumed"),
+        )
+        self.assertEqual(len(llm.tool_calls), 1)
 
     def test_structured_agents_keep_their_structured_result(self):
         llm = FakeLlm([{"content": '{"summary":"done"}', "tool_calls": []}])

@@ -3,10 +3,15 @@ import importlib.util
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from pathlib import Path
 
-from lib.execution.emitter import CONTRACT_SET_HASH, ExecutionEmitter, _safe_value
+from lib.execution.emitter import (
+    CONTRACT_SET_HASH,
+    ExecutionEmitter,
+    InferenceBudgetDenied,
+    _safe_value,
+)
 from lib.execution.ingest_client import ExecutionIngestClient
 from lib.execution.progress import ProgressLoopContext
 from tests.execution.support import RecordingIngestClient
@@ -89,6 +94,28 @@ class ExecutionEmitterTest(unittest.TestCase):
 
         self.assertIn(CONTEXT["attemptId"], emitter.instance_id)
 
+    def test_ingest_retry_reuses_the_same_idempotent_request(self):
+        first_connection = Mock()
+        first_connection.request.side_effect = TimeoutError("timeout")
+        second_connection = Mock()
+        response = Mock(status=200)
+        response.read.return_value = b'{"granted":true}'
+        second_connection.getresponse.return_value = response
+        client = ExecutionIngestClient("http://backend:3000", "token", 1)
+        body = {"operationId": "operation-1"}
+
+        with patch(
+            "lib.execution.ingest_client.http.client.HTTPConnection",
+            side_effect=[first_connection, second_connection],
+        ):
+            result = client.post("execution-1", "progress/reservations", body)
+
+        self.assertEqual(result, {"granted": True})
+        self.assertEqual(
+            first_connection.request.call_args.kwargs["body"],
+            second_connection.request.call_args.kwargs["body"],
+        )
+
     def test_forced_finalization_metadata_is_recorded_on_the_operation(self):
         emitter = self.emitter()
 
@@ -108,7 +135,8 @@ class ExecutionEmitterTest(unittest.TestCase):
         self.assertEqual(event["payload"]["reason"], "step_budget_exhausted")
 
     def test_progress_loop_keeps_policy_and_operation_identity_together(self):
-        emitter = self.emitter(RecordingIngestClient())
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
 
         progress = ProgressLoopContext.start(
             emitter,
@@ -125,13 +153,208 @@ class ExecutionEmitterTest(unittest.TestCase):
             extra={"reason": "empty_model_response"},
         )
 
-        policy = emitter.pending_events[0]["payload"]["policy"]
+        policy = next(
+            event["payload"]["policy"]
+            for event in client.sent_events
+            if event["payload"].get("kind") == "policy_snapshot"
+        )
         self.assertEqual(trace["loopId"], policy["loopId"])
         self.assertEqual(trace["agentName"], policy["agentName"])
         self.assertEqual(trace["maxRounds"], policy["maxRounds"])
         self.assertEqual(trace["round"], 2)
         self.assertEqual(trace["phase"], "output_repair")
         self.assertEqual(trace["reason"], "empty_model_response")
+        self.assertEqual(
+            trace["budgetGrantId"],
+            "00000000-0000-4000-8000-000000000011",
+        )
+
+    def test_progress_loop_uses_the_effective_backend_policy(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            response = fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+            if suffix == "progress/grants":
+                response["grant"]["effectivePolicy"] = {
+                    "normal": 1,
+                    "repair": 0,
+                    "closing": 0,
+                    "maxTokensPerInference": 64,
+                }
+            return response
+
+        emitter = self.emitter(RecordingIngestClient(respond))
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=3,
+            max_output_repairs=1,
+            forced_finalization_available=True,
+            max_tokens_per_inference=256,
+        )
+
+        self.assertEqual(progress.max_rounds, 1)
+        self.assertEqual(progress.max_output_repairs, 0)
+        self.assertFalse(progress.forced_finalization_available)
+        self.assertEqual(progress.max_tokens_per_inference, 64)
+
+    def test_reserved_inference_records_budget_references_on_its_start(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=1,
+            max_output_repairs=0,
+            forced_finalization_available=False,
+            max_tokens_per_inference=64,
+        )
+
+        handle = emitter.start_inference(
+            "direct_response",
+            {"messages": []},
+            progress.trace(round=1, phase="direct_response"),
+        )
+        emitter.flush_evidence()
+
+        start = next(
+            event
+            for event in client.sent_events
+            if event["eventType"] == "operation.started"
+        )
+        self.assertEqual(start["operationId"], handle.operation_id)
+        self.assertEqual(start["payload"]["budgetGrantId"], progress.grant_id)
+        self.assertEqual(
+            start["payload"]["budgetReservationId"],
+            "00000000-0000-4000-8000-000000000013",
+        )
+        self.assertEqual(start["payload"]["budgetBucket"], "normal")
+        self.assertLess(
+            next(i for i, request in enumerate(client.requests)
+                 if request[0] == "progress/reservations"),
+            next(i for i, request in enumerate(client.requests)
+                 if request[0] == "artifacts"),
+        )
+
+    def test_tool_operation_does_not_inherit_inference_budget_grant(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=2,
+            max_output_repairs=1,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+        )
+
+        emitter.start_tool(
+            "lookup_value",
+            {"key": "alpha"},
+            "provider-call-1",
+            progress.trace(round=1, phase="agent_loop"),
+        )
+        emitter.flush_evidence()
+
+        start = next(
+            event
+            for event in client.sent_events
+            if event["eventType"] == "operation.started"
+        )
+        self.assertEqual(start["payload"]["operationKind"], "tool_call")
+        self.assertEqual(start["payload"]["loopId"], progress.loop_id)
+        self.assertNotIn("budgetGrantId", start["payload"])
+        self.assertNotIn("budgetReservationId", start["payload"])
+        self.assertNotIn("budgetBucket", start["payload"])
+
+    def test_denied_budget_stops_before_prompt_artifact_and_operation_start(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                return {
+                    "granted": False,
+                    "eventId": "00000000-0000-4000-8000-000000000020",
+                    "reservation": {
+                        "version": "1",
+                        "reservationId": "00000000-0000-4000-8000-000000000021",
+                        "grantId": body["grantId"],
+                        "operationId": body["operationId"],
+                        "executionAttemptId": body["executionAttemptId"],
+                        "bucket": body["bucket"],
+                        "phase": body["phase"],
+                        "round": body["round"],
+                        "name": body["name"],
+                        "status": "denied",
+                        "reason": "budget_hard_limit_reached",
+                        "decidedAt": "2026-08-20T10:00:02Z",
+                    },
+                }
+            return fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+
+        client = RecordingIngestClient(respond)
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=3,
+            max_output_repairs=1,
+            forced_finalization_available=True,
+            max_tokens_per_inference=256,
+        )
+
+        with self.assertRaisesRegex(
+            InferenceBudgetDenied, "budget_hard_limit_reached"
+        ):
+            emitter.start_inference(
+                "chat_with_tools",
+                {"messages": [{"role": "user", "content": "hello"}]},
+                progress.trace(round=1, phase="agent_loop"),
+            )
+
+        self.assertEqual(emitter.pending_artifacts, [])
+        self.assertFalse(any(
+            event["eventType"] == "operation.started"
+            for event in emitter.pending_events
+        ))
+
+    def test_reservation_protocol_error_is_typed_before_dispatch(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                raise RuntimeError("HTTP 409 stale attempt")
+            return fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+
+        emitter = self.emitter(RecordingIngestClient(respond))
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=1,
+            max_output_repairs=0,
+            forced_finalization_available=False,
+            max_tokens_per_inference=64,
+        )
+
+        with self.assertRaisesRegex(
+            InferenceBudgetDenied, "budget_reservation_failed"
+        ):
+            emitter.start_inference(
+                "direct_response",
+                {"messages": []},
+                progress.trace(round=1, phase="direct_response"),
+            )
+
+        self.assertEqual(emitter.pending_artifacts, [])
+        self.assertFalse(any(
+            event["eventType"] == "operation.started"
+            for event in emitter.pending_events
+        ))
 
     def test_oversized_artifact_is_declared_missing_without_transport(self):
         client = RecordingIngestClient(
