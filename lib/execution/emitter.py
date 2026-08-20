@@ -176,18 +176,36 @@ class ExecutionEmitter:
         status: str = "succeeded",
         error: Optional[str] = None,
         metrics: Optional[Dict[str, Any]] = None,
+        raw_response: Any = None,
+        reason: Optional[str] = None,
     ) -> Optional[str]:
         safe_response = _safe_value(response)
-        artifact_id = self.record_artifact("model_response", safe_response, "application/json")
-        result = {"responseArtifactId": artifact_id} if artifact_id else {}
+        response_artifact_id = self.record_artifact(
+            "model_response", safe_response, "application/json"
+        )
+        raw_response_artifact_id = (
+            self.record_artifact(
+                "model_response_raw", raw_response, "application/json"
+            )
+            if raw_response is not None else None
+        )
+        result = {}
+        artifact_refs = []
+        if response_artifact_id:
+            result["responseArtifactId"] = response_artifact_id
+            artifact_refs.append(response_artifact_id)
+        if raw_response_artifact_id:
+            result["rawResponseArtifactId"] = raw_response_artifact_id
+            artifact_refs.append(raw_response_artifact_id)
         return self.finish_operation(
             handle,
             status=status,
             result=result,
             error=error,
             outcome=outcome,
+            reason=reason,
             metrics=metrics,
-            artifact_refs=[artifact_id] if artifact_id else [],
+            artifact_refs=artifact_refs,
         )
 
     def start_tool(
@@ -314,6 +332,7 @@ class ExecutionEmitter:
         result: Any,
         error: Optional[str],
         outcome: Optional[str] = None,
+        reason: Optional[str] = None,
         metrics: Optional[Dict[str, Any]] = None,
         caused_by: Optional[str] = None,
         artifact_refs=None,
@@ -340,6 +359,8 @@ class ExecutionEmitter:
         }
         if outcome:
             payload["outcome"] = outcome
+        if reason:
+            payload["reason"] = reason
         return self.emit(
             "operation.finished",
             "operation.finished/1",

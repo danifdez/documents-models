@@ -62,6 +62,13 @@ def extract_inline_tool_calls(content: str) -> List[Dict[str, Any]]:
 
 _FENCED_JSON_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
+_OUTPUT_REPAIR_PROMPT = (
+    "The previous model output was empty and invalid. Continue from the current "
+    "conversation and tool results. If another tool is needed, call it. "
+    "Otherwise return the final answer. Do not repeat a completed tool unless "
+    "its result requires a different request."
+)
+
 
 def _json_object_or_none(text: str) -> Optional[Dict[str, Any]]:
     t = (text or "").strip()
@@ -122,6 +129,14 @@ def _summarize(name: str, result: Dict[str, Any]) -> Tuple[str, Optional[Dict[st
     return summarize_leaf(name, result)
 
 
+def _normalize_message(msg: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
+    content = _strip_thinking(msg.get("content") or "")
+    tool_calls = msg.get("tool_calls") or []
+    if not tool_calls and content:
+        tool_calls = extract_inline_tool_calls(content)
+    return content, tool_calls
+
+
 def run_agent_loop(
     spec: AgentSpec,
     messages: List[Dict[str, Any]],
@@ -145,6 +160,7 @@ def run_agent_loop(
         and isinstance(ctx.execution_id, str)
     )
     execution = getattr(ctx, "execution", None)
+    output_repair_used = False
 
     logger.info(
         "agent[%s]: enter — tools=%s rounds=%d", spec.name,
@@ -153,14 +169,41 @@ def run_agent_loop(
 
     for round_idx in range(max_rounds):
         msg = llm.chat_with_tools(messages, tools, max_tokens=round_max_tokens)
-        content = _strip_thinking(msg.get("content") or "")
-        tool_calls = msg.get("tool_calls") or []
-        if not tool_calls and content:
-            tool_calls = extract_inline_tool_calls(content)
+        content, tool_calls = _normalize_message(msg)
         logger.info(
             "agent[%s]: round %d → tool_calls=%d content_head=%r",
             spec.name, round_idx, len(tool_calls), content[:120],
         )
+        if (
+            not tool_calls
+            and not content
+            and spec.output_schema is None
+            and tools
+            and not output_repair_used
+        ):
+            output_repair_used = True
+            repair_messages = list(messages)
+            repair_messages.append({
+                "role": "system",
+                "content": _OUTPUT_REPAIR_PROMPT,
+            })
+            msg = llm.chat_with_tools(
+                repair_messages,
+                tools,
+                max_tokens=round_max_tokens,
+                inference_name="output_repair",
+                trace_metadata={
+                    "phase": "output_repair",
+                    "reason": "empty_model_response",
+                    "attempt": 1,
+                    "maxAttempts": 1,
+                },
+            )
+            content, tool_calls = _normalize_message(msg)
+            logger.info(
+                "agent[%s]: output repair → tool_calls=%d content_head=%r",
+                spec.name, len(tool_calls), content[:120],
+            )
         if not tool_calls:
             if spec.output_schema is not None:
                 return AgentRunResult.structured_result(
@@ -168,7 +211,12 @@ def run_agent_loop(
                 )
             if content:
                 return AgentRunResult.final_text(content)
-            return AgentRunResult.invalid("empty_model_response")
+            reason = (
+                "empty_model_response_after_repair"
+                if output_repair_used
+                else "empty_model_response"
+            )
+            return AgentRunResult.invalid(reason)
 
         messages.append({
             "role": "assistant",

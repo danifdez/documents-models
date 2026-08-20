@@ -1,4 +1,6 @@
+import base64
 import copy
+import json
 import os
 import unittest
 from unittest.mock import patch
@@ -81,6 +83,100 @@ class LlmOutcomeTraceTest(unittest.TestCase):
             if event["eventType"] == "operation.finished"
         )
         self.assertEqual(finish["payload"]["outcome"], "tool_requests")
+
+    def test_output_repair_records_its_limit_and_outcome(self):
+        emitter = self.emitter()
+        token = activate_emitter(emitter)
+        empty_response = {
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                    "content": "",
+                    "reasoning_content": "private reasoning",
+                },
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 1},
+        }
+        repaired_response = {
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": "repaired answer"},
+            }],
+            "usage": {"prompt_tokens": 14, "completion_tokens": 3},
+        }
+        try:
+            with patch(
+                "services.llm_service._post",
+                side_effect=[empty_response, repaired_response],
+            ):
+                invalid = self.llm().chat_with_tools(
+                    [{"role": "user", "content": "question"}],
+                    [{"type": "function", "function": {"name": "read_fixture"}}],
+                )
+                result = self.llm().chat_with_tools(
+                    [{"role": "user", "content": "question"}],
+                    [{"type": "function", "function": {"name": "read_fixture"}}],
+                    inference_name="output_repair",
+                    trace_metadata={
+                        "phase": "output_repair",
+                        "reason": "empty_model_response",
+                        "attempt": 1,
+                        "maxAttempts": 1,
+                    },
+                )
+        finally:
+            reset_emitter(token)
+
+        self.assertEqual(invalid["content"], "")
+        self.assertEqual(result["content"], "repaired answer")
+        invalid_start, invalid_finish, repair_start, repair_finish = [
+            event for event in emitter.pending_events
+            if event["eventType"].startswith("operation.")
+        ]
+        self.assertEqual(invalid_finish["payload"]["outcome"], "invalid")
+        self.assertEqual(
+            invalid_finish["payload"]["reason"], "empty_model_response"
+        )
+        self.assertEqual(repair_start["causedByEventId"], invalid_finish["eventId"])
+        self.assertEqual(repair_start["payload"]["name"], "output_repair")
+        self.assertEqual(repair_start["payload"]["phase"], "output_repair")
+        self.assertEqual(repair_start["payload"]["reason"], "empty_model_response")
+        self.assertEqual(repair_start["payload"]["attempt"], 1)
+        self.assertEqual(repair_start["payload"]["maxAttempts"], 1)
+        self.assertEqual(repair_finish["payload"]["outcome"], "final_text")
+
+        invalid_result = invalid_finish["payload"]["result"]
+        self.assertEqual(
+            invalid_finish["artifactRefs"],
+            [
+                invalid_result["responseArtifactId"],
+                invalid_result["rawResponseArtifactId"],
+            ],
+        )
+        artifacts = {
+            artifact["artifactId"]: json.loads(
+                base64.b64decode(artifact["bodyBase64"])
+            )
+            for artifact in emitter.pending_artifacts
+        }
+        self.assertEqual(
+            artifacts[invalid_result["responseArtifactId"]],
+            {"content": "", "tool_calls": []},
+        )
+        raw_response = artifacts[invalid_result["rawResponseArtifactId"]]
+        self.assertEqual(raw_response["choices"][0]["finish_reason"], "stop")
+        self.assertEqual(raw_response["usage"]["completion_tokens"], 1)
+        self.assertNotIn("reasoning_content", raw_response["choices"][0]["message"])
+        repair_result = repair_finish["payload"]["result"]
+        self.assertEqual(
+            artifacts[repair_result["responseArtifactId"]],
+            {"content": "repaired answer", "tool_calls": []},
+        )
+        repair_raw_response = artifacts[repair_result["rawResponseArtifactId"]]
+        self.assertEqual(
+            repair_raw_response["usage"]["completion_tokens"],
+            3,
+        )
 
     def test_memory_extraction_is_distinguishable_from_the_user_reply(self):
         emitter = self.emitter()

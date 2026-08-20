@@ -110,7 +110,9 @@ class AssistantChatExecutionTest(unittest.TestCase):
         }
         agent = Mock()
         agent.tools.return_value = [{"type": "function"}]
-        agent.run.return_value = AgentRunResult.invalid("empty_model_response")
+        agent.run.return_value = AgentRunResult.invalid(
+            "empty_model_response_after_repair"
+        )
         generate = Mock(return_value="hidden retry")
 
         with patch.dict(os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False), patch(
@@ -267,6 +269,17 @@ class AgentChatExecutionTest(unittest.TestCase):
         self.assertEqual(result["reply"], "direct reply")
         agent.run.assert_not_called()
         generate.assert_called_once()
+
+    def test_agent_invalid_after_repair_does_not_trigger_hidden_generation(self):
+        result, agent, generate = self.run_handler(
+            [{"type": "function"}],
+            AgentRunResult.invalid("empty_model_response_after_repair"),
+            generated_reply="hidden retry",
+        )
+
+        self.assertEqual(result["error"], "Model returned an empty response")
+        agent.run.assert_called_once()
+        generate.assert_not_called()
 
 
 class ToolRunTest(unittest.TestCase):

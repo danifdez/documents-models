@@ -1,3 +1,4 @@
+import copy
 import unittest
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ class FakeLlm:
         self.chat_calls = []
 
     def chat_with_tools(self, *_args, **_kwargs):
-        self.tool_calls.append((_args, _kwargs))
+        self.tool_calls.append((copy.deepcopy(_args), copy.deepcopy(_kwargs)))
         return self.messages.pop(0)
 
     def chat(self, *_args, **_kwargs):
@@ -131,12 +132,122 @@ class AgentLoopResultTest(unittest.TestCase):
             ("second", '{"index":2}'),
         ])
 
-    def test_empty_output_is_an_explicit_invalid_result(self):
-        llm = FakeLlm([{"content": "", "tool_calls": []}])
+    def test_repairs_one_empty_output_and_returns_final_text(self):
+        llm = FakeLlm([
+            {"content": "", "tool_calls": []},
+            {"content": "repaired answer", "tool_calls": []},
+        ])
 
         result = self.run_loop(llm)
 
-        self.assertEqual(result, AgentRunResult.invalid("empty_model_response"))
+        self.assertEqual(result, AgentRunResult.final_text("repaired answer"))
+        self.assertEqual(len(llm.tool_calls), 2)
+        repair_args, repair_kwargs = llm.tool_calls[1]
+        self.assertEqual(repair_kwargs["inference_name"], "output_repair")
+        self.assertEqual(repair_kwargs["trace_metadata"], {
+            "phase": "output_repair",
+            "reason": "empty_model_response",
+            "attempt": 1,
+            "maxAttempts": 1,
+        })
+        self.assertEqual(repair_args[0][-1]["role"], "system")
+        self.assertIn("previous model output was empty", repair_args[0][-1]["content"])
+
+    def test_repair_can_continue_with_another_tool_call(self):
+        llm = FakeLlm([
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {
+                        "name": "read_fixture",
+                        "arguments": '{"query":"first"}',
+                    },
+                }],
+            },
+            {"content": "", "tool_calls": []},
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-2",
+                    "function": {
+                        "name": "read_fixture",
+                        "arguments": '{"query":"second"}',
+                    },
+                }],
+            },
+            {"content": "answer from both fixtures", "tool_calls": []},
+        ])
+        dispatched = []
+
+        result = self.run_loop(
+            llm,
+            dispatch=lambda name, arguments, _ctx: (
+                dispatched.append((name, arguments)) or {"value": "fixture"}
+            ),
+        )
+
+        self.assertEqual(
+            result,
+            AgentRunResult.final_text("answer from both fixtures"),
+        )
+        self.assertEqual(dispatched, [
+            ("read_fixture", '{"query":"first"}'),
+            ("read_fixture", '{"query":"second"}'),
+        ])
+        self.assertEqual(
+            [kwargs.get("inference_name") for _, kwargs in llm.tool_calls],
+            [None, None, "output_repair", None],
+        )
+        repair_prompt = llm.tool_calls[2][0][0][-1]["content"]
+        final_messages = llm.tool_calls[3][0][0]
+        self.assertNotIn(
+            repair_prompt,
+            [message.get("content") for message in final_messages],
+        )
+
+    def test_persistent_empty_output_fails_after_one_repair(self):
+        llm = FakeLlm([
+            {"content": "", "tool_calls": []},
+            {"content": "", "tool_calls": []},
+        ])
+
+        result = self.run_loop(llm)
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("empty_model_response_after_repair"),
+        )
+        self.assertEqual(len(llm.tool_calls), 2)
+        self.assertEqual(llm.tool_calls[1][1]["inference_name"], "output_repair")
+
+    def test_later_empty_output_does_not_receive_a_second_repair(self):
+        llm = FakeLlm([
+            {"content": "", "tool_calls": []},
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {"name": "read_fixture", "arguments": "{}"},
+                }],
+            },
+            {"content": "", "tool_calls": []},
+        ])
+
+        result = self.run_loop(llm)
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("empty_model_response_after_repair"),
+        )
+        self.assertEqual(len(llm.tool_calls), 3)
+        self.assertEqual(
+            sum(
+                kwargs.get("inference_name") == "output_repair"
+                for _, kwargs in llm.tool_calls
+            ),
+            1,
+        )
         self.assertEqual(llm.chat_calls, [])
 
     def test_round_exhaustion_uses_one_explicit_forced_finalization(self):
@@ -158,6 +269,25 @@ class AgentLoopResultTest(unittest.TestCase):
             llm.chat_calls[0][1]["trace_metadata"],
             {"phase": "forced_finalization", "reason": "step_budget_exhausted"},
         )
+
+    def test_empty_forced_finalization_is_not_repaired(self):
+        tool_request = {
+            "content": "",
+            "tool_calls": [{
+                "id": "call-1",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }
+        llm = FakeLlm([tool_request], forced_reply="")
+
+        result = self.run_loop(llm, max_rounds=1)
+
+        self.assertEqual(
+            result,
+            AgentRunResult.invalid("empty_forced_finalization"),
+        )
+        self.assertEqual(len(llm.tool_calls), 1)
+        self.assertEqual(len(llm.chat_calls), 1)
 
     def test_structured_agents_keep_their_structured_result(self):
         llm = FakeLlm([{"content": '{"summary":"done"}', "tool_calls": []}])
@@ -183,6 +313,39 @@ class AgentLoopResultTest(unittest.TestCase):
             result,
             AgentRunResult.structured_result({"summary": "done"}),
         )
+
+    def test_structured_agent_empty_output_uses_its_existing_schema_path(self):
+        llm = FakeLlm(
+            [{"content": "", "tool_calls": []}],
+            forced_reply='{"summary":"repaired schema"}',
+        )
+        spec = AgentSpec(
+            name="structured-agent",
+            config_key="structured-agent",
+            system_prompt="test",
+            tool_names=frozenset(),
+            output_schema={
+                "type": "object",
+                "required": ["summary"],
+                "properties": {"summary": {"type": "string"}},
+            },
+        )
+        with patch(
+            "agents.loop.get_task_config", return_value={"max_rounds": 1}
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(spec, [], ToolContext(), [], lambda *_: {})
+
+        self.assertEqual(
+            result,
+            AgentRunResult.structured_result({"summary": "repaired schema"}),
+        )
+        self.assertEqual(len(llm.tool_calls), 1)
+        self.assertFalse(any(
+            kwargs.get("inference_name") == "output_repair"
+            for _, kwargs in llm.tool_calls
+        ))
 
     def test_structured_result_is_unwrapped_for_a_parent_agent(self):
         spec = AgentSpec(

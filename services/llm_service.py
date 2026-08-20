@@ -89,6 +89,7 @@ def _finish_inference(
     outcome: str,
     raw_response: Optional[Dict[str, Any]] = None,
     error: Optional[str] = None,
+    reason: Optional[str] = None,
 ) -> None:
     if not emitter or not handle:
         return
@@ -98,7 +99,9 @@ def _finish_inference(
         outcome=outcome,
         status="failed" if error else "succeeded",
         error=error,
+        reason=reason,
         metrics=_response_metrics(raw_response or {}),
+        raw_response=raw_response,
     )
 
 
@@ -291,6 +294,7 @@ class LLMService:
             text,
             outcome="final_text" if text else "invalid",
             raw_response=resp,
+            reason=None if text else "empty_model_response",
         )
         return text if allow_thinking else strip_thinking(text)
 
@@ -373,6 +377,7 @@ class LLMService:
             text,
             outcome="final_text" if text else "invalid",
             raw_response=resp,
+            reason=None if text else "empty_model_response",
         )
         return text if allow_thinking else strip_thinking(text)
 
@@ -382,6 +387,8 @@ class LLMService:
         tools: List[dict],
         max_tokens: int = 1000,
         tool_choice: str = "auto",
+        inference_name: str = "chat_with_tools",
+        trace_metadata: Optional[Dict[str, Any]] = None,
     ) -> dict:
         """Chat completion with function/tool calling enabled.
 
@@ -396,6 +403,10 @@ class LLMService:
 
         Needs a server started with --jinja; without it llama-server has no
         chat template to render the tool calls with and answers 500.
+
+        `inference_name` and `trace_metadata` distinguish semantic follow-up
+        operations, such as a bounded output repair, without changing the
+        request sent to the model.
         """
         body: Dict[str, Any] = {
             "messages": messages,
@@ -406,7 +417,11 @@ class LLMService:
         }
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        emitter, trace = _begin_inference("chat_with_tools", body)
+        emitter, trace = _begin_inference(
+            inference_name,
+            body,
+            trace_metadata,
+        )
         try:
             resp = _post(f"{self.url}/v1/chat/completions", body)
         except Exception as error:
@@ -430,6 +445,7 @@ class LLMService:
             {"content": content, "tool_calls": tool_calls},
             outcome=outcome,
             raw_response=resp,
+            reason="empty_model_response" if outcome == "invalid" else None,
         )
         return message
 
@@ -487,6 +503,7 @@ class LLMService:
             "".join(parts),
             outcome="final_text" if parts else "invalid",
             raw_response=last_chunk,
+            reason=None if parts else "empty_model_response",
         )
 
 
