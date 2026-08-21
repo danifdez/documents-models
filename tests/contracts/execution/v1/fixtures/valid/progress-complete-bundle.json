@@ -785,7 +785,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:a5d0fe8c5b9a80b543b87ab8fb628007805f612e9f469de6eabc8d4b61dc5ecf",
-    "schemaManifestHash": "sha256:cc404d9dc3af0dd47fd53fb62f372ba8de6714a26ff06dfceaf3255723939917"
+    "schemaManifestHash": "sha256:72a7f58e2a05665a301062c061fb529be49426ed037f3a24fabf4067551065f8"
   },
   "purpose": "evaluation",
   "accessScope": {
@@ -793,7 +793,7 @@
     "workspaceId": "fixture-workspace"
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:685fb618ec753726f08d3e2e7a08a54dde58a247b706e5ca56d79d6623b367ca",
+  "manifestHash": "sha256:2bdc8e842c636dab68eb513af6348e8f2935b0d5968b52008bc8b559df143222",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

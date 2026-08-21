@@ -9,6 +9,7 @@ class ProgressLoopContext:
     agent_name: str
     loop_kind: str
     max_rounds: int
+    normal_inference_soft_limit: int
     max_output_repairs: int
     forced_finalization_available: bool
     max_tokens_per_inference: int
@@ -29,6 +30,7 @@ class ProgressLoopContext:
         agent_name: str,
         loop_kind: str,
         max_rounds: int,
+        normal_inference_soft_limit: int = 2,
         max_output_repairs: int,
         forced_finalization_available: bool,
         max_tokens_per_inference: int,
@@ -42,6 +44,7 @@ class ProgressLoopContext:
         )
         requested_policy = {
             "normal": max_rounds,
+            "normalInferenceSoftLimit": normal_inference_soft_limit,
             "repair": max_output_repairs,
             "closing": 1 if forced_finalization_available else 0,
             "maxTokensPerInference": max_tokens_per_inference,
@@ -65,6 +68,8 @@ class ProgressLoopContext:
                 "requestedPolicy": requested_policy,
             })
         effective = (grant or {}).get("effectivePolicy", requested_policy)
+        historical_soft_limit = 0 if grant else normal_inference_soft_limit
+        historical_tool_soft_limit = 0 if grant else tool_call_soft_limit
         budget_state = (grant or {}).get("_budgetState") or {}
         tool_state = budget_state.get("tool") if isinstance(budget_state, dict) else {}
         tool_state = tool_state if isinstance(tool_state, dict) else {}
@@ -74,12 +79,18 @@ class ProgressLoopContext:
             agent_name=agent_name,
             loop_kind=loop_kind,
             max_rounds=int(effective["normal"]),
+            normal_inference_soft_limit=int(
+                effective.get(
+                    "normalInferenceSoftLimit",
+                    historical_soft_limit,
+                )
+            ),
             max_output_repairs=int(effective["repair"]),
             forced_finalization_available=int(effective["closing"]) > 0,
             max_tokens_per_inference=int(effective["maxTokensPerInference"]),
             max_tool_calls=int(effective.get("toolCalls", max_tool_calls)),
             tool_call_soft_limit=int(
-                effective.get("toolCallSoftLimit", tool_call_soft_limit)
+                effective.get("toolCallSoftLimit", historical_tool_soft_limit)
             ),
             grant_id=(grant or {}).get("grantId"),
             tool_budget_granted=int(tool_state.get("granted", 0)),
@@ -104,6 +115,7 @@ class ProgressLoopContext:
             "agentName": self.agent_name,
             "loopKind": self.loop_kind,
             "maxRounds": self.max_rounds,
+            "normalInferenceSoftLimit": self.normal_inference_soft_limit,
             "maxOutputRepairs": self.max_output_repairs,
             "forcedFinalizationAvailable": self.forced_finalization_available,
             "maxTokensPerInference": self.max_tokens_per_inference,

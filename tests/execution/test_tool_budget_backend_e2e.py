@@ -293,6 +293,109 @@ class ToolBudgetInterruptionTests(unittest.TestCase):
         self.assertTrue(recovered.soft_limit_warning_pending)
         self.assertEqual(recovered.tool_budget_available, 2)
 
+    def test_normal_soft_limit_warning_survives_a_predispatch_exit(self):
+        context = self.create_execution()
+        emitter = ExecutionEmitter(context)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="mvp08-normal-soft-limit",
+            loop_kind="top_level",
+            max_rounds=3,
+            normal_inference_soft_limit=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=0,
+            tool_call_soft_limit=0,
+        )
+        last_reservation = None
+        for round_index in (1, 2):
+            last_reservation = emitter.reserve_operation_budget(
+                grant_id=progress.grant_id,
+                loop_id=progress.loop_id,
+                operation_id=str(uuid.uuid4()),
+                operation_kind="inference",
+                bucket="normal",
+                phase="agent_loop",
+                round=round_index,
+                name="chat_with_tools",
+            )
+
+        self.assertIsNotNone(last_reservation.get("_softLimitSignal"))
+        projected = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/progress"
+        )
+        events = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/events?limit=100"
+        )["events"]
+        usage = next(iter(
+            projected["ledger"]["operationBudget"]["grants"].values()
+        ))["usage"]["normal"]
+        self.assertEqual(usage["reserved"], 2)
+        self.assertTrue(usage["softLimitWarningPending"])
+
+        next_attempt = str(uuid.uuid4())
+        with self.database_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE {EXECUTIONS_TABLE} SET attempt_id = %s WHERE execution_id = %s",
+                (next_attempt, context["executionId"]),
+            )
+        resumed = ExecutionEmitter({
+            **context,
+            "attemptId": next_attempt,
+            "causedByEventId": events[-1]["eventId"],
+        })
+        recovered = ProgressLoopContext.start(
+            resumed,
+            agent_name="mvp08-normal-soft-limit",
+            loop_kind="top_level",
+            max_rounds=3,
+            normal_inference_soft_limit=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=0,
+            tool_call_soft_limit=0,
+        )
+        inference_request = {
+            "messages": [{"role": "user", "content": "finish"}],
+        }
+        resumed.start_inference(
+            "chat_with_tools",
+            inference_request,
+            recovered.trace(round=3, phase="agent_loop"),
+        )
+        resumed.flush_evidence()
+
+        self.assertTrue(any(
+            message.get("role") == "system"
+            and message.get("content", "").startswith(
+                "Normal inference budget is low: 0 of 3 calls remain."
+            )
+            for message in inference_request["messages"]
+        ))
+        rebuilt = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/progress"
+        )
+        rebuilt_events = self.request(
+            "GET", f"/executions/{context['rootExecutionId']}/events?limit=100"
+        )["events"]
+        rebuilt_usage = next(iter(
+            rebuilt["ledger"]["operationBudget"]["grants"].values()
+        ))["usage"]["normal"]
+        self.assertFalse(rebuilt_usage["softLimitWarningPending"])
+        self.assertEqual(sum(
+            event["eventType"] == "progress.reported"
+            and event["payload"].get("kind") == "budget_soft_limit_reached"
+            and event["payload"]["signal"].get("operationKind") == "inference"
+            for event in rebuilt_events
+        ), 1)
+        self.assertEqual(sum(
+            event["eventType"] == "operation.started"
+            and event["payload"].get("budgetSoftLimitWarningApplied") is True
+            for event in rebuilt_events
+        ), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

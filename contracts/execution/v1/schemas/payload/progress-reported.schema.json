@@ -81,6 +81,7 @@
       "required": ["normal", "repair", "closing", "maxTokensPerInference"],
       "properties": {
         "normal": { "type": "integer", "minimum": 0 },
+        "normalInferenceSoftLimit": { "type": "integer", "minimum": 0 },
         "repair": { "type": "integer", "minimum": 0 },
         "closing": { "type": "integer", "minimum": 0, "maximum": 1 },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
@@ -210,7 +211,8 @@
         "softLimit": { "type": "integer", "minimum": 0 },
         "softLimitReached": { "type": "boolean" },
         "softLimitReachedAt": { "$ref": "../common.schema.json#/$defs/timestamp" },
-        "softLimitTriggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" }
+        "softLimitTriggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "softLimitWarningPending": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -232,8 +234,8 @@
       "properties": {
         "version": { "const": "1" },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" },
-        "operationKind": { "const": "tool_call" },
-        "bucket": { "const": "tool" },
+        "operationKind": { "enum": ["inference", "tool_call"] },
+        "bucket": { "enum": ["normal", "tool"] },
         "softLimit": { "type": "integer", "minimum": 1 },
         "hardLimit": { "type": "integer", "minimum": 2 },
         "committed": { "type": "integer", "minimum": 1 },
@@ -242,6 +244,22 @@
         "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "operationKind": { "const": "inference" } },
+            "required": ["operationKind"]
+          },
+          "then": { "properties": { "bucket": { "const": "normal" } } }
+        },
+        {
+          "if": {
+            "properties": { "operationKind": { "const": "tool_call" } },
+            "required": ["operationKind"]
+          },
+          "then": { "properties": { "bucket": { "const": "tool" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "operationBudget": {
@@ -295,6 +313,7 @@
         "agentName": { "type": "string", "minLength": 1 },
         "loopKind": { "$ref": "#/$defs/loopKind" },
         "maxRounds": { "type": "integer", "minimum": 1 },
+        "normalInferenceSoftLimit": { "type": "integer", "minimum": 0 },
         "operations": {
           "type": "object",
           "required": ["inference", "tool_call"],
@@ -333,6 +352,7 @@
         "agentName": { "type": "string", "minLength": 1 },
         "loopKind": { "$ref": "#/$defs/loopKind" },
         "maxRounds": { "type": "integer", "minimum": 1 },
+        "normalInferenceSoftLimit": { "type": "integer", "minimum": 0 },
         "maxOutputRepairs": { "type": "integer", "minimum": 0 },
         "forcedFinalizationAvailable": { "type": "boolean" },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },

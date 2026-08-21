@@ -74,6 +74,12 @@ _OUTPUT_REPAIR_PROMPT = (
     "its result requires a different request."
 )
 
+_FORCED_FINALIZATION_PROMPT = (
+    "The operation budget is exhausted. Reply now with the best final answer "
+    "supported by the evidence already available. Do not call tools and do not "
+    "emit tool-call markup."
+)
+
 
 def _json_object_or_none(text: str) -> Optional[Dict[str, Any]]:
     t = (text or "").strip()
@@ -167,6 +173,9 @@ def run_agent_loop(
     params = get_llm_params(spec.config_key)
     llm = get_llm_service(**params)
     max_rounds = int(cfg.get("max_rounds", spec.max_rounds))
+    normal_inference_soft_limit = int(
+        cfg.get("normal_inference_soft_limit", 2)
+    )
     round_max_tokens = int(
         cfg.get("tool_max_tokens") or cfg.get("max_tokens") or spec.fallback_max_tokens
     )
@@ -184,6 +193,7 @@ def run_agent_loop(
         agent_name=spec.name,
         loop_kind=loop_kind,
         max_rounds=max_rounds,
+        normal_inference_soft_limit=normal_inference_soft_limit,
         max_output_repairs=2 if spec.output_schema is not None else 1,
         forced_finalization_available=spec.output_schema is None,
         max_tokens_per_inference=round_max_tokens,
@@ -402,8 +412,12 @@ def run_agent_loop(
             if tool_budget_exhausted else "budget_hard_limit_reached"
         )
     try:
+        closing_messages = [
+            *messages,
+            {"role": "system", "content": _FORCED_FINALIZATION_PROMPT},
+        ]
         forced = llm.chat(
-            messages,
+            closing_messages,
             max_tokens=round_max_tokens,
             allow_thinking=True,
             inference_name="forced_finalization",

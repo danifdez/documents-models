@@ -41,7 +41,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:cc404d9dc3af0dd47fd53fb62f372ba8de6714a26ff06dfceaf3255723939917"
+CONTRACT_SET_HASH = "sha256:72a7f58e2a05665a301062c061fb529be49426ed037f3a24fabf4067551065f8"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -174,6 +174,7 @@ class ExecutionEmitter:
         operation_id = str(uuid.uuid4())
         attempt_id = str(uuid.uuid4())
         budget_payload: Dict[str, Any] = {}
+        reservation: Optional[Dict[str, Any]] = None
         trace = metadata or {}
         if (
             self.context
@@ -196,8 +197,29 @@ class ExecutionEmitter:
                 "budgetBucket": reservation["bucket"],
                 "executionAttemptId": reservation["executionAttemptId"],
             }
+            normal_state = reservation.get("_budgetState", {}).get("normal", {})
+            if (
+                isinstance(request, dict)
+                and isinstance(normal_state, dict)
+                and reservation.get("bucket") == "normal"
+                and normal_state.get("softLimitWarningPending") is True
+                and isinstance(request.get("messages"), list)
+            ):
+                warning = (
+                    f"Normal inference budget is low: "
+                    f"{int(normal_state.get('available', 0))} of "
+                    f"{int(normal_state.get('granted', 0))} calls remain. "
+                    "Prefer completing this turn with the evidence already "
+                    "available. Do not open optional work; continue only when "
+                    "another step is required to answer the user correctly."
+                )
+                request["messages"] = [
+                    *request["messages"],
+                    {"role": "system", "content": warning},
+                ]
+                budget_payload["budgetSoftLimitWarningApplied"] = True
         artifact_id = self.record_artifact("materialized_prompt", request, "application/json")
-        return self.start_operation(
+        handle = self.start_operation(
             "inference",
             name,
             artifact_refs=[artifact_id] if artifact_id else [],
@@ -206,6 +228,10 @@ class ExecutionEmitter:
             operation_id=operation_id,
             attempt_id=attempt_id,
         )
+        if handle and reservation:
+            handle.budget_state = reservation.get("_budgetState")
+            handle.soft_limit_signal = reservation.get("_softLimitSignal")
+        return handle
 
     def request_progress_grant(self, request: Dict[str, Any]) -> Dict[str, Any]:
         response = self._post("progress/grants", request)

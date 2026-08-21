@@ -587,6 +587,18 @@ class AgentLoopResultTest(unittest.TestCase):
         )
         self.assertEqual(len(llm.chat_calls), 1)
         self.assertEqual(llm.chat_calls[0][1]["inference_name"], "forced_finalization")
+        closing_messages = llm.chat_calls[0][0][0]
+        self.assertEqual(
+            closing_messages[-1],
+            {
+                "role": "system",
+                "content": (
+                    "The operation budget is exhausted. Reply now with the best "
+                    "final answer supported by the evidence already available. "
+                    "Do not call tools and do not emit tool-call markup."
+                ),
+            },
+        )
         self.assertEqual(
             {
                 key: llm.chat_calls[0][1]["trace_metadata"][key]

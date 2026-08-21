@@ -21,7 +21,8 @@
     "budgetBucket": {
       "$ref": "progress-reported.schema.json#/$defs/budgetBucket"
     },
-    "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" }
+    "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+    "budgetSoftLimitWarningApplied": { "type": "boolean" }
   },
   "allOf": [
     {
@@ -86,6 +87,19 @@
         },
         "then": {
           "properties": { "operationKind": { "const": "inference" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "budgetSoftLimitWarningApplied": { "const": true } },
+        "required": ["budgetSoftLimitWarningApplied"]
+      },
+      "then": {
+        "required": ["budgetBucket"],
+        "properties": {
+          "operationKind": { "const": "inference" },
+          "budgetBucket": { "const": "normal" }
         }
       }
     }

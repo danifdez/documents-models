@@ -197,6 +197,7 @@ class ExecutionEmitterTest(unittest.TestCase):
         )
 
         self.assertEqual(progress.max_rounds, 1)
+        self.assertEqual(progress.normal_inference_soft_limit, 0)
         self.assertEqual(progress.max_output_repairs, 0)
         self.assertFalse(progress.forced_finalization_available)
         self.assertEqual(progress.max_tokens_per_inference, 64)
@@ -239,6 +240,83 @@ class ExecutionEmitterTest(unittest.TestCase):
                  if request[0] == "progress/reservations"),
             next(i for i, request in enumerate(client.requests)
                  if request[0] == "artifacts"),
+        )
+
+    def test_normal_inference_soft_limit_warns_before_the_triggering_dispatch(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=3,
+            normal_inference_soft_limit=2,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+        )
+        messages = [{"role": "user", "content": "question"}]
+        first_request = {"messages": list(messages)}
+        second_request = {"messages": [
+            *messages,
+            {"role": "system", "content": "Tool budget is low: 1 remains."},
+        ]}
+
+        first = emitter.start_inference(
+            "chat_with_tools",
+            first_request,
+            progress.trace(round=1, phase="agent_loop"),
+        )
+        second = emitter.start_inference(
+            "chat_with_tools",
+            second_request,
+            progress.trace(round=2, phase="agent_loop"),
+        )
+        emitter.flush_evidence()
+
+        self.assertFalse(first.soft_limit_signal)
+        self.assertTrue(second.soft_limit_signal)
+        self.assertEqual(first_request["messages"], messages)
+        self.assertEqual(len(second_request["messages"]), 3)
+        self.assertTrue(
+            second_request["messages"][-2]["content"].startswith(
+                "Tool budget is low"
+            )
+        )
+        self.assertIn(
+            "1 of 3 calls remain",
+            second_request["messages"][-1]["content"],
+        )
+        starts = [
+            event for event in client.sent_events
+            if event["eventType"] == "operation.started"
+        ]
+        self.assertNotIn(
+            "budgetSoftLimitWarningApplied",
+            starts[0]["payload"],
+        )
+        self.assertTrue(
+            starts[1]["payload"]["budgetSoftLimitWarningApplied"]
+        )
+        artifact = client.sent_artifacts[-1]
+        body = json.loads(base64.b64decode(artifact["bodyBase64"]))
+        self.assertEqual(body["messages"], second_request["messages"])
+
+        closing_request = {"messages": list(messages)}
+        emitter.start_inference(
+            "forced_finalization",
+            closing_request,
+            progress.trace(round=3, phase="forced_finalization"),
+        )
+        emitter.flush_evidence()
+        self.assertEqual(closing_request["messages"], messages)
+        closing_start = [
+            event for event in client.sent_events
+            if event["eventType"] == "operation.started"
+        ][-1]
+        self.assertNotIn(
+            "budgetSoftLimitWarningApplied",
+            closing_start["payload"],
         )
 
     def test_tool_reservation_exposes_the_authoritative_soft_limit_state(self):
