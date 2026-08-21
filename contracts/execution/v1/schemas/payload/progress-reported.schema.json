@@ -100,7 +100,8 @@
         "toolCalls": { "type": "integer", "minimum": 0 },
         "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
         "exactToolRepeatWarning": { "type": "boolean" },
-        "exactToolRepeatBlockAfterWarning": { "type": "boolean" }
+        "exactToolRepeatBlockAfterWarning": { "type": "boolean" },
+        "exactToolRepeatTerminateAfterBlock": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -167,6 +168,8 @@
         "operationFingerprintVersion": {
           "const": "canonical_tool_input_v1"
         },
+        "toolBatchSize": { "type": "integer", "minimum": 1 },
+        "toolBatchIndex": { "type": "integer", "minimum": 0 },
         "phase": { "$ref": "#/$defs/inferencePhase" },
         "round": { "type": "integer", "minimum": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -220,7 +223,9 @@
       ],
       "dependentRequired": {
         "operationFingerprint": ["operationFingerprintVersion"],
-        "operationFingerprintVersion": ["operationFingerprint"]
+        "operationFingerprintVersion": ["operationFingerprint"],
+        "toolBatchSize": ["toolBatchIndex"],
+        "toolBatchIndex": ["toolBatchSize"]
       },
       "additionalProperties": false
     },
@@ -304,7 +309,7 @@
       "properties": {
         "version": { "const": "1" },
         "guardKind": { "const": "immediate_exact_tool_repeat" },
-        "action": { "enum": ["warn", "block"] },
+        "action": { "enum": ["warn", "block", "terminate"] },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" },
         "loopId": { "$ref": "../common.schema.json#/$defs/id" },
         "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
@@ -314,6 +319,10 @@
           "const": "canonical_tool_input_v1"
         },
         "warningAppliedToOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        },
+        "blockedOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "blockResultAppliedToOperationId": {
           "$ref": "../common.schema.json#/$defs/id"
         },
         "resultFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
@@ -344,12 +353,36 @@
         },
         {
           "if": {
+            "properties": { "action": { "const": "terminate" } },
+            "required": ["action"]
+          },
+          "then": {
+            "required": [
+              "blockedOperationId",
+              "warningAppliedToOperationId",
+              "blockResultAppliedToOperationId",
+              "resultFingerprint",
+              "resultFingerprintVersion"
+            ],
+            "properties": {
+              "blockedOperationId": true,
+              "warningAppliedToOperationId": true,
+              "blockResultAppliedToOperationId": true,
+              "resultFingerprint": true,
+              "resultFingerprintVersion": true
+            }
+          }
+        },
+        {
+          "if": {
             "properties": { "action": { "const": "warn" } },
             "required": ["action"]
           },
           "then": {
             "properties": {
               "warningAppliedToOperationId": false,
+              "blockedOperationId": false,
+              "blockResultAppliedToOperationId": false,
               "resultFingerprint": false,
               "resultFingerprintVersion": false
             }
@@ -370,6 +403,10 @@
         "warningIssued": { "type": "boolean" },
         "warningPending": { "type": "boolean" },
         "blocks": { "type": "integer", "minimum": 0 },
+        "blockResultPending": { "type": "boolean" },
+        "blockResultAppliedToOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        },
         "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
         "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
         "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
@@ -388,6 +425,10 @@
         "resultFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
         "resultFingerprintVersion": {
           "const": "tool_output_content_hash_v1"
+        },
+        "terminations": { "type": "integer", "minimum": 0 },
+        "lastTerminatedOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
         }
       },
       "additionalProperties": false
@@ -498,6 +539,7 @@
         "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
         "exactToolRepeatWarning": { "type": "boolean" },
         "exactToolRepeatBlockAfterWarning": { "type": "boolean" },
+        "exactToolRepeatTerminateAfterBlock": { "type": "boolean" },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false

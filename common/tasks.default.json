@@ -52,7 +52,8 @@
     "max_tool_calls": 6,
     "tool_call_soft_limit": 4,
     "exact_tool_repeat_warning": true,
-    "exact_tool_repeat_block_after_warning": true
+    "exact_tool_repeat_block_after_warning": true,
+    "exact_tool_repeat_terminate_after_block": true
   },
   "agent-chat": {
     "enabled": true,
@@ -67,7 +68,8 @@
     "max_tool_calls": 6,
     "tool_call_soft_limit": 4,
     "exact_tool_repeat_warning": true,
-    "exact_tool_repeat_block_after_warning": true
+    "exact_tool_repeat_block_after_warning": true,
+    "exact_tool_repeat_terminate_after_block": true
   },
   "workspace-research-agent": {
     "enabled": true,

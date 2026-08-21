@@ -106,6 +106,12 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             outcome = assistant.run(messages, ctx)
             if outcome.kind == "invalid":
                 reason = outcome.reason or "invalid_agent_result"
+                if reason == "loop_detected":
+                    emitter.flush_evidence()
+                    return emitter.attach_summary({
+                        "error": "Immediate exact tool repeat persisted",
+                        "completionReason": "loop_detected",
+                    })
                 if reason.startswith(("budget_", "tool_budget_")):
                     emitter.flush_evidence()
                     return emitter.attach_summary({

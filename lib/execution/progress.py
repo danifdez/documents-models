@@ -17,6 +17,7 @@ class ProgressLoopContext:
     tool_call_soft_limit: int
     exact_tool_repeat_warning: bool
     exact_tool_repeat_block_after_warning: bool
+    exact_tool_repeat_terminate_after_block: bool
     grant_id: Optional[str] = None
     tool_budget_granted: int = 0
     tool_budget_available: int = 0
@@ -40,6 +41,7 @@ class ProgressLoopContext:
         tool_call_soft_limit: int = 0,
         exact_tool_repeat_warning: bool = False,
         exact_tool_repeat_block_after_warning: bool = False,
+        exact_tool_repeat_terminate_after_block: bool = False,
     ) -> "ProgressLoopContext":
         loop_id = (
             str(emitter.context.get("executionId"))
@@ -56,6 +58,7 @@ class ProgressLoopContext:
             "toolCallSoftLimit": tool_call_soft_limit,
             "exactToolRepeatWarning": exact_tool_repeat_warning,
             "exactToolRepeatBlockAfterWarning": exact_tool_repeat_block_after_warning,
+            "exactToolRepeatTerminateAfterBlock": exact_tool_repeat_terminate_after_block,
         }
         grant = None
         if (
@@ -79,6 +82,9 @@ class ProgressLoopContext:
         historical_repeat_warning = False if grant else exact_tool_repeat_warning
         historical_repeat_block = (
             False if grant else exact_tool_repeat_block_after_warning
+        )
+        historical_repeat_terminate = (
+            False if grant else exact_tool_repeat_terminate_after_block
         )
         budget_state = (grant or {}).get("_budgetState") or {}
         tool_state = budget_state.get("tool") if isinstance(budget_state, dict) else {}
@@ -114,6 +120,12 @@ class ProgressLoopContext:
                     historical_repeat_block,
                 )
             ),
+            exact_tool_repeat_terminate_after_block=bool(
+                effective.get(
+                    "exactToolRepeatTerminateAfterBlock",
+                    historical_repeat_terminate,
+                )
+            ),
             grant_id=(grant or {}).get("grantId"),
             tool_budget_granted=int(tool_state.get("granted", 0)),
             tool_budget_available=int(tool_state.get("available", 0)),
@@ -146,6 +158,9 @@ class ProgressLoopContext:
             "exactToolRepeatWarning": self.exact_tool_repeat_warning,
             "exactToolRepeatBlockAfterWarning": (
                 self.exact_tool_repeat_block_after_warning
+            ),
+            "exactToolRepeatTerminateAfterBlock": (
+                self.exact_tool_repeat_terminate_after_block
             ),
         }
         if self.grant_id:

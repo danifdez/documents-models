@@ -5,6 +5,7 @@ import os
 import statistics
 import time
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from lib.framework.agent import AgentSpec
 from lib.framework.tool import Tool, ToolContext
 from lib.llm.config import get_llm_params
 from services.llm_service import get_llm_service
+from services import llm_service as llm_service_module
 from tests.execution.benchmark_inference_budget import activate_execution
 from tools import REGISTRY
 
@@ -88,6 +90,14 @@ def scenario(
     result_mode="stable",
     force_block_disabled=False,
     expected_hard_denials=0,
+    control_block_enabled=False,
+    terminate_enabled=False,
+    force_terminate_disabled=False,
+    expected_terminations=0,
+    expected_control_blocks=None,
+    expected_control_terminations=0,
+    expected_current_outcome=None,
+    expected_control_outcome=None,
 ):
     return {
         "marker": marker,
@@ -107,6 +117,14 @@ def scenario(
         "resultMode": result_mode,
         "forceBlockDisabled": force_block_disabled,
         "expectedHardDenials": expected_hard_denials,
+        "controlBlockEnabled": control_block_enabled,
+        "terminateEnabled": terminate_enabled,
+        "forceTerminateDisabled": force_terminate_disabled,
+        "expectedTerminations": expected_terminations,
+        "expectedControlBlocks": expected_control_blocks,
+        "expectedControlTerminations": expected_control_terminations,
+        "expectedCurrentOutcome": expected_current_outcome,
+        "expectedControlOutcome": expected_control_outcome,
     }
 
 
@@ -345,7 +363,7 @@ def openai_tool_response(calls, inference):
             "message": {
                 "content": None,
                 "tool_calls": [{
-                    "id": f"mvp11-injected-{inference}-{position}",
+                    "id": f"benchmark-injected-{inference}-{position}",
                     "type": "function",
                     "function": {
                         "name": name,
@@ -370,6 +388,7 @@ class TracingLlm:
         self.responses = []
         self.proposed_tools = []
         self.technical_results = {}
+        self.observed_real_responses = []
 
     def _observe(self, messages):
         warnings = [
@@ -395,10 +414,32 @@ class TracingLlm:
         self.inferences += 1
         self._observe(messages)
         if self.injected:
-            response = openai_tool_response(
-                self.injected.pop(0), self.inferences,
+            injected = self.injected.pop(0)
+            observe_real = isinstance(injected, dict) and bool(
+                injected.get("observeReal")
             )
-            with patch("services.llm_service._post", return_value=response):
+            calls_to_inject = (
+                injected.get("calls", []) if isinstance(injected, dict)
+                else injected
+            )
+            response = openai_tool_response(calls_to_inject, self.inferences)
+            if observe_real:
+                original_post = llm_service_module._post
+
+                def observe_and_replace(*post_args, **post_kwargs):
+                    observed = original_post(*post_args, **post_kwargs)
+                    self.observed_real_responses.append(copy.deepcopy(observed))
+                    return response
+
+                post_context = patch(
+                    "services.llm_service._post", side_effect=observe_and_replace
+                )
+                self.real_model_posts += 1
+            else:
+                post_context = patch(
+                    "services.llm_service._post", return_value=response
+                )
+            with post_context:
                 value = self.delegate.chat_with_tools(messages, *args, **kwargs)
         else:
             self.real_model_posts += 1
@@ -518,14 +559,32 @@ def normalized_calls(calls):
 
 
 def block_enabled(item, enabled):
-    return enabled and not item["forceBlockDisabled"]
+    return (
+        (enabled or item.get("controlBlockEnabled", False))
+        and not item["forceBlockDisabled"]
+    )
+
+
+def terminate_enabled(item, enabled):
+    return (
+        enabled
+        and item.get("terminateEnabled", False)
+        and not item.get("forceTerminateDisabled", False)
+    )
 
 
 def expected_calls(item, enabled):
     return item["mvp11Tools"] if block_enabled(item, enabled) else item["controlTools"]
 
 
-def run_sample(service, backend_url, assistant_id, name, enabled):
+def run_sample(
+    service,
+    backend_url,
+    assistant_id,
+    name,
+    enabled,
+    mode_names=("mvp10_control", "mvp11"),
+):
     item = SCENARIOS[name]
     emitter = create_emitter(backend_url, assistant_id)
     token = activate_emitter(emitter)
@@ -576,6 +635,11 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
         return result
 
     started = time.perf_counter()
+    summarize_context = (
+        patch("agents.loop._summarize", return_value=("", None))
+        if item["resultMode"] == "no_summary"
+        else nullcontext()
+    )
     try:
         with patch(
             "agents.loop.get_task_config",
@@ -589,10 +653,13 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
                 "exact_tool_repeat_block_after_warning": block_enabled(
                     item, enabled
                 ),
+                "exact_tool_repeat_terminate_after_block": terminate_enabled(
+                    item, enabled
+                ),
             },
         ), patch("agents.loop.get_llm_params", return_value={}), patch(
             "agents.loop.get_llm_service", return_value=llm
-        ), patch.dict(REGISTRY, runtime_tools, clear=False):
+        ), patch.dict(REGISTRY, runtime_tools, clear=False), summarize_context:
             result = run_agent_loop(
                 spec,
                 messages,
@@ -624,6 +691,9 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
     signals = guard_signals(events)
     warning_signals = [signal for signal in signals if signal.get("action") == "warn"]
     block_signals = [signal for signal in signals if signal.get("action") == "block"]
+    terminate_signals = [
+        signal for signal in signals if signal.get("action") == "terminate"
+    ]
     starts = warning_starts(events)
     prompt_warning_count = sum(
         str(message.get("content") or "").startswith(REPEAT_WARNING)
@@ -633,19 +703,55 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
     )
     expected_signal_count = 1 if item["expectedGuard"] else 0
     expected_warning_count = 1 if item["expectedWarning"] else 0
+    configured_control_blocks = item.get("expectedControlBlocks")
     expected_block_count = (
-        item["expectedBlocks"] if block_enabled(item, enabled) else 0
+        item["expectedBlocks"]
+        if enabled
+        else (
+            item["expectedBlocks"]
+            if configured_control_blocks is None
+            else configured_control_blocks
+        )
+    ) if block_enabled(item, enabled) else 0
+    expected_termination_count = (
+        item.get("expectedTerminations", 0)
+        if terminate_enabled(item, enabled)
+        else item.get("expectedControlTerminations", 0)
     )
     content = result.content or ""
-    partial_matches = (
-        result.kind == "final_text"
-        and result.completion_kind == "partial"
-        and bool(content.strip())
-        if item["expectedPartial"]
-        else result.kind == "final_text"
-        and result.completion_kind is None
-        and item["marker"] in content
+    expected_outcome = (
+        item.get("expectedCurrentOutcome")
+        if enabled
+        else item.get("expectedControlOutcome")
     )
+    if expected_outcome == "loop_partial":
+        partial_matches = (
+            result.kind == "final_text"
+            and result.completion_kind == "partial"
+            and result.completion_reason == "loop_detected"
+            and bool(content.strip())
+        )
+    elif expected_outcome == "loop_failure":
+        partial_matches = (
+            result.kind == "invalid"
+            and result.reason == "loop_detected"
+        )
+    elif expected_outcome == "normal_text":
+        partial_matches = (
+            result.kind == "final_text"
+            and result.completion_kind is None
+            and bool(content.strip())
+        )
+    else:
+        partial_matches = (
+            result.kind == "final_text"
+            and result.completion_kind == "partial"
+            and bool(content.strip())
+            if item["expectedPartial"]
+            else result.kind == "final_text"
+            and result.completion_kind is None
+            and item["marker"] in content
+        )
     actual_calls = normalized_calls(calls)
     calls_match = actual_calls == expected_calls(item, enabled)
     guard_state = ((progress.get("ledger") or {}).get("loopGuards") or {})
@@ -657,6 +763,10 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
         reservation for reservation in reservations
         if reservation.get("reason") == "immediate_exact_tool_repeat_blocked"
     ]
+    terminate_reservations = [
+        reservation for reservation in reservations
+        if reservation.get("reason") == "immediate_exact_tool_repeat_terminated"
+    ]
     hard_denials = [
         reservation for reservation in reservations
         if reservation.get("reason") == "tool_budget_hard_limit_reached"
@@ -664,9 +774,12 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
     blocked_ids = {
         signal.get("triggeringOperationId") for signal in block_signals
     }
+    terminated_ids = {
+        signal.get("triggeringOperationId") for signal in terminate_signals
+    }
     blocked_lifecycle_events = [
         event for event in events
-        if event.get("operationId") in blocked_ids
+        if event.get("operationId") in blocked_ids | terminated_ids
         and event.get("eventType") in {
             "operation.started", "operation.finished", "source.observed",
         }
@@ -696,6 +809,7 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
     proposed_expected = (
         len(expected_calls(item, enabled))
         + expected_block_count
+        + expected_termination_count
         + item["expectedHardDenials"]
     )
     usage = budget_usage(progress)
@@ -704,11 +818,13 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
         and calls_match
         and len(warning_signals) == expected_signal_count
         and len(block_signals) == expected_block_count
+        and len(terminate_signals) == expected_termination_count
         and len(starts) == expected_warning_count
         and prompt_warning_count == expected_warning_count
         and bool(guard.get("warningPending", False)) == warning_pending_expected
         and int(guard.get("blocks", 0)) == expected_block_count
         and len(block_reservations) == expected_block_count
+        and len(terminate_reservations) == expected_termination_count
         and len(hard_denials) == item["expectedHardDenials"]
         and not blocked_lifecycle_events
         and len(prompt_technical) == expected_block_count
@@ -720,7 +836,7 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
         and usage["tool"] == len(actual_calls)
     )
     return {
-        "mode": "mvp11" if enabled else "mvp10_control",
+        "mode": mode_names[1] if enabled else mode_names[0],
         "elapsedMs": elapsed_ms,
         "realModelPosts": llm.real_model_posts,
         "inferences": llm.inferences,
@@ -728,13 +844,17 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
         "tools": actual_calls,
         "expectedTools": expected_calls(item, enabled),
         "proposedTools": llm.proposed_tools,
+        "observedRealResponses": llm.observed_real_responses,
         "resultKind": result.kind,
+        "resultReason": result.reason,
         "completionKind": result.completion_kind,
         "completionReason": result.completion_reason,
         "content": content,
         "warningSignals": len(warning_signals),
         "blockSignals": len(block_signals),
+        "terminateSignals": len(terminate_signals),
         "blockReservations": len(block_reservations),
+        "terminateReservations": len(terminate_reservations),
         "hardLimitDenials": len(hard_denials),
         "blockedLifecycleEvents": len(blocked_lifecycle_events),
         "technicalResults": len(llm.technical_results),
@@ -750,16 +870,31 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
     }
 
 
-def collect(service, backend_url, assistant_id, name, samples, max_attempts):
+def collect(
+    service,
+    backend_url,
+    assistant_id,
+    name,
+    samples,
+    max_attempts,
+    mode_names=("mvp10_control", "mvp11"),
+):
     values = []
-    accepted = {"mvp10_control": 0, "mvp11": 0}
+    accepted = {mode: 0 for mode in mode_names}
     for attempt in range(max_attempts):
         order = (False, True) if attempt % 2 == 0 else (True, False)
         for enabled in order:
-            mode = "mvp11" if enabled else "mvp10_control"
+            mode = mode_names[1] if enabled else mode_names[0]
             if accepted[mode] >= samples:
                 continue
-            value = run_sample(service, backend_url, assistant_id, name, enabled)
+            value = run_sample(
+                service,
+                backend_url,
+                assistant_id,
+                name,
+                enabled,
+                mode_names,
+            )
             values.append(value)
             print(name, json.dumps(value, ensure_ascii=False), flush=True)
             if value["correct"]:

@@ -42,7 +42,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:f7564e1b2d811befaed9f07b987a83ff06c90089230f638771674d34ce7a24d3"
+CONTRACT_SET_HASH = "sha256:5de857c99bfac5a0c77100e4f3f4abf0b729392269062eef789d8e6463185240"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -58,6 +58,12 @@ class ToolBudgetDenied(RuntimeError):
 
 
 class ToolLoopGuardBlocked(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class ToolLoopGuardTerminated(RuntimeError):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
@@ -269,6 +275,12 @@ class ExecutionEmitter:
             }
             guard_state = reservation.get("_guardState", {})
             if (
+                isinstance(guard_state, dict)
+                and reservation.get("bucket") == "normal"
+                and guard_state.get("blockResultPending") is True
+            ):
+                budget_payload["loopGuardBlockResultApplied"] = True
+            if (
                 isinstance(request, dict)
                 and isinstance(guard_state, dict)
                 and reservation.get("bucket") == "normal"
@@ -355,6 +367,8 @@ class ExecutionEmitter:
         tool_call_id: Optional[str] = None,
         operation_fingerprint: Optional[str] = None,
         operation_fingerprint_version: Optional[str] = None,
+        tool_batch_size: Optional[int] = None,
+        tool_batch_index: Optional[int] = None,
     ) -> Dict[str, Any]:
         if not self.context or not self.context.get("attemptId"):
             raise RuntimeError("Execution attempt is required for budget reservation")
@@ -380,6 +394,14 @@ class ExecutionEmitter:
                     if operation_fingerprint and operation_fingerprint_version
                     else {}
                 ),
+                **(
+                    {
+                        "toolBatchSize": tool_batch_size,
+                        "toolBatchIndex": tool_batch_index,
+                    }
+                    if tool_batch_size is not None and tool_batch_index is not None
+                    else {}
+                ),
             })
         except Exception as error:
             raise InferenceBudgetDenied("budget_reservation_failed") from error
@@ -392,6 +414,8 @@ class ExecutionEmitter:
             reason = str(reservation.get("reason") or "budget_reservation_failed")
             if reason == "immediate_exact_tool_repeat_blocked":
                 raise ToolLoopGuardBlocked(reason)
+            if reason == "immediate_exact_tool_repeat_terminated":
+                raise ToolLoopGuardTerminated(reason)
             if operation_kind == "tool_call":
                 raise ToolBudgetDenied(reason)
             raise InferenceBudgetDenied(reason)
@@ -481,6 +505,8 @@ class ExecutionEmitter:
         provider_tool_call_id: Optional[str],
         metadata: Optional[Dict[str, Any]] = None,
         repeat_comparable: bool = False,
+        tool_batch_size: Optional[int] = None,
+        tool_batch_index: Optional[int] = None,
     ) -> Optional[OperationHandle]:
         tool_call_id = str(uuid.uuid4())
         operation_id = str(uuid.uuid4())
@@ -512,6 +538,8 @@ class ExecutionEmitter:
                 operation_fingerprint_version=(
                     "canonical_tool_input_v1" if operation_fingerprint else None
                 ),
+                tool_batch_size=tool_batch_size,
+                tool_batch_index=tool_batch_index,
             )
             budget_payload = {
                 "budgetGrantId": reservation["grantId"],
@@ -524,6 +552,14 @@ class ExecutionEmitter:
                         "operationFingerprintVersion": "canonical_tool_input_v1",
                     }
                     if operation_fingerprint
+                    else {}
+                ),
+                **(
+                    {
+                        "toolBatchSize": tool_batch_size,
+                        "toolBatchIndex": tool_batch_index,
+                    }
+                    if tool_batch_size is not None and tool_batch_index is not None
                     else {}
                 ),
             }

@@ -13,6 +13,7 @@ from lib.execution.emitter import (
     InferenceBudgetDenied,
     ToolBudgetDenied,
     ToolLoopGuardBlocked,
+    ToolLoopGuardTerminated,
     _safe_value,
     canonical_tool_input_fingerprint,
 )
@@ -837,6 +838,111 @@ class ExecutionEmitterTest(unittest.TestCase):
             event["eventType"] == "operation.started"
             for event in emitter.pending_events
         ))
+
+    def test_loop_guard_termination_is_typed_with_batch_identity(self):
+        fallback = RecordingIngestClient()
+        seen = {}
+
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                seen.update(body)
+                return {
+                    "granted": False,
+                    "eventId": "00000000-0000-4000-8000-000000000030",
+                    "reservation": {
+                        "version": "1",
+                        "reservationId": "00000000-0000-4000-8000-000000000031",
+                        "grantId": body["grantId"],
+                        "operationId": body["operationId"],
+                        "executionAttemptId": body["executionAttemptId"],
+                        "operationKind": "tool_call",
+                        "bucket": "tool",
+                        "toolCallId": body["toolCallId"],
+                        "toolBatchSize": body["toolBatchSize"],
+                        "toolBatchIndex": body["toolBatchIndex"],
+                        "phase": body["phase"],
+                        "round": body["round"],
+                        "name": body["name"],
+                        "status": "denied",
+                        "reason": "immediate_exact_tool_repeat_terminated",
+                        "decidedAt": "2026-08-21T10:00:02Z",
+                    },
+                }
+            return fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+
+        emitter = self.emitter(RecordingIngestClient(respond))
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=1,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=1,
+            exact_tool_repeat_warning=True,
+            exact_tool_repeat_block_after_warning=True,
+            exact_tool_repeat_terminate_after_block=True,
+        )
+
+        with self.assertRaisesRegex(
+            ToolLoopGuardTerminated,
+            "immediate_exact_tool_repeat_terminated",
+        ):
+            emitter.start_tool(
+                "folder_read",
+                {"path": "fixture.txt"},
+                "provider-call-1",
+                progress.trace(round=1, phase="agent_loop"),
+                repeat_comparable=True,
+                tool_batch_size=1,
+                tool_batch_index=0,
+            )
+
+        self.assertEqual(seen["toolBatchSize"], 1)
+        self.assertEqual(seen["toolBatchIndex"], 0)
+        self.assertFalse(any(
+            event["eventType"] == "operation.started"
+            for event in emitter.pending_events
+        ))
+
+    def test_pending_block_result_is_applied_only_to_normal_inference(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            response = fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+            if suffix == "progress/reservations":
+                response["guardState"] = {"blockResultPending": True}
+            return response
+
+        client = RecordingIngestClient(respond)
+        emitter = self.emitter(client)
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=2,
+            max_output_repairs=1,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+        )
+        emitter.start_inference(
+            "output_repair",
+            {"messages": []},
+            progress.trace(round=1, phase="output_repair"),
+        )
+        emitter.start_inference(
+            "chat_with_tools",
+            {"messages": []},
+            progress.trace(round=2, phase="agent_loop"),
+        )
+        emitter.flush_evidence()
+        starts = [
+            event for event in client.sent_events
+            if event["eventType"] == "operation.started"
+        ]
+        self.assertNotIn("loopGuardBlockResultApplied", starts[0]["payload"])
+        self.assertTrue(starts[1]["payload"]["loopGuardBlockResultApplied"])
 
     def test_reservation_protocol_error_is_typed_before_dispatch(self):
         fallback = RecordingIngestClient()

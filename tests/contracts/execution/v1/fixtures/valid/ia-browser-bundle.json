@@ -639,14 +639,14 @@
   },
   "integrity": {
     "eventsHash": "sha256:aa3387a121aaa59705a40a3b1861bf70d63fda077968eb4fdc744ccd18ae2306",
-    "schemaManifestHash": "sha256:f7564e1b2d811befaed9f07b987a83ff06c90089230f638771674d34ce7a24d3"
+    "schemaManifestHash": "sha256:5de857c99bfac5a0c77100e4f3f4abf0b729392269062eef789d8e6463185240"
   },
   "purpose": "evaluation",
   "accessScope": {
     "ownerPrincipal": "fixture-device-user"
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:777ae6e8afddcefe76d5d043e7ceab9aaa8499696552cecc81d3566cfd2e8ac6",
+  "manifestHash": "sha256:39daad990d919d58865ad9b147cdfed229e8212b2231eef336c824d45415ceb9",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

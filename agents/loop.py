@@ -21,6 +21,7 @@ from lib.execution import (
     ProgressLoopContext,
     ToolBudgetDenied,
     ToolLoopGuardBlocked,
+    ToolLoopGuardTerminated,
     sanitize_execution_value,
     sanitize_result_summary,
 )
@@ -247,6 +248,63 @@ def _deterministic_partial(
     )
 
 
+def _deterministic_loop_partial(
+    progress: ProgressLoopContext,
+    execution,
+    completed_operations: List[Dict[str, str]],
+) -> Optional[AgentRunResult]:
+    context = getattr(execution, "context", None)
+    execution_attempt_id = (
+        str(context.get("attemptId"))
+        if isinstance(context, dict) and context.get("attemptId")
+        else ""
+    )
+    if (
+        not completed_operations
+        or progress.loop_kind != "top_level"
+        or not progress.grant_id
+        or not execution_attempt_id
+    ):
+        return None
+    visible = completed_operations[:_DETERMINISTIC_PARTIAL_LIMIT]
+    lines = [
+        "I stopped this turn because it repeated an operation that had already been blocked.",
+        "",
+        "Completed work:",
+        *[
+            f"- {_tool_label(item['name'])}: {item['summary']}"
+            for item in visible
+        ],
+    ]
+    remaining = len(completed_operations) - len(visible)
+    if remaining:
+        lines.append(
+            f"- {remaining} additional completed operation"
+            f"{'s are' if remaining != 1 else ' is'} available in the activity log."
+        )
+    lines.extend([
+        "",
+        "Continue in a new turn with different arguments or a different strategy.",
+    ])
+    return AgentRunResult.deterministic_partial_text(
+        "\n".join(lines),
+        "loop_detected",
+        {
+            "version": "1",
+            "trigger": "exact_tool_repeat_persisted",
+            "loopId": progress.loop_id,
+            "grantId": progress.grant_id,
+            "executionAttemptId": execution_attempt_id,
+            "completedOperations": completed_operations,
+            "pending": ["strategy_change"],
+            "continuation": {
+                "kind": "new_turn",
+                "reason": "different_strategy_required",
+            },
+        },
+    )
+
+
 def run_agent_loop(
     spec: AgentSpec,
     messages: List[Dict[str, Any]],
@@ -274,6 +332,9 @@ def run_agent_loop(
     exact_tool_repeat_block_after_warning = bool(
         cfg.get("exact_tool_repeat_block_after_warning", True)
     )
+    exact_tool_repeat_terminate_after_block = bool(
+        cfg.get("exact_tool_repeat_terminate_after_block", True)
+    )
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
@@ -295,6 +356,9 @@ def run_agent_loop(
         exact_tool_repeat_warning=exact_tool_repeat_warning,
         exact_tool_repeat_block_after_warning=(
             exact_tool_repeat_block_after_warning
+        ),
+        exact_tool_repeat_terminate_after_block=(
+            exact_tool_repeat_terminate_after_block
         ),
     )
     max_rounds = progress.max_rounds
@@ -426,6 +490,8 @@ def run_agent_loop(
                             and name in REGISTRY
                             and arguments_are_object
                         ),
+                        tool_batch_size=len(tool_calls),
+                        tool_batch_index=call_index,
                     )
                 except ToolBudgetDenied:
                     for skipped_call in tool_calls[call_index:]:
@@ -459,6 +525,13 @@ def run_agent_loop(
                         }),
                     })
                     continue
+                except ToolLoopGuardTerminated:
+                    partial = _deterministic_loop_partial(
+                        progress,
+                        execution,
+                        completed_operations,
+                    )
+                    return partial or AgentRunResult.invalid("loop_detected")
                 execution.flush_evidence()
             if can_emit:
                 post_tool_event(
@@ -494,7 +567,11 @@ def run_agent_loop(
                     source_event_id,
                     error=tool_error,
                     result_summary=(visible_summary if is_leaf_tool and not tool_error else None),
-                    result_summary_kind=("leaf_tool" if is_leaf_tool and not tool_error else None),
+                    result_summary_kind=(
+                        "leaf_tool"
+                        if is_leaf_tool and visible_summary and not tool_error
+                        else None
+                    ),
                 )
                 execution.flush_evidence()
                 progress.observe_tool_budget(tool_trace)

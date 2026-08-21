@@ -10,6 +10,7 @@ from lib.execution import (
     InferenceBudgetDenied,
     ToolBudgetDenied,
     ToolLoopGuardBlocked,
+    ToolLoopGuardTerminated,
 )
 from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.framework.tool import ToolContext
@@ -520,6 +521,146 @@ class AgentLoopResultTest(unittest.TestCase):
             ),
         })
 
+    def test_loop_guard_termination_returns_partial_without_closing(self):
+        class TerminatingExecution:
+            context = copy.deepcopy(CONTEXT)
+
+            def __init__(self):
+                self.starts = 0
+                self.batch_identities = []
+
+            def request_progress_grant(self, request):
+                return {
+                    "grantId": "00000000-0000-4000-8000-000000000011",
+                    "effectivePolicy": request["requestedPolicy"],
+                }
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, _name, *_args, **kwargs):
+                self.batch_identities.append((
+                    kwargs["tool_batch_size"],
+                    kwargs["tool_batch_index"],
+                ))
+                self.starts += 1
+                if self.starts == 2:
+                    raise ToolLoopGuardTerminated(
+                        "immediate_exact_tool_repeat_terminated"
+                    )
+                return SimpleNamespace(
+                    operation_id="00000000-0000-4000-8000-000000000021",
+                    tool_call_id="00000000-0000-4000-8000-000000000022",
+                )
+
+            def flush_evidence(self):
+                pass
+
+            def observe_tool_result(self, *_args):
+                return None
+
+            def finish_tool(self, *_args, **_kwargs):
+                pass
+
+        request = {
+            "content": "",
+            "tool_calls": [{
+                "id": "call-repeat",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }
+        llm = FakeLlm([request, request])
+        execution = TerminatingExecution()
+        dispatched = []
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"read_fixture"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 3, "max_tokens": 32},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ), patch("agents.loop.REGISTRY", {"read_fixture": object()}), patch(
+            "agents.loop._summarize", return_value=("Fixture ready", None)
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=execution),
+                [],
+                lambda name, *_args: dispatched.append(name) or {"value": name},
+            )
+
+        self.assertEqual(dispatched, ["read_fixture"])
+        self.assertEqual(execution.batch_identities, [(1, 0), (1, 0)])
+        self.assertEqual(len(llm.tool_calls), 2)
+        self.assertEqual(llm.chat_calls, [])
+        self.assertEqual(result.completion_reason, "loop_detected")
+        self.assertEqual(result.completion_source, "runtime_template")
+        self.assertEqual(
+            result.partial_result["trigger"],
+            "exact_tool_repeat_persisted",
+        )
+        self.assertEqual(result.partial_result["pending"], ["strategy_change"])
+        self.assertEqual(
+            result.partial_result["continuation"],
+            {"kind": "new_turn", "reason": "different_strategy_required"},
+        )
+
+    def test_loop_guard_termination_without_durable_value_fails_immediately(self):
+        class TerminatingExecution:
+            context = copy.deepcopy(CONTEXT)
+
+            def request_progress_grant(self, request):
+                return {
+                    "grantId": "00000000-0000-4000-8000-000000000011",
+                    "effectivePolicy": request["requestedPolicy"],
+                }
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def flush_evidence(self):
+                pass
+
+            def start_tool(self, *_args, **_kwargs):
+                raise ToolLoopGuardTerminated(
+                    "immediate_exact_tool_repeat_terminated"
+                )
+
+        llm = FakeLlm([{
+            "content": "",
+            "tool_calls": [{
+                "id": "call-repeat",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }])
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 3, "max_tokens": 32},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                AgentSpec(
+                    name="test-agent",
+                    config_key="test-agent",
+                    system_prompt="test",
+                    tool_names=frozenset({"read_fixture"}),
+                ),
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=TerminatingExecution()),
+                [],
+                lambda *_args: self.fail("terminated tool was dispatched"),
+            )
+
+        self.assertEqual(result, AgentRunResult.invalid("loop_detected"))
+        self.assertEqual(len(llm.tool_calls), 1)
+        self.assertEqual(llm.chat_calls, [])
+
     def test_repairs_one_empty_output_and_returns_final_text(self):
         llm = FakeLlm([
             {"content": "", "tool_calls": []},
@@ -790,6 +931,58 @@ class AgentLoopResultTest(unittest.TestCase):
             "Fixture ready; accessToken=[REDACTED]",
         )
         self.assertEqual(finish["payload"]["resultSummaryKind"], "leaf_tool")
+
+    def test_empty_leaf_summary_omits_both_summary_fields(self):
+        llm = FakeLlm([
+            {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {"name": "read_fixture", "arguments": "{}"},
+                }],
+            },
+            {"content": "done", "tool_calls": []},
+        ])
+        client = RecordingIngestClient()
+        with patch.dict(
+            os.environ,
+            {"EXECUTION_INGEST_TOKEN": "test-token"},
+            clear=False,
+        ):
+            execution = ExecutionEmitter(
+                copy.deepcopy(CONTEXT), ingest_client=client
+            )
+        self.addCleanup(execution.close)
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"read_fixture"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 2, "max_tokens": 32, "max_tool_calls": 2},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ), patch("agents.loop.REGISTRY", {"read_fixture": object()}), patch(
+            "agents.loop._summarize", return_value=("", None)
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=execution),
+                [{"type": "function", "function": {"name": "read_fixture"}}],
+                lambda *_args: {"value": "raw value"},
+            )
+
+        self.assertEqual(result, AgentRunResult.final_text("done"))
+        finish = next(
+            event for event in client.sent_events
+            if event["eventType"] == "operation.finished"
+            and event["payload"]["operationKind"] == "tool_call"
+        )
+        self.assertNotIn("resultSummary", finish["payload"])
+        self.assertNotIn("resultSummaryKind", finish["payload"])
 
     def test_consumed_closing_reservation_fails_without_another_inference(self):
         class ConsumedClosingLlm(FakeLlm):
