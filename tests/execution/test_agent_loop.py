@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,6 +9,9 @@ from agents.loop import run_agent_loop
 from lib.execution import InferenceBudgetDenied, ToolBudgetDenied
 from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.framework.tool import ToolContext
+from lib.execution.emitter import ExecutionEmitter
+from tests.execution.support import RecordingIngestClient
+from tests.execution.test_emitter import CONTEXT
 
 
 class FakeLlm:
@@ -630,6 +634,73 @@ class AgentLoopResultTest(unittest.TestCase):
         )
         self.assertEqual(len(llm.tool_calls), 1)
         self.assertEqual(len(llm.chat_calls), 1)
+
+    def test_empty_closing_returns_a_deterministic_partial_from_durable_leaf_tools(self):
+        tool_request = {
+            "content": "",
+            "tool_calls": [{
+                "id": "call-1",
+                "function": {"name": "read_fixture", "arguments": "{}"},
+            }],
+        }
+        llm = FakeLlm([tool_request], forced_reply="")
+        client = RecordingIngestClient()
+        with patch.dict(
+            os.environ,
+            {"EXECUTION_INGEST_TOKEN": "test-token"},
+            clear=False,
+        ):
+            execution = ExecutionEmitter(copy.deepcopy(CONTEXT), ingest_client=client)
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"read_fixture"}),
+        )
+        conversation = [{"role": "user", "content": "question"}]
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 1, "max_tokens": 32, "max_tool_calls": 2},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ), patch("agents.loop.REGISTRY", {"read_fixture": object()}), patch(
+            "agents.loop._summarize",
+            return_value=("Fixture ready; accessToken=must-not-leak", None),
+        ):
+            result = run_agent_loop(
+                spec,
+                conversation,
+                ToolContext(execution=execution),
+                [{"type": "function", "function": {"name": "read_fixture"}}],
+                lambda *_args: {"value": "raw value", "secret": "must not leak"},
+            )
+
+        self.assertEqual(result.kind, "final_text")
+        self.assertEqual(result.completion_kind, "partial")
+        self.assertEqual(result.completion_reason, "budget_exhausted")
+        self.assertEqual(result.completion_source, "runtime_template")
+        self.assertIn(
+            "- Read Fixture: Fixture ready; accessToken=[REDACTED]",
+            result.content,
+        )
+        self.assertNotIn("raw value", result.content)
+        self.assertNotIn("must not leak", result.content)
+        self.assertNotIn("must not leak", json.dumps(conversation))
+        self.assertEqual(result.partial_result["trigger"], "closing_output_empty")
+        self.assertEqual(
+            result.partial_result["completedOperations"][0]["summary"],
+            "Fixture ready; accessToken=[REDACTED]",
+        )
+        finish = next(
+            event for event in client.sent_events
+            if event["eventType"] == "operation.finished"
+            and event["payload"]["operationKind"] == "tool_call"
+        )
+        self.assertEqual(
+            finish["payload"]["resultSummary"],
+            "Fixture ready; accessToken=[REDACTED]",
+        )
+        self.assertEqual(finish["payload"]["resultSummaryKind"], "leaf_tool")
 
     def test_consumed_closing_reservation_fails_without_another_inference(self):
         class ConsumedClosingLlm(FakeLlm):

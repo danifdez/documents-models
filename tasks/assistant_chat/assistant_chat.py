@@ -149,10 +149,21 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         if effective_tools and outcome.completion_kind:
             result["completionKind"] = outcome.completion_kind
             result["completionReason"] = outcome.completion_reason
+            result["completionSource"] = outcome.completion_source
+            if outcome.partial_result:
+                result["partialResult"] = outcome.partial_result
+        generation_source = (
+            outcome.completion_source
+            if effective_tools and outcome.completion_source
+            else "model"
+        )
         user_message = ""
         memory_trace = None
 
-        if payload.get("assistantSystem"):
+        if (
+            payload.get("assistantSystem")
+            and generation_source != "runtime_template"
+        ):
             user_message = _last_user_message(payload)
             if user_message:
                 memory_max_tokens = int(cfg.get("memory_extract_max_tokens", 256))
@@ -171,10 +182,14 @@ def assistant_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
                     phase="memory_extraction",
                 )
 
-        emitter.record_final_message(reply)
+        emitter.record_final_message(reply, generation_source=generation_source)
 
         # Persistent user memory: extract after the final response is durable.
-        if user_message and memory_trace:
+        if (
+            user_message
+            and memory_trace
+            and generation_source != "runtime_template"
+        ):
             action = _extract_memory_action(
                 llm,
                 user_message,

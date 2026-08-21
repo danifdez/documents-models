@@ -149,7 +149,15 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
         if effective_tools and outcome.completion_kind:
             result["completionKind"] = outcome.completion_kind
             result["completionReason"] = outcome.completion_reason
-        emitter.record_final_message(reply)
+            result["completionSource"] = outcome.completion_source
+            if outcome.partial_result:
+                result["partialResult"] = outcome.partial_result
+        generation_source = (
+            outcome.completion_source
+            if effective_tools and outcome.completion_source
+            else "model"
+        )
+        emitter.record_final_message(reply, generation_source=generation_source)
         emitter.flush_evidence()
         return emitter.attach_summary(result)
     except InferenceBudgetDenied as e:

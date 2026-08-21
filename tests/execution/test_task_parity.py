@@ -144,6 +144,75 @@ class AssistantChatExecutionTest(unittest.TestCase):
         self.assertEqual(result["reply"], "partial reply")
         self.assertEqual(result["completionKind"], "partial")
         self.assertEqual(result["completionReason"], "tool_budget_exhausted")
+        self.assertEqual(result["completionSource"], "model")
+
+    def test_deterministic_partial_preserves_provenance_and_skips_memory(self):
+        payload = {
+            "ownerId": 1,
+            "assistantSystem": True,
+            "conversation": [{"role": "user", "content": "hello"}],
+            "execution": copy.deepcopy(CONTEXT),
+        }
+        partial_result = {
+            "version": "1",
+            "trigger": "closing_output_empty",
+            "loopId": CONTEXT["executionId"],
+            "grantId": "00000000-0000-4000-8000-000000000011",
+            "executionAttemptId": CONTEXT["attemptId"],
+            "completedOperations": [{
+                "operationId": "00000000-0000-4000-8000-000000000021",
+                "toolCallId": "00000000-0000-4000-8000-000000000022",
+                "name": "folder_read",
+                "summary": "Document read",
+            }],
+            "pending": ["final_synthesis"],
+        }
+        agent = Mock()
+        agent.tools.return_value = [{"type": "function"}]
+        agent.run.return_value = AgentRunResult.deterministic_partial_text(
+            "Completed work: Document read",
+            "budget_exhausted",
+            partial_result,
+        )
+        extract_memory = Mock(return_value=None)
+        ingest = RecordingIngestClient()
+
+        with patch.dict(os.environ, {"EXECUTION_INGEST_TOKEN": "test-token"}, clear=False), patch(
+            "tasks.assistant_chat.assistant_chat.get_task_config",
+            return_value={"max_tokens": 32, "stream": False},
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_params", return_value={}
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.get_llm_service", return_value=object()
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.build_chat_messages",
+            return_value=[{"role": "user", "content": "hello"}],
+        ), patch(
+            "tasks.assistant_chat.assistant_chat._memory_for_payload", return_value=[]
+        ), patch(
+            "tasks.assistant_chat.assistant_chat._extract_memory_action", extract_memory
+        ), patch(
+            "tasks.assistant_chat.assistant_chat.assistant", agent
+        ), patch(
+            "lib.execution.emitter.ExecutionEmitter._post",
+            side_effect=lambda suffix, body: ingest.post(
+                CONTEXT["rootExecutionId"], suffix, body
+            ),
+        ):
+            result = assistant_chat(payload)
+
+        self.assertEqual(result["completionKind"], "partial")
+        self.assertEqual(result["completionSource"], "runtime_template")
+        self.assertEqual(result["partialResult"], partial_result)
+        extract_memory.assert_not_called()
+        memory_policies = [
+            event for event in ingest.sent_events
+            if event["eventType"] == "progress.reported"
+            and event["payload"].get("kind") == "policy_snapshot"
+            and event["payload"].get("policy", {}).get("agentName")
+            == "memory_agent"
+        ]
+        self.assertEqual(memory_policies, [])
 
     def test_invalid_loop_result_does_not_trigger_hidden_regeneration(self):
         payload = {

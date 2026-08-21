@@ -3,6 +3,7 @@ import contextvars
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -21,7 +22,7 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _SECRET_VALUE_RE = re.compile(
     r"(?i)\b(access[_-]?token|api[_-]?key|auth[_-]?token|authorization|cookie|"
     r"id[_-]?token|password|refresh[_-]?token|session[_-]?token|token)"
-    r"\s*[:=]\s*([^\s,;]+)"
+    r"\s*[:=]\s*(?!\[REDACTED\])([^\s,;]+)"
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*")
 _FORBIDDEN_KEYS = {
@@ -41,7 +42,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:72a7f58e2a05665a301062c061fb529be49426ed037f3a24fabf4067551065f8"
+CONTRACT_SET_HASH = "sha256:35a4ccc95dc89744aaf379f64abf3d87df29cb30fbbefa3715b1dfb9ca00313f"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -70,6 +71,37 @@ def _redact_text(value: str) -> str:
     return _SECRET_VALUE_RE.sub(lambda match: f"{match.group(1)}=[REDACTED]", without_bearer)
 
 
+def sanitize_result_summary(value: str) -> str:
+    return re.sub(r"\s+", " ", _redact_text(value or "")).strip()[:200]
+
+
+def sanitize_execution_value(value: Any) -> Any:
+    return _safe_artifact_value(value)
+
+
+def _safe_artifact_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, list):
+        return [_safe_artifact_value(child) for child in value]
+    if isinstance(value, dict):
+        safe: Dict[str, Any] = {}
+        for key, child in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized in _FORBIDDEN_KEYS:
+                safe[str(key)] = "[REDACTED]"
+            elif normalized in {"reasoning", "reasoningcontent"}:
+                continue
+            else:
+                safe[str(key)] = _safe_artifact_value(child)
+        return safe
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _redact_text(str(value))
+    if value is None or isinstance(value, (bool, int)):
+        return value
+    return _redact_text(str(value))
+
+
 def _safe_value(value: Any) -> Any:
     if isinstance(value, str):
         return _redact_text(value)
@@ -96,6 +128,15 @@ def _safe_value(value: Any) -> Any:
 def _json_bytes(value: Any) -> bytes:
     return json.dumps(
         _safe_value(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _artifact_json_bytes(value: Any) -> bytes:
+    return json.dumps(
+        _safe_artifact_value(value),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -415,11 +456,16 @@ class ExecutionEmitter:
         return handle
 
     def observe_tool_result(self, handle: OperationHandle, result: Any) -> Optional[str]:
-        artifact_id = self.record_artifact("tool_result", result, "application/json")
+        safe_result = sanitize_execution_value(result)
+        artifact_id = self.record_artifact(
+            "tool_result",
+            safe_result,
+            "application/json",
+        )
         if not artifact_id:
             return None
         source_id = str(uuid.uuid4())
-        artifact_hash = _hash_bytes(_json_bytes(result))
+        artifact_hash = _hash_bytes(_artifact_json_bytes(safe_result))
         return self.emit(
             "source.observed",
             "source.observed/1",
@@ -448,16 +494,29 @@ class ExecutionEmitter:
         result: Any,
         source_event_id: Optional[str],
         error: Optional[str] = None,
+        result_summary: Optional[str] = None,
+        result_summary_kind: Optional[str] = None,
     ) -> Optional[str]:
+        extra_payload = {}
+        if result_summary:
+            extra_payload["resultSummary"] = sanitize_result_summary(result_summary)
+        if result_summary_kind:
+            extra_payload["resultSummaryKind"] = result_summary_kind
         return self.finish_operation(
             handle,
             status="failed" if error else "succeeded",
             result=_safe_value(result),
             error=error,
             caused_by=source_event_id or handle.started_event_id,
+            extra_payload=extra_payload,
         )
 
-    def record_final_message(self, reply: str) -> Optional[str]:
+    def record_final_message(
+        self,
+        reply: str,
+        *,
+        generation_source: str = "model",
+    ) -> Optional[str]:
         artifact_id = self.record_artifact("model_response", reply, "text/plain")
         return self.emit(
             "message.recorded",
@@ -468,8 +527,11 @@ class ExecutionEmitter:
                 "contentPreview": _redact_text(reply)[:512],
                 "contentArtifactId": artifact_id,
                 "format": "text",
+                "generationSource": generation_source,
             },
-            actor={"type": "model"},
+            actor={
+                "type": "system" if generation_source == "runtime_template" else "model"
+            },
             artifact_refs=[artifact_id] if artifact_id else [],
         )
 
@@ -526,6 +588,7 @@ class ExecutionEmitter:
         metrics: Optional[Dict[str, Any]] = None,
         caused_by: Optional[str] = None,
         artifact_refs=None,
+        extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         measured = int(round((time.monotonic() - handle.started_monotonic) * 1000))
         normalized_metrics = {
@@ -551,6 +614,7 @@ class ExecutionEmitter:
             payload["outcome"] = outcome
         if reason:
             payload["reason"] = reason
+        payload.update(_safe_value(extra_payload or {}))
         return self.emit(
             "operation.finished",
             "operation.finished/1",
@@ -566,8 +630,16 @@ class ExecutionEmitter:
     def record_artifact(self, kind: str, value: Any, media_type: str) -> Optional[str]:
         if not self.context:
             return None
-        safe_value = _redact_text(value) if isinstance(value, str) else _safe_value(value)
-        body = safe_value.encode("utf-8") if isinstance(safe_value, str) else _json_bytes(safe_value)
+        safe_value = (
+            _redact_text(value)
+            if isinstance(value, str)
+            else _safe_artifact_value(value)
+        )
+        body = (
+            safe_value.encode("utf-8")
+            if isinstance(safe_value, str)
+            else _artifact_json_bytes(safe_value)
+        )
         if len(body) > _MAX_ARTIFACT_BYTES:
             self.errors.append(f"artifact_omitted:size:{kind}:{len(body)}")
             return None

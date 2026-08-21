@@ -36,6 +36,8 @@ class AgentRunResult:
     reason: Optional[str] = None
     completion_kind: Optional[Literal["full", "partial"]] = None
     completion_reason: Optional[str] = None
+    completion_source: Optional[Literal["model", "runtime_template"]] = None
+    partial_result: Optional[Dict[str, Any]] = None
 
     @classmethod
     def final_text(cls, content: str) -> "AgentRunResult":
@@ -48,6 +50,23 @@ class AgentRunResult:
             content=content,
             completion_kind="partial",
             completion_reason=reason,
+            completion_source="model",
+        )
+
+    @classmethod
+    def deterministic_partial_text(
+        cls,
+        content: str,
+        reason: str,
+        partial_result: Dict[str, Any],
+    ) -> "AgentRunResult":
+        return cls(
+            kind="final_text",
+            content=content,
+            completion_kind="partial",
+            completion_reason=reason,
+            completion_source="runtime_template",
+            partial_result=partial_result,
         )
 
     @classmethod

@@ -20,6 +20,8 @@ from lib.execution import (
     InferenceBudgetDenied,
     ProgressLoopContext,
     ToolBudgetDenied,
+    sanitize_execution_value,
+    sanitize_result_summary,
 )
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.text import strip_thinking as _strip_thinking
@@ -79,6 +81,12 @@ _FORCED_FINALIZATION_PROMPT = (
     "supported by the evidence already available. Do not call tools and do not "
     "emit tool-call markup."
 )
+
+_DETERMINISTIC_PARTIAL_LIMIT = 5
+_CLOSING_UNAVAILABLE_REASONS = {
+    "budget_hard_limit_reached",
+    "budget_reservation_consumed",
+}
 
 
 def _json_object_or_none(text: str) -> Optional[Dict[str, Any]]:
@@ -158,6 +166,86 @@ def _normalize_message(msg: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     return content, tool_calls
 
 
+def _tool_label(name: str) -> str:
+    labels = {
+        "search_workspace": "Workspace search",
+        "update_task": "Update task",
+        "delete_task": "Delete task",
+        "mark_event_occurrence_done": "Mark event done",
+        "set_task_reminder": "Set task reminder",
+        "clear_task_reminder": "Clear task reminder",
+        "folder_search": "Folder search",
+        "folder_read": "Folder read",
+        "folder_write": "Folder write",
+        "folder_delete": "Folder delete",
+    }
+    if name in labels:
+        return labels[name]
+    return re.sub(r"[_-]+", " ", name).strip().title()
+
+
+def _deterministic_partial(
+    progress: ProgressLoopContext,
+    execution,
+    completed_operations: List[Dict[str, str]],
+    *,
+    tool_budget_exhausted: bool,
+    trigger: str,
+) -> Optional[AgentRunResult]:
+    context = getattr(execution, "context", None)
+    execution_attempt_id = (
+        str(context.get("attemptId"))
+        if isinstance(context, dict) and context.get("attemptId")
+        else ""
+    )
+    if (
+        not completed_operations
+        or progress.loop_kind != "top_level"
+        or not progress.grant_id
+        or not execution_attempt_id
+    ):
+        return None
+    reason = (
+        "tool_budget_exhausted" if tool_budget_exhausted else "budget_exhausted"
+    )
+    limit_label = "tool-call limit" if tool_budget_exhausted else "execution limit"
+    visible = completed_operations[:_DETERMINISTIC_PARTIAL_LIMIT]
+    lines = [
+        f"I couldn't produce the final synthesis because this turn reached its {limit_label}.",
+        "",
+        "Completed work:",
+        *[
+            f"- {_tool_label(item['name'])}: {item['summary']}"
+            for item in visible
+        ],
+    ]
+    remaining = len(completed_operations) - len(visible)
+    if remaining:
+        lines.append(
+            f"- {remaining} additional completed operation"
+            f"{'s are' if remaining != 1 else ' is'} available in the activity log."
+        )
+    lines.extend([
+        "",
+        "Pending:",
+        "- Final synthesis of the completed results.",
+    ])
+    partial_result = {
+        "version": "1",
+        "trigger": trigger,
+        "loopId": progress.loop_id,
+        "grantId": progress.grant_id,
+        "executionAttemptId": execution_attempt_id,
+        "completedOperations": completed_operations,
+        "pending": ["final_synthesis"],
+    }
+    return AgentRunResult.deterministic_partial_text(
+        "\n".join(lines),
+        reason,
+        partial_result,
+    )
+
+
 def run_agent_loop(
     spec: AgentSpec,
     messages: List[Dict[str, Any]],
@@ -211,6 +299,8 @@ def run_agent_loop(
     closing_reason = "step_budget_exhausted"
     closing_round = max_rounds
     tool_budget_exhausted = False
+    completed_operations: List[Dict[str, str]] = []
+    pending_confirmation = False
     for round_idx in range(max_rounds):
         round_trace = progress.trace(
             round=round_idx + 1,
@@ -353,29 +443,55 @@ def run_agent_loop(
                     execution.flush_evidence()
                 raise
             source_event_id = None
+            summary, entity = _summarize(name, result)
+            visible_summary = sanitize_result_summary(summary)
+            is_leaf_tool = name in REGISTRY
+            tool_error = (
+                str(result.get("error"))
+                if isinstance(result, dict) and result.get("error")
+                else None
+            )
             if execution and tool_trace:
                 source_event_id = execution.observe_tool_result(tool_trace, result)
                 execution.finish_tool(
                     tool_trace,
                     result,
                     source_event_id,
-                    error=str(result.get("error")) if isinstance(result, dict) and result.get("error") else None,
+                    error=tool_error,
+                    result_summary=(visible_summary if is_leaf_tool and not tool_error else None),
+                    result_summary_kind=("leaf_tool" if is_leaf_tool and not tool_error else None),
                 )
                 execution.flush_evidence()
                 progress.observe_tool_budget(tool_trace)
-            summary, entity = _summarize(name, result)
-            logger.info("agent[%s]: tool=%s → %s", spec.name, name, summary)
+                if (
+                    is_leaf_tool
+                    and visible_summary
+                    and not tool_error
+                ):
+                    completed_operations.append({
+                        "operationId": tool_trace.operation_id,
+                        "toolCallId": tool_trace.tool_call_id or "",
+                        "name": name,
+                        "summary": visible_summary,
+                    })
+            logger.info(
+                "agent[%s]: tool=%s → %s", spec.name, name, visible_summary
+            )
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.get("id") or "",
                 "name": name,
-                "content": json.dumps(result, ensure_ascii=False),
+                "content": json.dumps(
+                    sanitize_execution_value(result),
+                    ensure_ascii=False,
+                ),
             })
             pending = isinstance(result, dict) and result.get("pendingConfirmation")
+            pending_confirmation = pending_confirmation or bool(pending)
             if can_emit and not pending:
                 post_tool_event(
                     ctx.owner_segment, ctx.owner_id, ctx.execution_id, name, args_label,
-                    status="done", summary=summary, entity=entity,
+                    status="done", summary=visible_summary, entity=entity,
                 )
             # A schema agent invoked as a tool must yield control the moment an
             # inner tool parks a confirmation card — the parent responds to it.
@@ -407,6 +523,16 @@ def run_agent_loop(
             )
         )
     if not progress.forced_finalization_available:
+        if not pending_confirmation:
+            partial = _deterministic_partial(
+                progress,
+                execution,
+                completed_operations,
+                tool_budget_exhausted=tool_budget_exhausted,
+                trigger="closing_unavailable",
+            )
+            if partial:
+                return partial
         return AgentRunResult.invalid(
             "tool_budget_exhausted_without_closing"
             if tool_budget_exhausted else "budget_hard_limit_reached"
@@ -428,6 +554,16 @@ def run_agent_loop(
             ),
         ) or ""
     except InferenceBudgetDenied as error:
+        if error.reason in _CLOSING_UNAVAILABLE_REASONS and not pending_confirmation:
+            partial = _deterministic_partial(
+                progress,
+                execution,
+                completed_operations,
+                tool_budget_exhausted=tool_budget_exhausted,
+                trigger="closing_unavailable",
+            )
+            if partial:
+                return partial
         if tool_budget_exhausted and error.reason in {
             "budget_hard_limit_reached",
             "budget_reservation_consumed",
@@ -442,6 +578,16 @@ def run_agent_loop(
             content,
             "tool_budget_exhausted" if tool_budget_exhausted else "budget_exhausted",
         )
+    if not pending_confirmation:
+        partial = _deterministic_partial(
+            progress,
+            execution,
+            completed_operations,
+            tool_budget_exhausted=tool_budget_exhausted,
+            trigger="closing_output_empty",
+        )
+        if partial:
+            return partial
     return AgentRunResult.invalid(
         "tool_budget_empty_forced_finalization"
         if tool_budget_exhausted else "budget_empty_forced_finalization"

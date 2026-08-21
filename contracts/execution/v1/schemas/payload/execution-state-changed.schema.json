@@ -16,6 +16,8 @@
     "reason": { "type": "string", "minLength": 1 },
     "completionKind": { "enum": ["full", "partial"] },
     "completionReason": { "type": "string", "minLength": 1 },
+    "completionSource": { "enum": ["model", "runtime_template"] },
+    "partialResult": { "$ref": "#/$defs/partialResult" },
     "result": { "$ref": "../common.schema.json#/$defs/jsonValue" },
     "error": {
       "oneOf": [
@@ -40,7 +42,57 @@
     {
       "if": { "properties": { "to": { "const": "failed" } }, "required": ["to"] },
       "then": { "properties": { "error": { "$ref": "../common.schema.json#/$defs/error" } } }
+    },
+    {
+      "if": {
+        "properties": { "completionSource": { "const": "runtime_template" } },
+        "required": ["completionSource"]
+      },
+      "then": {
+        "required": ["partialResult"],
+        "properties": {
+          "to": { "const": "completed" },
+          "completionKind": { "const": "partial" },
+          "completionReason": { "enum": ["budget_exhausted", "tool_budget_exhausted"] },
+          "partialResult": true,
+          "error": { "type": "null" }
+        }
+      }
     }
   ],
+  "$defs": {
+    "partialResult": {
+      "type": "object",
+      "required": [
+        "version", "trigger", "loopId", "grantId", "executionAttemptId",
+        "completedOperations", "pending"
+      ],
+      "properties": {
+        "version": { "const": "1" },
+        "trigger": { "enum": ["closing_unavailable", "closing_output_empty"] },
+        "loopId": { "$ref": "../common.schema.json#/$defs/id" },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" },
+        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "completedOperations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["operationId", "toolCallId", "name", "summary"],
+            "properties": {
+              "operationId": { "$ref": "../common.schema.json#/$defs/id" },
+              "toolCallId": { "$ref": "../common.schema.json#/$defs/id" },
+              "name": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pending": { "type": "array", "const": ["final_synthesis"] }
+      },
+      "additionalProperties": false
+    }
+  },
   "additionalProperties": true
 }

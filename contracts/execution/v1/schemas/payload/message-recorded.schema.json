@@ -9,7 +9,8 @@
     "role": { "enum": ["user", "assistant", "system", "tool"] },
     "contentPreview": { "type": "string", "maxLength": 512 },
     "contentArtifactId": { "$ref": "../common.schema.json#/$defs/id" },
-    "format": { "enum": ["text", "markdown", "json"] }
+    "format": { "enum": ["text", "markdown", "json"] },
+    "generationSource": { "enum": ["model", "runtime_template"] }
   },
   "anyOf": [
     { "required": ["contentPreview"], "properties": { "contentPreview": true } },

@@ -8,6 +8,8 @@
     "operationKind": { "$ref": "../common.schema.json#/$defs/operationKind" },
     "status": { "enum": ["succeeded", "failed", "cancelled", "unknown"] },
     "outcome": { "enum": ["tool_requests", "final_text", "structured_result", "invalid"] },
+    "resultSummary": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "resultSummaryKind": { "const": "leaf_tool" },
     "result": { "$ref": "../common.schema.json#/$defs/jsonValue" },
     "error": {
       "oneOf": [
@@ -34,7 +36,26 @@
     {
       "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
       "then": { "properties": { "error": { "$ref": "../common.schema.json#/$defs/error" } } }
+    },
+    {
+      "if": {
+        "properties": { "resultSummary": true },
+        "required": ["resultSummary"]
+      },
+      "then": {
+        "required": ["resultSummary", "resultSummaryKind"],
+        "properties": {
+          "operationKind": { "const": "tool_call" },
+          "status": { "const": "succeeded" },
+          "resultSummary": true,
+          "resultSummaryKind": { "const": "leaf_tool" }
+        }
+      }
     }
   ],
+  "dependentRequired": {
+    "resultSummary": ["resultSummaryKind"],
+    "resultSummaryKind": ["resultSummary"]
+  },
   "additionalProperties": true
 }

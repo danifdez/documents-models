@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -50,6 +51,16 @@ class ExecutionEmitterTest(unittest.TestCase):
         self.assertNotIn("abc.def", safe["nested"])
         self.assertNotIn("camel-secret", safe["stringSecret"])
 
+    def test_redaction_is_idempotent_inside_serialized_tool_content(self):
+        safe = _safe_value(
+            '{"raw": "accessToken=[REDACTED]", "answer": "visible"}'
+        )
+
+        self.assertEqual(
+            safe,
+            '{"raw": "accessToken=[REDACTED]", "answer": "visible"}',
+        )
+
     def test_artifact_body_and_manifest_are_redacted_before_transport(self):
         client = RecordingIngestClient()
         emitter = self.emitter(client)
@@ -67,6 +78,55 @@ class ExecutionEmitterTest(unittest.TestCase):
         self.assertEqual(suffix, "artifacts")
         self.assertEqual(body, {"answer": "visible", "cookie": "[REDACTED]"})
         self.assertTrue(artifact["redaction"]["applied"])
+
+    def test_materialized_prompt_preserves_finite_sampling_parameters(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+
+        emitter.record_artifact(
+            "materialized_prompt",
+            {"min_p": 0.05, "temperature": 0.7},
+            "application/json",
+        )
+        emitter.flush()
+
+        artifact = client.requests[0][1]["artifacts"][0]
+        body = json.loads(base64.b64decode(artifact["bodyBase64"]))
+        self.assertEqual(body, {"min_p": 0.05, "temperature": 0.7})
+
+    def test_tool_result_source_hash_matches_the_redacted_artifact(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+        handle = emitter.start_tool("read_fixture", {}, "call-1")
+
+        source_event_id = emitter.observe_tool_result(
+            handle,
+            {"answer": "visible", "accessToken": "must-not-leak"},
+        )
+        emitter.finish_tool(
+            handle,
+            {"answer": "visible"},
+            source_event_id,
+            result_summary="Fixture ready",
+            result_summary_kind="leaf_tool",
+        )
+        emitter.flush()
+
+        artifact_request = next(
+            body for suffix, body in client.requests if suffix == "artifacts"
+        )
+        artifact = artifact_request["artifacts"][0]
+        artifact_body = base64.b64decode(artifact["bodyBase64"])
+        source_event = next(
+            event for event in client.sent_events
+            if event["eventType"] == "source.observed"
+        )
+
+        self.assertEqual(
+            source_event["payload"]["contentHash"],
+            "sha256:" + hashlib.sha256(artifact_body).hexdigest(),
+        )
+        self.assertNotIn(b"must-not-leak", artifact_body)
 
     def test_buffered_events_preserve_causality_before_transport(self):
         client = RecordingIngestClient()
@@ -89,6 +149,23 @@ class ExecutionEmitterTest(unittest.TestCase):
 
         events = client.sent_events
         self.assertEqual([event["eventType"] for event in events], ["message.recorded"])
+
+    def test_runtime_template_message_is_attributed_to_the_system(self):
+        client = RecordingIngestClient()
+        emitter = self.emitter(client)
+
+        emitter.record_final_message(
+            "Completed work",
+            generation_source="runtime_template",
+        )
+        emitter.flush_evidence()
+
+        event = client.sent_events[0]
+        self.assertEqual(event["actor"], {"type": "system"})
+        self.assertEqual(
+            event["payload"]["generationSource"],
+            "runtime_template",
+        )
 
     def test_producer_instance_is_scoped_to_the_execution_attempt(self):
         emitter = self.emitter()
