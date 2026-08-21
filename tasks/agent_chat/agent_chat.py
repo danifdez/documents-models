@@ -151,13 +151,10 @@ def agent_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
             emitter.flush_evidence()
             return emitter.attach_summary({"error": error})
 
-        result: Dict[str, Any] = {"reply": reply}
-        if effective_tools and outcome.completion_kind:
-            result["completionKind"] = outcome.completion_kind
-            result["completionReason"] = outcome.completion_reason
-            result["completionSource"] = outcome.completion_source
-            if outcome.partial_result:
-                result["partialResult"] = outcome.partial_result
+        result: Dict[str, Any] = (
+            outcome.as_payload() if effective_tools else {"reply": reply}
+        )
+        result["reply"] = reply
         generation_source = (
             outcome.completion_source
             if effective_tools and outcome.completion_source

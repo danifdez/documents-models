@@ -23,59 +23,11 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
+
+from lib.framework.agent_protocol import AgentRunResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class AgentRunResult:
-    kind: Literal["final_text", "structured_result", "invalid"]
-    content: Optional[str] = None
-    value: Optional[Dict[str, Any]] = None
-    reason: Optional[str] = None
-    completion_kind: Optional[Literal["full", "partial"]] = None
-    completion_reason: Optional[str] = None
-    completion_source: Optional[Literal["model", "runtime_template"]] = None
-    partial_result: Optional[Dict[str, Any]] = None
-
-    @classmethod
-    def final_text(cls, content: str) -> "AgentRunResult":
-        return cls(kind="final_text", content=content)
-
-    @classmethod
-    def partial_text(cls, content: str, reason: str) -> "AgentRunResult":
-        return cls(
-            kind="final_text",
-            content=content,
-            completion_kind="partial",
-            completion_reason=reason,
-            completion_source="model",
-        )
-
-    @classmethod
-    def deterministic_partial_text(
-        cls,
-        content: str,
-        reason: str,
-        partial_result: Dict[str, Any],
-    ) -> "AgentRunResult":
-        return cls(
-            kind="final_text",
-            content=content,
-            completion_kind="partial",
-            completion_reason=reason,
-            completion_source="runtime_template",
-            partial_result=partial_result,
-        )
-
-    @classmethod
-    def structured_result(cls, value: Dict[str, Any]) -> "AgentRunResult":
-        return cls(kind="structured_result", value=value)
-
-    @classmethod
-    def invalid(cls, reason: str) -> "AgentRunResult":
-        return cls(kind="invalid", reason=reason)
 
 
 @dataclass(frozen=True)

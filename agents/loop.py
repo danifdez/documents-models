@@ -1,10 +1,14 @@
-"""The agent engine: the single tool-round loop shared by every agent.
+"""The conversational agent engine shared by every ``AgentSpec``.
 
 `run_agent_loop` is pure mechanism. It receives the resolved tool schemas and a
 `dispatch` callable, so it knows nothing about which tools are leaves and which
 are nested agents. It reads an `AgentSpec` (the abstraction, from
 `lib.framework.agent`) to know how the agent finishes, and leans on the shared
 tool repository (`core/tools`) only to summarise tool results for the UI card.
+
+The durable step runner in ``agent/loop.py`` keeps its own scheduling adapter.
+Both runners normalize model decisions, tool requests, loop dispositions and
+terminal results through ``lib.framework.agent_protocol``.
 
 The harness patches `extract_inline_tool_calls` in this module to count how many
 `<tool_call>` blocks the model emitted vs how many parsed.
@@ -16,6 +20,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lib.framework.agent import AgentRunResult, AgentSpec
+from lib.framework.agent_protocol import ModelOutcome, ModelOutcomeKind
 from lib.execution import (
     InferenceBudgetDenied,
     ProgressLoopContext,
@@ -160,12 +165,12 @@ def _summarize(name: str, result: Dict[str, Any]) -> Tuple[str, Optional[Dict[st
     return summarize_leaf(name, result)
 
 
-def _normalize_message(msg: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
+def _normalize_message(msg: Dict[str, Any]) -> ModelOutcome:
     content = _strip_thinking(msg.get("content") or "")
     tool_calls = msg.get("tool_calls") or []
     if not tool_calls and content:
         tool_calls = extract_inline_tool_calls(content)
-    return content, tool_calls
+    return ModelOutcome.from_chat_message(content, tool_calls)
 
 
 def _tool_label(name: str) -> str:
@@ -390,13 +395,15 @@ def run_agent_loop(
         except InferenceBudgetDenied as error:
             return AgentRunResult.invalid(error.reason)
         operation_phase = "agent_loop"
-        content, tool_calls = _normalize_message(msg)
+        model_outcome = _normalize_message(msg)
+        content = model_outcome.content or ""
+        tool_requests = list(model_outcome.tool_requests)
         logger.info(
             "agent[%s]: round %d → tool_calls=%d content_head=%r",
-            spec.name, round_idx, len(tool_calls), content[:120],
+            spec.name, round_idx, len(tool_requests), content[:120],
         )
         if (
-            not tool_calls
+            model_outcome.kind != ModelOutcomeKind.TOOL_REQUESTS
             and not content
             and spec.output_schema is None
             and tools
@@ -428,12 +435,14 @@ def run_agent_loop(
             except InferenceBudgetDenied as error:
                 return AgentRunResult.invalid(error.reason)
             operation_phase = "output_repair"
-            content, tool_calls = _normalize_message(msg)
+            model_outcome = _normalize_message(msg)
+            content = model_outcome.content or ""
+            tool_requests = list(model_outcome.tool_requests)
             logger.info(
                 "agent[%s]: output repair → tool_calls=%d content_head=%r",
-                spec.name, len(tool_calls), content[:120],
+                spec.name, len(tool_requests), content[:120],
             )
-        if not tool_calls:
+        if model_outcome.kind != ModelOutcomeKind.TOOL_REQUESTS:
             if spec.output_schema is not None:
                 return AgentRunResult.structured_result(
                     _coerce_output(
@@ -457,30 +466,23 @@ def run_agent_loop(
         messages.append({
             "role": "assistant",
             "content": msg.get("content") or None,
-            "tool_calls": tool_calls,
+            "tool_calls": [request.as_chat_call() for request in tool_requests],
         })
-        for call_index, call in enumerate(tool_calls):
-            fn = call.get("function") or {}
-            name = str(fn.get("name") or "")
-            args_json = fn.get("arguments") or "{}"
-            arguments_are_object = False
-            try:
-                parsed_args = json.loads(args_json or "{}")
-                if not isinstance(parsed_args, dict):
-                    raise TypeError("Tool arguments must be an object")
-                args_obj = parsed_args
-                arguments_are_object = True
-                args_label = str(args_obj.get("query") or next(iter(args_obj.values()), ""))
-            except (json.JSONDecodeError, StopIteration, TypeError):
-                args_obj = {}
-                args_label = ""
+        for call_index, call in enumerate(tool_requests):
+            name = call.name
+            args_json = call.raw_arguments or "{}"
+            arguments_are_object = call.arguments is not None
+            args_obj = call.arguments or {}
+            args_label = str(
+                args_obj.get("query") or next(iter(args_obj.values()), "")
+            )
             tool_trace = None
             if execution:
                 try:
                     tool_trace = execution.start_tool(
                         name,
                         args_obj,
-                        str(call.get("id") or "") or None,
+                        call.call_id or None,
                         progress.trace(
                             round=round_idx + 1,
                             phase=operation_phase,
@@ -490,16 +492,15 @@ def run_agent_loop(
                             and name in REGISTRY
                             and arguments_are_object
                         ),
-                        tool_batch_size=len(tool_calls),
+                        tool_batch_size=len(tool_requests),
                         tool_batch_index=call_index,
                     )
                 except ToolBudgetDenied:
-                    for skipped_call in tool_calls[call_index:]:
-                        skipped_fn = skipped_call.get("function") or {}
+                    for skipped_call in tool_requests[call_index:]:
                         messages.append({
                             "role": "tool",
-                            "tool_call_id": skipped_call.get("id") or "",
-                            "name": str(skipped_fn.get("name") or ""),
+                            "tool_call_id": skipped_call.call_id,
+                            "name": skipped_call.name,
                             "content": json.dumps({
                                 "error": "tool_budget_hard_limit_reached",
                                 "skipped": True,
@@ -512,7 +513,7 @@ def run_agent_loop(
                 except ToolLoopGuardBlocked as error:
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": call.get("id") or "",
+                        "tool_call_id": call.call_id,
                         "name": name,
                         "content": json.dumps({
                             "error": error.reason,
@@ -591,7 +592,7 @@ def run_agent_loop(
             )
             messages.append({
                 "role": "tool",
-                "tool_call_id": call.get("id") or "",
+                "tool_call_id": call.call_id,
                 "name": name,
                 "content": json.dumps(
                     sanitize_execution_value(result),

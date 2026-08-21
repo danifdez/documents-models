@@ -10,8 +10,8 @@ and its prompts together:
 - `memory_agent/`        — persistent-memory mini-agent: the handler runs it
                            after every assistant turn (not an `AgentSpec`, not
                            invocable as a tool — it never enters `AGENTS`).
-- `loop.py`              — the shared engine (`run_agent_loop`) that runs any
-                           agent's tool-call rounds.
+- `loop.py`              — the conversational engine (`run_agent_loop`) that
+                           runs every `AgentSpec` tool-call round.
 
 An agent IS the abstraction a task uses: import it and drive it directly —
 `assistant.run(messages, ctx)`. The behaviour (run / run_as_tool / tools) lives

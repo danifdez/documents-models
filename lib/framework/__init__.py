@@ -1,7 +1,23 @@
-"""Abstracciones puras del framework de agentes y tools.
+"""Pure abstractions for the agent and tool framework.
 
-`agent.py` define `AgentSpec` (qué ES un agente) y `tool.py` define
-`Tool`/`ToolContext`/`register`/`REGISTRY` (qué ES una tool). Ambos son módulos
-puros (solo stdlib): ni `core/tools` ni `core/agents` arrastran wiring al
-importarlos, y no hay ciclo entre ellos.
+``agent.py`` defines ``AgentSpec`` and ``tool.py`` defines the tool contracts.
+``agent_protocol.py`` owns the semantic boundary shared by the conversational
+and durable runners. These modules depend only on the standard library, so
+importing them does not pull runtime wiring or create repository cycles.
 """
+
+from .agent_protocol import (
+    AgentRunResult,
+    LoopStepOutcome,
+    ModelOutcome,
+    ModelOutcomeKind,
+    ToolRequest,
+)
+
+__all__ = [
+    "AgentRunResult",
+    "LoopStepOutcome",
+    "ModelOutcome",
+    "ModelOutcomeKind",
+    "ToolRequest",
+]

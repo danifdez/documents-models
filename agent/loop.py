@@ -9,6 +9,10 @@ from agent.parse import parse_decision
 from agent.prompt import render_messages
 from agent.tools.base import TOOL_REGISTRY
 from agent.types import AgentDefinition, StepOutcome, ToolContext
+from lib.framework.agent_protocol import (
+    AgentRunResult,
+    ModelOutcomeKind,
+)
 from lib.llm.grammars import AGENT_DECISION_GBNF, AGENT_FINISH_GBNF
 
 logger = logging.getLogger(__name__)
@@ -39,7 +43,9 @@ def _finalize(
     reason: str,
     result: Optional[Dict[str, Any]] = None,
 ) -> StepOutcome:
-    final = dict(result or {})
+    final = AgentRunResult.structured_result(
+        dict(result or {})
+    ).as_payload()
     final["_agent"] = {
         "reason": reason,
         "iterations": execution.get("step", 0) + 1,
@@ -83,10 +89,15 @@ def _force_finish(
         })
         llm = get_llm_for_spec(agent_def.model)
         raw = llm.chat(messages, max_tokens=600, grammar=AGENT_FINISH_GBNF, temperature=0.0)
-        decision = parse_decision(raw)
-        if decision and "finish" in decision:
-            result = decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]}
-            return _finalize(execution, state, db, reason="max_steps_forced", result=result)
+        outcome = parse_decision(raw)
+        if outcome.kind == ModelOutcomeKind.STRUCTURED_RESULT:
+            return _finalize(
+                execution,
+                state,
+                db,
+                reason="max_steps_forced",
+                result=outcome.value,
+            )
     except Exception:
         logger.exception("Forced finish failed for agent execution %s", execution["execution_id"])
     return _finalize(execution, state, db, reason="max_steps", result=fallback)
@@ -117,10 +128,13 @@ def run_one_step(execution: Dict[str, Any], agent_def: AgentDefinition, db) -> S
     messages = render_messages(agent_def, state)
     llm = get_llm_for_spec(agent_def.model)
     raw = llm.chat(messages, max_tokens=600, grammar=AGENT_DECISION_GBNF, temperature=0.0)
-    decision = parse_decision(raw)
+    outcome = parse_decision(raw)
 
-    if decision is None:
-        observation = {"error": "Could not parse a JSON decision from the model output", "raw_excerpt": (raw or "")[:300]}
+    if outcome.kind == ModelOutcomeKind.INVALID:
+        observation = {
+            "error": outcome.reason or "invalid_model_decision",
+            "raw_excerpt": (raw or "")[:300],
+        }
         state.setdefault("transcript", []).append({
             "step": iteration,
             "tool": None,
@@ -132,18 +146,25 @@ def run_one_step(execution: Dict[str, Any], agent_def: AgentDefinition, db) -> S
             db.update_execution_status(execution["execution_id"], "queued", attempt_id=attempt_id)
         return StepOutcome.CONTINUE
 
-    if "finish" in decision:
-        return _finalize(execution, state, db, reason="finish", result=decision["finish"] if isinstance(decision["finish"], dict) else {"value": decision["finish"]})
+    if outcome.kind == ModelOutcomeKind.STRUCTURED_RESULT:
+        return _finalize(
+            execution,
+            state,
+            db,
+            reason="finish",
+            result=outcome.value,
+        )
 
-    tool_name = decision.get("tool")
-    args = decision.get("args") or {}
-    thought = decision.get("thought")
+    request = outcome.tool_requests[0]
+    tool_name = request.name
+    args = request.arguments or {}
+    thought = outcome.thought
     spec = TOOL_REGISTRY.get(tool_name) if tool_name else None
 
     transcript = state.get("transcript") or []
     last = transcript[-1] if transcript else None
 
-    if last and last.get("tool") == tool_name and last.get("args") == args:
+    if last and request.same_operation(last.get("tool"), last.get("args")):
         # Don't burn a real tool execution on a stuck model; feed the loop
         # back as an observation so the next step changes course.
         observation = {

@@ -1,14 +1,12 @@
 """Type definitions for the agent system."""
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from lib.framework.agent_protocol import LoopStepOutcome
 
-class StepOutcome(Enum):
-    CONTINUE = "continue"
-    FINISHED = "finished"
-    WAITING = "waiting"
+
+StepOutcome = LoopStepOutcome
 
 
 @dataclass
