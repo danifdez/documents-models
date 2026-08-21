@@ -67,6 +67,8 @@ class ExecutionIngestClient:
                 response = self._connection.getresponse()
                 raw = response.read().decode("utf-8")
                 if response.status >= 400:
+                    self._connection.close()
+                    self._connection = None
                     raise RuntimeError(
                         f"Execution ingestion returned HTTP {response.status}: "
                         f"{raw[:200]}"
@@ -79,3 +81,8 @@ class ExecutionIngestClient:
                 if attempt == 1:
                     raise
         return None
+
+    def close(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None

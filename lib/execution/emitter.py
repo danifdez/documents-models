@@ -42,7 +42,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:35a4ccc95dc89744aaf379f64abf3d87df29cb30fbbefa3715b1dfb9ca00313f"
+CONTRACT_SET_HASH = "sha256:da5dab2beeed59f93db59bc33ee443b4d96479722bb83ea7e1d1b7d307510c97"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -63,6 +63,22 @@ def _utc_now() -> str:
 
 def _hash_bytes(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def canonical_tool_input_fingerprint(name: str, arguments: Any) -> Optional[str]:
+    if not isinstance(arguments, dict) or not isinstance(name, str) or not name:
+        return None
+    try:
+        canonical = json.dumps(
+            {"name": name, "arguments": arguments},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return None
+    return _hash_bytes(canonical)
 
 
 def _redact_text(value: str) -> str:
@@ -154,6 +170,8 @@ class OperationHandle:
     tool_call_id: Optional[str] = None
     budget_state: Optional[Dict[str, Any]] = None
     soft_limit_signal: Optional[Dict[str, Any]] = None
+    guard_state: Optional[Dict[str, Any]] = None
+    loop_guard_signal: Optional[Dict[str, Any]] = None
 
 
 class ExecutionEmitter:
@@ -200,6 +218,11 @@ class ExecutionEmitter:
             "errors": list(dict.fromkeys(self.errors)),
         }
 
+    def close(self) -> None:
+        close = getattr(self._ingest_client, "close", None)
+        if callable(close):
+            close()
+
     def attach_summary(self, result: Dict[str, Any]) -> Dict[str, Any]:
         value = dict(result)
         if self.context:
@@ -238,6 +261,26 @@ class ExecutionEmitter:
                 "budgetBucket": reservation["bucket"],
                 "executionAttemptId": reservation["executionAttemptId"],
             }
+            guard_state = reservation.get("_guardState", {})
+            if (
+                isinstance(request, dict)
+                and isinstance(guard_state, dict)
+                and reservation.get("bucket") == "normal"
+                and guard_state.get("warningPending") is True
+                and isinstance(request.get("messages"), list)
+            ):
+                warning = (
+                    "An exact tool call was repeated without an intervening tool "
+                    "operation. Its previous result is already in the conversation. "
+                    "Change the arguments or strategy, or finish with the available "
+                    "evidence. Repeat it again only if new evidence makes the same "
+                    "call necessary."
+                )
+                request["messages"] = [
+                    *request["messages"],
+                    {"role": "system", "content": warning},
+                ]
+                budget_payload["loopGuardWarningApplied"] = True
             normal_state = reservation.get("_budgetState", {}).get("normal", {})
             if (
                 isinstance(request, dict)
@@ -272,6 +315,8 @@ class ExecutionEmitter:
         if handle and reservation:
             handle.budget_state = reservation.get("_budgetState")
             handle.soft_limit_signal = reservation.get("_softLimitSignal")
+            handle.guard_state = reservation.get("_guardState")
+            handle.loop_guard_signal = reservation.get("_loopGuardSignal")
         return handle
 
     def request_progress_grant(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -285,6 +330,9 @@ class ExecutionEmitter:
         budget_state = (response or {}).get("budgetState")
         if isinstance(budget_state, dict):
             result["_budgetState"] = budget_state
+        guard_state = (response or {}).get("guardState")
+        if isinstance(guard_state, dict):
+            result["_guardState"] = guard_state
         return result
 
     def reserve_operation_budget(
@@ -299,6 +347,8 @@ class ExecutionEmitter:
         round: int,
         name: str,
         tool_call_id: Optional[str] = None,
+        operation_fingerprint: Optional[str] = None,
+        operation_fingerprint_version: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not self.context or not self.context.get("attemptId"):
             raise RuntimeError("Execution attempt is required for budget reservation")
@@ -316,6 +366,14 @@ class ExecutionEmitter:
                 "name": name,
                 "executionAttemptId": self.context["attemptId"],
                 **({"toolCallId": tool_call_id} if tool_call_id else {}),
+                **(
+                    {
+                        "operationFingerprint": operation_fingerprint,
+                        "operationFingerprintVersion": operation_fingerprint_version,
+                    }
+                    if operation_fingerprint and operation_fingerprint_version
+                    else {}
+                ),
             })
         except Exception as error:
             raise InferenceBudgetDenied("budget_reservation_failed") from error
@@ -332,10 +390,16 @@ class ExecutionEmitter:
         result = dict(reservation)
         budget_state = (response or {}).get("budgetState")
         soft_limit_signal = (response or {}).get("softLimitSignal")
+        guard_state = (response or {}).get("guardState")
+        loop_guard_signal = (response or {}).get("loopGuardSignal")
         if isinstance(budget_state, dict):
             result["_budgetState"] = budget_state
         if isinstance(soft_limit_signal, dict):
             result["_softLimitSignal"] = soft_limit_signal
+        if isinstance(guard_state, dict):
+            result["_guardState"] = guard_state
+        if isinstance(loop_guard_signal, dict):
+            result["_loopGuardSignal"] = loop_guard_signal
         return result
 
     @staticmethod
@@ -408,6 +472,7 @@ class ExecutionEmitter:
         arguments: Any,
         provider_tool_call_id: Optional[str],
         metadata: Optional[Dict[str, Any]] = None,
+        repeat_comparable: bool = False,
     ) -> Optional[OperationHandle]:
         tool_call_id = str(uuid.uuid4())
         operation_id = str(uuid.uuid4())
@@ -415,6 +480,11 @@ class ExecutionEmitter:
         trace = _safe_value(metadata or {})
         budget_payload: Dict[str, Any] = {}
         reservation: Optional[Dict[str, Any]] = None
+        operation_fingerprint = (
+            canonical_tool_input_fingerprint(name, arguments)
+            if repeat_comparable
+            else None
+        )
         if (
             self.context
             and trace.get("loopKind") == "top_level"
@@ -430,12 +500,24 @@ class ExecutionEmitter:
                 round=int(trace.get("round") or 1),
                 name=name,
                 tool_call_id=tool_call_id,
+                operation_fingerprint=operation_fingerprint,
+                operation_fingerprint_version=(
+                    "canonical_tool_input_v1" if operation_fingerprint else None
+                ),
             )
             budget_payload = {
                 "budgetGrantId": reservation["grantId"],
                 "budgetReservationId": reservation["reservationId"],
                 "budgetBucket": reservation["bucket"],
                 "executionAttemptId": reservation["executionAttemptId"],
+                **(
+                    {
+                        "operationFingerprint": operation_fingerprint,
+                        "operationFingerprintVersion": "canonical_tool_input_v1",
+                    }
+                    if operation_fingerprint
+                    else {}
+                ),
             }
         handle = self.start_operation(
             "tool_call",
@@ -453,6 +535,8 @@ class ExecutionEmitter:
         if handle and reservation:
             handle.budget_state = reservation.get("_budgetState")
             handle.soft_limit_signal = reservation.get("_softLimitSignal")
+            handle.guard_state = reservation.get("_guardState")
+            handle.loop_guard_signal = reservation.get("_loopGuardSignal")
         return handle
 
     def observe_tool_result(self, handle: OperationHandle, result: Any) -> Optional[str]:

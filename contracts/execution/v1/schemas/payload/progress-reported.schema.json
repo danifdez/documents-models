@@ -12,7 +12,8 @@
         "ledger_snapshot",
         "budget_grant",
         "budget_reservation",
-        "budget_soft_limit_reached"
+        "budget_soft_limit_reached",
+        "loop_guard_triggered"
       ]
     },
     "policy": { "$ref": "#/$defs/policy" },
@@ -20,6 +21,7 @@
     "grant": { "$ref": "#/$defs/grant" },
     "reservation": { "$ref": "#/$defs/reservation" },
     "signal": { "$ref": "#/$defs/budgetSoftLimitSignal" },
+    "loopGuardSignal": { "$ref": "#/$defs/exactToolRepeatSignal" },
     "visibleEvent": { "type": "object" }
   },
   "allOf": [
@@ -60,6 +62,16 @@
         "required": ["kind"]
       },
       "then": { "required": ["signal"], "properties": { "signal": true } }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "loop_guard_triggered" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["loopGuardSignal"],
+        "properties": { "loopGuardSignal": true }
+      }
     }
   ],
   "$defs": {
@@ -86,7 +98,8 @@
         "closing": { "type": "integer", "minimum": 0, "maximum": 1 },
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
         "toolCalls": { "type": "integer", "minimum": 0 },
-        "toolCallSoftLimit": { "type": "integer", "minimum": 0 }
+        "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
+        "exactToolRepeatWarning": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -149,6 +162,10 @@
         "operationKind": { "enum": ["inference", "tool_call"] },
         "bucket": { "$ref": "#/$defs/budgetBucket" },
         "toolCallId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+        "operationFingerprintVersion": {
+          "const": "canonical_tool_input_v1"
+        },
         "phase": { "$ref": "#/$defs/inferencePhase" },
         "round": { "type": "integer", "minimum": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -179,7 +196,9 @@
           "then": {
             "properties": {
               "bucket": { "enum": ["normal", "repair", "closing"] },
-              "toolCallId": false
+              "toolCallId": false,
+              "operationFingerprint": false,
+              "operationFingerprintVersion": false
             }
           }
         },
@@ -198,6 +217,10 @@
           }
         }
       ],
+      "dependentRequired": {
+        "operationFingerprint": ["operationFingerprintVersion"],
+        "operationFingerprintVersion": ["operationFingerprint"]
+      },
       "additionalProperties": false
     },
     "budgetUsage": {
@@ -260,6 +283,65 @@
           "then": { "properties": { "bucket": { "const": "tool" } } }
         }
       ],
+      "additionalProperties": false
+    },
+    "exactToolRepeatSignal": {
+      "type": "object",
+      "required": [
+        "version",
+        "guardKind",
+        "action",
+        "grantId",
+        "loopId",
+        "previousOperationId",
+        "triggeringOperationId",
+        "operationFingerprint",
+        "operationFingerprintVersion",
+        "executionAttemptId",
+        "decidedAt"
+      ],
+      "properties": {
+        "version": { "const": "1" },
+        "guardKind": { "const": "immediate_exact_tool_repeat" },
+        "action": { "const": "warn" },
+        "grantId": { "$ref": "../common.schema.json#/$defs/id" },
+        "loopId": { "$ref": "../common.schema.json#/$defs/id" },
+        "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+        "operationFingerprintVersion": {
+          "const": "canonical_tool_input_v1"
+        },
+        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
+        "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
+      },
+      "additionalProperties": false
+    },
+    "exactToolRepeatGuardState": {
+      "type": "object",
+      "required": [
+        "detections",
+        "warningIssued",
+        "warningPending"
+      ],
+      "properties": {
+        "detections": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "warningIssued": { "type": "boolean" },
+        "warningPending": { "type": "boolean" },
+        "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "warningAppliedToOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "loopGuardState": {
+      "type": "object",
+      "required": ["exactToolRepeat"],
+      "properties": {
+        "exactToolRepeat": { "$ref": "#/$defs/exactToolRepeatGuardState" }
+      },
       "additionalProperties": false
     },
     "operationBudget": {
@@ -358,6 +440,7 @@
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
         "maxToolCalls": { "type": "integer", "minimum": 0 },
         "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
+        "exactToolRepeatWarning": { "type": "boolean" },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false
@@ -400,7 +483,12 @@
         "generatedTokens": { "$ref": "#/$defs/tokenUsage" },
         "completeness": { "enum": ["complete", "partial"] },
         "inferenceBudget": { "$ref": "#/$defs/operationBudget" },
-        "operationBudget": { "$ref": "#/$defs/operationBudget" }
+        "operationBudget": { "$ref": "#/$defs/operationBudget" },
+        "loopGuards": {
+          "type": "object",
+          "propertyNames": { "$ref": "../common.schema.json#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/loopGuardState" }
+        }
       },
       "allOf": [
         {

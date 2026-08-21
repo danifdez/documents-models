@@ -50,7 +50,8 @@
     "history_turns": 16,
     "normal_inference_soft_limit": 2,
     "max_tool_calls": 6,
-    "tool_call_soft_limit": 4
+    "tool_call_soft_limit": 4,
+    "exact_tool_repeat_warning": true
   },
   "agent-chat": {
     "enabled": true,
@@ -63,7 +64,8 @@
     "history_turns": 16,
     "normal_inference_soft_limit": 2,
     "max_tool_calls": 6,
-    "tool_call_soft_limit": 4
+    "tool_call_soft_limit": 4,
+    "exact_tool_repeat_warning": true
   },
   "workspace-research-agent": {
     "enabled": true,

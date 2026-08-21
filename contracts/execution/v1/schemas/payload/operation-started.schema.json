@@ -22,7 +22,12 @@
       "$ref": "progress-reported.schema.json#/$defs/budgetBucket"
     },
     "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
-    "budgetSoftLimitWarningApplied": { "type": "boolean" }
+    "budgetSoftLimitWarningApplied": { "type": "boolean" },
+    "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+    "operationFingerprintVersion": {
+      "const": "canonical_tool_input_v1"
+    },
+    "loopGuardWarningApplied": { "type": "boolean" }
   },
   "allOf": [
     {
@@ -94,6 +99,41 @@
       "if": {
         "properties": { "budgetSoftLimitWarningApplied": { "const": true } },
         "required": ["budgetSoftLimitWarningApplied"]
+      },
+      "then": {
+        "required": ["budgetBucket"],
+        "properties": {
+          "operationKind": { "const": "inference" },
+          "budgetBucket": { "const": "normal" }
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": { "operationFingerprint": true },
+            "required": ["operationFingerprint"]
+          },
+          {
+            "properties": { "operationFingerprintVersion": true },
+            "required": ["operationFingerprintVersion"]
+          }
+        ]
+      },
+      "then": {
+        "required": ["operationFingerprint", "operationFingerprintVersion"],
+        "properties": {
+          "operationKind": { "const": "tool_call" },
+          "operationFingerprint": true,
+          "operationFingerprintVersion": true
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "loopGuardWarningApplied": { "const": true } },
+        "required": ["loopGuardWarningApplied"]
       },
       "then": {
         "required": ["budgetBucket"],

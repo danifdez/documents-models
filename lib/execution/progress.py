@@ -15,6 +15,7 @@ class ProgressLoopContext:
     max_tokens_per_inference: int
     max_tool_calls: int
     tool_call_soft_limit: int
+    exact_tool_repeat_warning: bool
     grant_id: Optional[str] = None
     tool_budget_granted: int = 0
     tool_budget_available: int = 0
@@ -36,6 +37,7 @@ class ProgressLoopContext:
         max_tokens_per_inference: int,
         max_tool_calls: int = 0,
         tool_call_soft_limit: int = 0,
+        exact_tool_repeat_warning: bool = False,
     ) -> "ProgressLoopContext":
         loop_id = (
             str(emitter.context.get("executionId"))
@@ -50,6 +52,7 @@ class ProgressLoopContext:
             "maxTokensPerInference": max_tokens_per_inference,
             "toolCalls": max_tool_calls,
             "toolCallSoftLimit": tool_call_soft_limit,
+            "exactToolRepeatWarning": exact_tool_repeat_warning,
         }
         grant = None
         if (
@@ -70,6 +73,7 @@ class ProgressLoopContext:
         effective = (grant or {}).get("effectivePolicy", requested_policy)
         historical_soft_limit = 0 if grant else normal_inference_soft_limit
         historical_tool_soft_limit = 0 if grant else tool_call_soft_limit
+        historical_repeat_warning = False if grant else exact_tool_repeat_warning
         budget_state = (grant or {}).get("_budgetState") or {}
         tool_state = budget_state.get("tool") if isinstance(budget_state, dict) else {}
         tool_state = tool_state if isinstance(tool_state, dict) else {}
@@ -91,6 +95,12 @@ class ProgressLoopContext:
             max_tool_calls=int(effective.get("toolCalls", max_tool_calls)),
             tool_call_soft_limit=int(
                 effective.get("toolCallSoftLimit", historical_tool_soft_limit)
+            ),
+            exact_tool_repeat_warning=bool(
+                effective.get(
+                    "exactToolRepeatWarning",
+                    historical_repeat_warning,
+                )
             ),
             grant_id=(grant or {}).get("grantId"),
             tool_budget_granted=int(tool_state.get("granted", 0)),
@@ -121,6 +131,7 @@ class ProgressLoopContext:
             "maxTokensPerInference": self.max_tokens_per_inference,
             "maxToolCalls": self.max_tool_calls,
             "toolCallSoftLimit": self.tool_call_soft_limit,
+            "exactToolRepeatWarning": self.exact_tool_repeat_warning,
         }
         if self.grant_id:
             value["grantId"] = self.grant_id

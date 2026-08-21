@@ -14,6 +14,7 @@ class RecordingIngestClient:
         self.sent_events = []
         self.sent_artifacts = []
         self.budget_states = {}
+        self.guard_states = {}
 
     def post(self, root_execution_id, suffix, body):
         copied = copy.deepcopy(body)
@@ -61,6 +62,11 @@ class RecordingIngestClient:
                     "softLimitReached": False,
                 },
             }
+            self.guard_states[grant_id] = {
+                "detections": 0,
+                "warningIssued": False,
+                "warningPending": False,
+            }
             return {
                 "eventId": "00000000-0000-4000-8000-000000000010",
                 "grant": {
@@ -77,6 +83,7 @@ class RecordingIngestClient:
                     "grantedAt": "2026-08-20T10:00:00Z",
                 },
                 "budgetState": copy.deepcopy(self.budget_states[grant_id]),
+                "guardState": copy.deepcopy(self.guard_states[grant_id]),
             }
         if suffix == "progress/reservations":
             state = self.budget_states.get(copied["grantId"], {
@@ -141,6 +148,16 @@ class RecordingIngestClient:
                         {"toolCallId": copied["toolCallId"]}
                         if copied.get("toolCallId") else {}
                     ),
+                    **(
+                        {
+                            "operationFingerprint": copied["operationFingerprint"],
+                            "operationFingerprintVersion": copied[
+                                "operationFingerprintVersion"
+                            ],
+                        }
+                        if copied.get("operationFingerprint")
+                        else {}
+                    ),
                     "phase": copied["phase"],
                     "round": copied["round"],
                     "name": copied["name"],
@@ -148,6 +165,14 @@ class RecordingIngestClient:
                     "decidedAt": "2026-08-20T10:00:01Z",
                 },
                 "budgetState": copy.deepcopy(state),
+                "guardState": copy.deepcopy(self.guard_states.get(
+                    copied["grantId"],
+                    {
+                        "detections": 0,
+                        "warningIssued": False,
+                        "warningPending": False,
+                    },
+                )),
                 **({"softLimitSignal": signal} if signal else {}),
             }
         items = copied.get("events", copied.get("artifacts", []))

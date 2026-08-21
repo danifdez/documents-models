@@ -269,6 +269,7 @@ def run_agent_loop(
     )
     max_tool_calls = int(cfg.get("max_tool_calls", 6))
     tool_call_soft_limit = int(cfg.get("tool_call_soft_limit", 4))
+    exact_tool_repeat_warning = bool(cfg.get("exact_tool_repeat_warning", True))
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
@@ -287,6 +288,7 @@ def run_agent_loop(
         max_tokens_per_inference=round_max_tokens,
         max_tool_calls=max_tool_calls,
         tool_call_soft_limit=tool_call_soft_limit,
+        exact_tool_repeat_warning=exact_tool_repeat_warning,
     )
     max_rounds = progress.max_rounds
     round_max_tokens = progress.max_tokens_per_inference
@@ -390,10 +392,15 @@ def run_agent_loop(
             fn = call.get("function") or {}
             name = str(fn.get("name") or "")
             args_json = fn.get("arguments") or "{}"
+            arguments_are_object = False
             try:
-                args_obj = json.loads(args_json or "{}")
+                parsed_args = json.loads(args_json or "{}")
+                if not isinstance(parsed_args, dict):
+                    raise TypeError("Tool arguments must be an object")
+                args_obj = parsed_args
+                arguments_are_object = True
                 args_label = str(args_obj.get("query") or next(iter(args_obj.values()), ""))
-            except (json.JSONDecodeError, StopIteration):
+            except (json.JSONDecodeError, StopIteration, TypeError):
                 args_obj = {}
                 args_label = ""
             tool_trace = None
@@ -406,6 +413,11 @@ def run_agent_loop(
                         progress.trace(
                             round=round_idx + 1,
                             phase=operation_phase,
+                        ),
+                        repeat_comparable=(
+                            progress.exact_tool_repeat_warning
+                            and name in REGISTRY
+                            and arguments_are_object
                         ),
                     )
                 except ToolBudgetDenied:

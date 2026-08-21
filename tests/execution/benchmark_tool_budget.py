@@ -152,7 +152,14 @@ class MeasuredEmitter(ExecutionEmitter):
 
 
 class Mvp05ControlEmitter(MeasuredEmitter):
-    def start_tool(self, name, arguments, provider_tool_call_id, metadata=None):
+    def start_tool(
+        self,
+        name,
+        arguments,
+        provider_tool_call_id,
+        metadata=None,
+        repeat_comparable=False,
+    ):
         trace = dict(metadata or {})
         trace.pop("budgetGrantId", None)
         trace["loopKind"] = "synchronous_subagent"

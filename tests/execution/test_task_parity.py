@@ -1,6 +1,8 @@
 import copy
+import json
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from agents.loop import run_agent_loop
@@ -17,6 +19,15 @@ from tests.execution.support import RecordingExecutionEmitter, RecordingIngestCl
 
 def budget_aware_post(suffix, body):
     return RecordingIngestClient().post(CONTEXT["rootExecutionId"], suffix, body)
+
+
+class ExactRepeatPolicyParityTest(unittest.TestCase):
+    def test_both_chat_handlers_enable_the_same_repeat_policy(self):
+        config_path = Path(__file__).resolve().parents[2] / "common" / "tasks.default.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertIs(config["assistant-chat"]["exact_tool_repeat_warning"], True)
+        self.assertIs(config["agent-chat"]["exact_tool_repeat_warning"], True)
 
 
 class AssistantChatExecutionTest(unittest.TestCase):
