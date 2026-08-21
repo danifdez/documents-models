@@ -42,7 +42,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:da5dab2beeed59f93db59bc33ee443b4d96479722bb83ea7e1d1b7d307510c97"
+CONTRACT_SET_HASH = "sha256:f7564e1b2d811befaed9f07b987a83ff06c90089230f638771674d34ce7a24d3"
 
 
 class InferenceBudgetDenied(RuntimeError):
@@ -52,6 +52,12 @@ class InferenceBudgetDenied(RuntimeError):
 
 
 class ToolBudgetDenied(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class ToolLoopGuardBlocked(RuntimeError):
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
@@ -384,6 +390,8 @@ class ExecutionEmitter:
         self.last_event_id = str(event_id)
         if not response.get("granted"):
             reason = str(reservation.get("reason") or "budget_reservation_failed")
+            if reason == "immediate_exact_tool_repeat_blocked":
+                raise ToolLoopGuardBlocked(reason)
             if operation_kind == "tool_call":
                 raise ToolBudgetDenied(reason)
             raise InferenceBudgetDenied(reason)

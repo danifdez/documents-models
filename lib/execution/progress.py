@@ -16,6 +16,7 @@ class ProgressLoopContext:
     max_tool_calls: int
     tool_call_soft_limit: int
     exact_tool_repeat_warning: bool
+    exact_tool_repeat_block_after_warning: bool
     grant_id: Optional[str] = None
     tool_budget_granted: int = 0
     tool_budget_available: int = 0
@@ -38,6 +39,7 @@ class ProgressLoopContext:
         max_tool_calls: int = 0,
         tool_call_soft_limit: int = 0,
         exact_tool_repeat_warning: bool = False,
+        exact_tool_repeat_block_after_warning: bool = False,
     ) -> "ProgressLoopContext":
         loop_id = (
             str(emitter.context.get("executionId"))
@@ -53,6 +55,7 @@ class ProgressLoopContext:
             "toolCalls": max_tool_calls,
             "toolCallSoftLimit": tool_call_soft_limit,
             "exactToolRepeatWarning": exact_tool_repeat_warning,
+            "exactToolRepeatBlockAfterWarning": exact_tool_repeat_block_after_warning,
         }
         grant = None
         if (
@@ -74,6 +77,9 @@ class ProgressLoopContext:
         historical_soft_limit = 0 if grant else normal_inference_soft_limit
         historical_tool_soft_limit = 0 if grant else tool_call_soft_limit
         historical_repeat_warning = False if grant else exact_tool_repeat_warning
+        historical_repeat_block = (
+            False if grant else exact_tool_repeat_block_after_warning
+        )
         budget_state = (grant or {}).get("_budgetState") or {}
         tool_state = budget_state.get("tool") if isinstance(budget_state, dict) else {}
         tool_state = tool_state if isinstance(tool_state, dict) else {}
@@ -100,6 +106,12 @@ class ProgressLoopContext:
                 effective.get(
                     "exactToolRepeatWarning",
                     historical_repeat_warning,
+                )
+            ),
+            exact_tool_repeat_block_after_warning=bool(
+                effective.get(
+                    "exactToolRepeatBlockAfterWarning",
+                    historical_repeat_block,
                 )
             ),
             grant_id=(grant or {}).get("grantId"),
@@ -132,6 +144,9 @@ class ProgressLoopContext:
             "maxToolCalls": self.max_tool_calls,
             "toolCallSoftLimit": self.tool_call_soft_limit,
             "exactToolRepeatWarning": self.exact_tool_repeat_warning,
+            "exactToolRepeatBlockAfterWarning": (
+                self.exact_tool_repeat_block_after_warning
+            ),
         }
         if self.grant_id:
             value["grantId"] = self.grant_id

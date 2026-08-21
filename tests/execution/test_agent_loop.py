@@ -6,7 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
-from lib.execution import InferenceBudgetDenied, ToolBudgetDenied
+from lib.execution import (
+    InferenceBudgetDenied,
+    ToolBudgetDenied,
+    ToolLoopGuardBlocked,
+)
 from lib.framework.agent import AgentRunResult, AgentSpec
 from lib.framework.tool import ToolContext
 from lib.execution.emitter import ExecutionEmitter
@@ -430,6 +434,91 @@ class AgentLoopResultTest(unittest.TestCase):
             result,
             AgentRunResult.invalid("tool_budget_exhausted_without_closing"),
         )
+
+    def test_loop_guard_block_skips_only_the_repeated_call_and_continues(self):
+        class GuardedExecution:
+            context = None
+
+            def __init__(self):
+                self.starts = []
+
+            def record_progress_policy(self, _policy):
+                pass
+
+            def start_tool(self, name, *_args, **_kwargs):
+                self.starts.append(name)
+                if name == "repeated":
+                    raise ToolLoopGuardBlocked(
+                        "immediate_exact_tool_repeat_blocked"
+                    )
+                return SimpleNamespace()
+
+            def flush_evidence(self):
+                pass
+
+            def observe_tool_result(self, *_args):
+                return None
+
+            def finish_tool(self, *_args, **_kwargs):
+                pass
+
+        llm = FakeLlm([
+            {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-blocked",
+                        "function": {"name": "repeated", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call-other",
+                        "function": {"name": "other", "arguments": "{}"},
+                    },
+                ],
+            },
+            {"content": "recovered answer", "tool_calls": []},
+        ])
+        dispatched = []
+        execution = GuardedExecution()
+        spec = AgentSpec(
+            name="test-agent",
+            config_key="test-agent",
+            system_prompt="test",
+            tool_names=frozenset({"repeated", "other"}),
+        )
+        with patch(
+            "agents.loop.get_task_config",
+            return_value={"max_rounds": 2, "max_tokens": 32},
+        ), patch("agents.loop.get_llm_params", return_value={}), patch(
+            "agents.loop.get_llm_service", return_value=llm
+        ):
+            result = run_agent_loop(
+                spec,
+                [{"role": "user", "content": "question"}],
+                ToolContext(execution=execution),
+                [],
+                lambda name, *_args: dispatched.append(name) or {"value": name},
+            )
+
+        self.assertEqual(result, AgentRunResult.final_text("recovered answer"))
+        self.assertEqual(execution.starts, ["repeated", "other"])
+        self.assertEqual(dispatched, ["other"])
+        self.assertEqual(llm.chat_calls, [])
+        second_messages = llm.tool_calls[1][0][0]
+        blocked_result = next(
+            json.loads(message["content"])
+            for message in second_messages
+            if message.get("tool_call_id") == "call-blocked"
+        )
+        self.assertEqual(blocked_result, {
+            "error": "immediate_exact_tool_repeat_blocked",
+            "blocked": True,
+            "message": (
+                "This exact tool call already succeeded and was repeated after "
+                "a warning. Change the arguments or strategy, or finish with "
+                "the available evidence."
+            ),
+        })
 
     def test_repairs_one_empty_output_and_returns_final_text(self):
         llm = FakeLlm([

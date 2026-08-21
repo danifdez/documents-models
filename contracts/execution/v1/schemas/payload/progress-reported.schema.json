@@ -99,7 +99,8 @@
         "maxTokensPerInference": { "type": "integer", "minimum": 1 },
         "toolCalls": { "type": "integer", "minimum": 0 },
         "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
-        "exactToolRepeatWarning": { "type": "boolean" }
+        "exactToolRepeatWarning": { "type": "boolean" },
+        "exactToolRepeatBlockAfterWarning": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -303,7 +304,7 @@
       "properties": {
         "version": { "const": "1" },
         "guardKind": { "const": "immediate_exact_tool_repeat" },
-        "action": { "const": "warn" },
+        "action": { "enum": ["warn", "block"] },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" },
         "loopId": { "$ref": "../common.schema.json#/$defs/id" },
         "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
@@ -312,9 +313,49 @@
         "operationFingerprintVersion": {
           "const": "canonical_tool_input_v1"
         },
+        "warningAppliedToOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        },
+        "resultFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+        "resultFingerprintVersion": {
+          "const": "tool_output_content_hash_v1"
+        },
         "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "action": { "const": "block" } },
+            "required": ["action"]
+          },
+          "then": {
+            "required": [
+              "warningAppliedToOperationId",
+              "resultFingerprint",
+              "resultFingerprintVersion"
+            ],
+            "properties": {
+              "warningAppliedToOperationId": true,
+              "resultFingerprint": true,
+              "resultFingerprintVersion": true
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "warn" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "warningAppliedToOperationId": false,
+              "resultFingerprint": false,
+              "resultFingerprintVersion": false
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "exactToolRepeatGuardState": {
@@ -325,13 +366,28 @@
         "warningPending"
       ],
       "properties": {
-        "detections": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "detections": { "type": "integer", "minimum": 0 },
         "warningIssued": { "type": "boolean" },
         "warningPending": { "type": "boolean" },
+        "blocks": { "type": "integer", "minimum": 0 },
         "previousOperationId": { "$ref": "../common.schema.json#/$defs/id" },
         "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
+        "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+        "operationFingerprintVersion": {
+          "const": "canonical_tool_input_v1"
+        },
         "warningAppliedToOperationId": {
           "$ref": "../common.schema.json#/$defs/id"
+        },
+        "lastBlockedOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        },
+        "lastBlockedPreviousOperationId": {
+          "$ref": "../common.schema.json#/$defs/id"
+        },
+        "resultFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
+        "resultFingerprintVersion": {
+          "const": "tool_output_content_hash_v1"
         }
       },
       "additionalProperties": false
@@ -441,6 +497,7 @@
         "maxToolCalls": { "type": "integer", "minimum": 0 },
         "toolCallSoftLimit": { "type": "integer", "minimum": 0 },
         "exactToolRepeatWarning": { "type": "boolean" },
+        "exactToolRepeatBlockAfterWarning": { "type": "boolean" },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" }
       },
       "additionalProperties": false

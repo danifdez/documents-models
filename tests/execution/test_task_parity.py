@@ -28,6 +28,12 @@ class ExactRepeatPolicyParityTest(unittest.TestCase):
 
         self.assertIs(config["assistant-chat"]["exact_tool_repeat_warning"], True)
         self.assertIs(config["agent-chat"]["exact_tool_repeat_warning"], True)
+        self.assertIs(
+            config["assistant-chat"]["exact_tool_repeat_block_after_warning"], True
+        )
+        self.assertIs(
+            config["agent-chat"]["exact_tool_repeat_block_after_warning"], True
+        )
 
 
 class AssistantChatExecutionTest(unittest.TestCase):

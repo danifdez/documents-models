@@ -20,6 +20,7 @@ from lib.execution import (
     InferenceBudgetDenied,
     ProgressLoopContext,
     ToolBudgetDenied,
+    ToolLoopGuardBlocked,
     sanitize_execution_value,
     sanitize_result_summary,
 )
@@ -270,6 +271,9 @@ def run_agent_loop(
     max_tool_calls = int(cfg.get("max_tool_calls", 6))
     tool_call_soft_limit = int(cfg.get("tool_call_soft_limit", 4))
     exact_tool_repeat_warning = bool(cfg.get("exact_tool_repeat_warning", True))
+    exact_tool_repeat_block_after_warning = bool(
+        cfg.get("exact_tool_repeat_block_after_warning", True)
+    )
     can_emit = (
         spec.emits_tool_events
         and isinstance(ctx.owner_id, int)
@@ -289,6 +293,9 @@ def run_agent_loop(
         max_tool_calls=max_tool_calls,
         tool_call_soft_limit=tool_call_soft_limit,
         exact_tool_repeat_warning=exact_tool_repeat_warning,
+        exact_tool_repeat_block_after_warning=(
+            exact_tool_repeat_block_after_warning
+        ),
     )
     max_rounds = progress.max_rounds
     round_max_tokens = progress.max_tokens_per_inference
@@ -436,6 +443,22 @@ def run_agent_loop(
                     closing_reason = "tool_budget_exhausted"
                     closing_round = round_idx + 1
                     break
+                except ToolLoopGuardBlocked as error:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or "",
+                        "name": name,
+                        "content": json.dumps({
+                            "error": error.reason,
+                            "blocked": True,
+                            "message": (
+                                "This exact tool call already succeeded and was "
+                                "repeated after a warning. Change the arguments or "
+                                "strategy, or finish with the available evidence."
+                            ),
+                        }),
+                    })
+                    continue
                 execution.flush_evidence()
             if can_emit:
                 post_tool_event(

@@ -12,6 +12,7 @@ from lib.execution.emitter import (
     ExecutionEmitter,
     InferenceBudgetDenied,
     ToolBudgetDenied,
+    ToolLoopGuardBlocked,
     _safe_value,
     canonical_tool_input_fingerprint,
 )
@@ -773,6 +774,63 @@ class ExecutionEmitterTest(unittest.TestCase):
                 {"path": "fixture.txt"},
                 "provider-call-1",
                 progress.trace(round=1, phase="agent_loop"),
+            )
+
+        self.assertFalse(any(
+            event["eventType"] == "operation.started"
+            for event in emitter.pending_events
+        ))
+
+    def test_loop_guard_block_is_typed_before_operation_start(self):
+        fallback = RecordingIngestClient()
+
+        def respond(suffix, body):
+            if suffix == "progress/reservations":
+                return {
+                    "granted": False,
+                    "eventId": "00000000-0000-4000-8000-000000000020",
+                    "reservation": {
+                        "version": "1",
+                        "reservationId": "00000000-0000-4000-8000-000000000021",
+                        "grantId": body["grantId"],
+                        "operationId": body["operationId"],
+                        "executionAttemptId": body["executionAttemptId"],
+                        "operationKind": "tool_call",
+                        "bucket": "tool",
+                        "toolCallId": body["toolCallId"],
+                        "phase": body["phase"],
+                        "round": body["round"],
+                        "name": body["name"],
+                        "status": "denied",
+                        "reason": "immediate_exact_tool_repeat_blocked",
+                        "decidedAt": "2026-08-21T10:00:02Z",
+                    },
+                }
+            return fallback.post(CONTEXT["rootExecutionId"], suffix, body)
+
+        emitter = self.emitter(RecordingIngestClient(respond))
+        progress = ProgressLoopContext.start(
+            emitter,
+            agent_name="assistant",
+            loop_kind="top_level",
+            max_rounds=1,
+            max_output_repairs=0,
+            forced_finalization_available=True,
+            max_tokens_per_inference=64,
+            max_tool_calls=1,
+            exact_tool_repeat_warning=True,
+            exact_tool_repeat_block_after_warning=True,
+        )
+
+        with self.assertRaisesRegex(
+            ToolLoopGuardBlocked, "immediate_exact_tool_repeat_blocked"
+        ):
+            emitter.start_tool(
+                "folder_read",
+                {"path": "fixture.txt"},
+                "provider-call-1",
+                progress.trace(round=1, phase="agent_loop"),
+                repeat_comparable=True,
             )
 
         self.assertFalse(any(
