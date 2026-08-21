@@ -1,9 +1,6 @@
 import argparse
-import json
-import os
 import statistics
 import time
-import urllib.request
 import uuid
 from pathlib import Path
 from unittest.mock import patch
@@ -12,8 +9,17 @@ from agents.loop import run_agent_loop
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import ToolContext
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
+from tests.execution.bench_harness import (
+    accepted,
+    backend_client,
+    collect_paired,
+    deterministic_service,
+    resolve_backend_url,
+    write_report,
+)
+
+WORKSPACE = "mvp04-benchmark"
+request = backend_client(WORKSPACE, timeout=10)
 
 
 TOOLS = {
@@ -144,20 +150,6 @@ class CountingLlm:
         return self.delegate.chat(*args, **kwargs)
 
 
-def request(backend_url, method, path, body=None):
-    value = urllib.request.Request(
-        f"{backend_url}{path}",
-        data=json.dumps(body).encode("utf-8") if body is not None else None,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Workspace-Id": "mvp04-benchmark",
-        },
-    )
-    with urllib.request.urlopen(value, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
 def create_emitter(backend_url):
     execution = request(
         backend_url,
@@ -266,55 +258,38 @@ def collect_scenario_samples(
     sample_count,
     max_attempts,
 ):
-    attempts = []
-    accepted = {"baseline": 0, "instrumented": 0}
-    for attempt in range(max_attempts):
-        order = [False, True] if attempt % 2 == 0 else [True, False]
-        for instrumented in order:
-            mode = "instrumented" if instrumented else "baseline"
-            if accepted[mode] >= sample_count:
-                continue
-            sample = run_sample(service, backend_url, name, instrumented)
-            attempts.append(sample)
-            print(name, json.dumps(sample, ensure_ascii=False), flush=True)
-            if sample["correct"]:
-                accepted[mode] += 1
-        if all(value >= sample_count for value in accepted.values()):
-            break
-    if any(value < sample_count for value in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return attempts
-
-
-def _accepted_values(attempts, mode, key, sample_count):
-    return [
-        item[key]
-        for item in attempts
-        if item["correct"] and item["mode"] == mode
-    ][:sample_count]
+    return collect_paired(
+        lambda instrumented: run_sample(
+            service, backend_url, name, instrumented
+        ),
+        name,
+        sample_count,
+        max_attempts,
+        ("baseline", "instrumented"),
+    )
 
 
 def summarize_scenario(attempts, sample_count):
-    baseline = _accepted_values(attempts, "baseline", "elapsedMs", sample_count)
-    instrumented = _accepted_values(
+    baseline = accepted(attempts, "baseline", "elapsedMs", sample_count)
+    instrumented = accepted(
         attempts,
         "instrumented",
         "elapsedMs",
         sample_count,
     )
-    instrumentation = _accepted_values(
+    instrumentation = accepted(
         attempts,
         "instrumented",
         "instrumentationMs",
         sample_count,
     )
-    baseline_outputs = _accepted_values(
+    baseline_outputs = accepted(
         attempts,
         "baseline",
         "content",
         sample_count,
     )
-    instrumented_outputs = _accepted_values(
+    instrumented_outputs = accepted(
         attempts,
         "instrumented",
         "content",
@@ -359,22 +334,8 @@ def main():
     parser.add_argument("--max-attempts", type=int, default=8)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:3000").rstrip("/")
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    service, params = deterministic_service()
 
     results = {}
     for name in SCENARIOS:
@@ -391,10 +352,7 @@ def main():
         Path(params["model_path"]).name,
         args.samples,
     )
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

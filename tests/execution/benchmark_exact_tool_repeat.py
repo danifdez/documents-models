@@ -1,70 +1,46 @@
 import argparse
 import copy
 import json
-import os
-import statistics
 import time
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
-from config import (
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-)
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import Tool, ToolContext
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
-from tests.execution.benchmark_inference_budget import activate_execution
+from tests.execution.bench_harness import (
+    accepted,
+    activate_execution,
+    backend_client,
+    collect_paired,
+    create_assistant,
+    deterministic_service,
+    ensure_ingest_token,
+    index_tool_schema,
+    latency_block,
+    materialized_prompts,
+    resolve_backend_url,
+    write_report,
+)
 from tools import REGISTRY
+
+WORKSPACE = "mvp10-benchmark"
+request = backend_client(WORKSPACE)
 
 
 REPEAT_WARNING = "An exact tool call was repeated without an intervening tool operation."
 
 
-def ensure_ingest_token():
-    if os.environ.get("EXECUTION_INGEST_TOKEN"):
-        return
-    env_path = Path(__file__).resolve().parents[3] / ".env"
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("EXECUTION_INGEST_TOKEN="):
-            os.environ["EXECUTION_INGEST_TOKEN"] = line.split("=", 1)[1]
-            return
-    raise RuntimeError("EXECUTION_INGEST_TOKEN is not configured for the profile")
-
-
-def tool_schema(name, description):
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "index": {"type": "integer", "minimum": 1},
-                },
-                "required": ["index"],
-            },
-        },
-    }
-
-
-COLLECT = tool_schema(
+COLLECT = index_tool_schema(
     "collect_evidence",
     "Collect the validation evidence for one numeric index.",
 )
-INSPECT = tool_schema(
+INSPECT = index_tool_schema(
     "inspect_evidence",
     "Inspect the validation evidence for one numeric index.",
 )
-FAIL = tool_schema(
+FAIL = index_tool_schema(
     "failing_probe",
     "Run the validation probe. It returns an expected error.",
 )
@@ -290,51 +266,6 @@ class TracingLlm:
         return value
 
 
-def request(backend_url, method, path, body=None):
-    value = urllib.request.Request(
-        f"{backend_url}{path}",
-        data=json.dumps(body).encode("utf-8") if body is not None else None,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Workspace-Id": "mvp10-benchmark",
-        },
-    )
-    with urllib.request.urlopen(value, timeout=30) as response:
-        raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
-
-def database_connection():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        dbname=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
-        row_factory=dict_row,
-        autocommit=True,
-    )
-
-
-def materialized_prompts(root_execution_id):
-    with database_connection() as connection, connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT body
-            FROM execution_artifacts
-            WHERE root_execution_id = %s AND kind = 'materialized_prompt'
-            ORDER BY created_at, artifact_id
-            """,
-            (root_execution_id,),
-        )
-        rows = cursor.fetchall()
-    return [json.loads(bytes(row["body"]).decode("utf-8")) for row in rows]
-
-
 def create_emitter(backend_url, assistant_id):
     created = request(
         backend_url,
@@ -552,44 +483,28 @@ def run_sample(service, backend_url, assistant_id, name, enabled):
 
 
 def collect(service, backend_url, assistant_id, name, samples, max_attempts):
-    values = []
-    accepted = {"mvp09_control": 0, "mvp10": 0}
-    for attempt in range(max_attempts):
-        order = (False, True) if attempt % 2 == 0 else (True, False)
-        for enabled in order:
-            mode = "mvp10" if enabled else "mvp09_control"
-            if accepted[mode] >= samples:
-                continue
-            value = run_sample(service, backend_url, assistant_id, name, enabled)
-            values.append(value)
-            print(name, json.dumps(value, ensure_ascii=False), flush=True)
-            if value["correct"]:
-                accepted[mode] += 1
-        if all(count >= samples for count in accepted.values()):
-            break
-    if any(count < samples for count in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return values
-
-
-def accepted(values, mode, key, samples):
-    return [
-        value[key]
-        for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
+    return collect_paired(
+        lambda enabled: run_sample(
+            service, backend_url, assistant_id, name, enabled
+        ),
+        name,
+        samples,
+        max_attempts,
+        ("mvp09_control", "mvp10"),
+    )
 
 
 def summarize(values, name, samples):
     item = SCENARIOS[name]
-    control = accepted(values, "mvp09_control", "elapsedMs", samples)
-    current = accepted(values, "mvp10", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    current_median = statistics.median(current)
-    delta = current_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp09_control",
+        current_mode="mvp10",
+        control_key="mvp09Control",
+        current_key="mvp10",
+    )
     parity = item["parity"]
-    mvp_tools = accepted(values, "mvp10", "tools", samples)
     post_warning = item["expectedPostWarning"]
     recovered = (
         samples
@@ -598,14 +513,9 @@ def summarize(values, name, samples):
     )
     persisted = samples if post_warning == "repeated" else 0
     return {
-        "mvp09ControlMs": control,
-        "mvp10Ms": current,
-        "mvp09ControlMedianMs": control_median,
-        "mvp10MedianMs": current_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": parity,
-        "mvp10Tools": mvp_tools,
+        "mvp10Tools": accepted(values, "mvp10", "tools", samples),
         "mvp10Inferences": accepted(values, "mvp10", "inferences", samples),
         "mvp10RealModelPosts": accepted(
             values, "mvp10", "realModelPosts", samples
@@ -619,7 +529,7 @@ def summarize(values, name, samples):
         ),
         "recoveredAfterWarning": recovered,
         "persistedAfterWarning": persisted,
-        "passed": not parity or delta <= threshold,
+        "passed": not parity or common["deltaMs"] <= common["thresholdMs"],
     }
 
 
@@ -631,29 +541,9 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     ensure_ingest_token()
-    backend_url = os.environ.get(
-        "BACKEND_URL", "http://127.0.0.1:3000"
-    ).rstrip("/")
-    assistant = request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 10 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    assistant = create_assistant(request, backend_url, "MVP 10 validation")
+    service, params = deterministic_service()
     selected = (
         {args.scenario: SCENARIOS[args.scenario]}
         if args.scenario else SCENARIOS
@@ -701,11 +591,7 @@ def main():
         },
         "passed": all(value["passed"] for value in scenarios.values()),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

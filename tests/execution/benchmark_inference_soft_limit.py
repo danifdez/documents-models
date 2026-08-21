@@ -1,28 +1,30 @@
 import argparse
 import copy
 import json
-import os
-import statistics
 import time
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
-from config import (
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-)
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import ToolContext
-from lib.llm.config import get_llm_params
 from services import llm_service as llm_module
-from services.llm_service import get_llm_service
-from tests.execution.benchmark_inference_budget import activate_execution
+from tests.execution.bench_harness import (
+    accepted,
+    activate_execution,
+    backend_client,
+    collect_paired,
+    create_assistant,
+    deterministic_service,
+    latency_block,
+    materialized_prompts,
+    resolve_backend_url,
+    write_report,
+)
+
+WORKSPACE = "mvp08-benchmark"
+request = backend_client(WORKSPACE)
 
 
 NORMAL_WARNING_PREFIX = "Normal inference budget is low: 1 of 3 calls remain."
@@ -198,21 +200,6 @@ class TracingLlm:
         return self.delegate.chat(messages, *args, **kwargs)
 
 
-def request(backend_url, method, path, body=None):
-    value = urllib.request.Request(
-        f"{backend_url}{path}",
-        data=json.dumps(body).encode("utf-8") if body is not None else None,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Workspace-Id": "mvp08-benchmark",
-        },
-    )
-    with urllib.request.urlopen(value, timeout=30) as response:
-        raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
-
 def create_emitter(backend_url, assistant_id):
     created = request(
         backend_url,
@@ -221,36 +208,6 @@ def create_emitter(backend_url, assistant_id):
         {"content": "MVP 08 normal inference soft limit benchmark probe"},
     )
     return MeasuredEmitter(activate_execution(created["executionId"]))
-
-
-def database_connection():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        dbname=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
-        row_factory=dict_row,
-        autocommit=True,
-    )
-
-
-def materialized_prompts(root_execution_id):
-    with database_connection() as connection, connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT body
-            FROM execution_artifacts
-            WHERE root_execution_id = %s AND kind = 'materialized_prompt'
-            ORDER BY created_at, artifact_id
-            """,
-            (root_execution_id,),
-        )
-        rows = cursor.fetchall()
-    return [json.loads(bytes(row["body"]).decode("utf-8")) for row in rows]
 
 
 def budget_state(progress):
@@ -522,51 +479,29 @@ def run_sample(service, backend_url, assistant_id, name, soft_enabled):
 
 
 def collect(service, backend_url, assistant_id, name, samples, max_attempts):
-    values = []
-    accepted = {"mvp07_control": 0, "mvp08": 0}
-    for attempt in range(max_attempts):
-        order = (False, True) if attempt % 2 == 0 else (True, False)
-        for soft_enabled in order:
-            mode = "mvp08" if soft_enabled else "mvp07_control"
-            if accepted[mode] >= samples:
-                continue
-            sample = run_sample(
-                service, backend_url, assistant_id, name, soft_enabled
-            )
-            values.append(sample)
-            print(name, json.dumps(sample, ensure_ascii=False), flush=True)
-            if sample["correct"]:
-                accepted[mode] += 1
-        if all(value >= samples for value in accepted.values()):
-            break
-    if any(value < samples for value in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return values
-
-
-def accepted(values, mode, key, samples):
-    return [
-        value[key]
-        for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
+    return collect_paired(
+        lambda soft_enabled: run_sample(
+            service, backend_url, assistant_id, name, soft_enabled
+        ),
+        name,
+        samples,
+        max_attempts,
+        ("mvp07_control", "mvp08"),
+    )
 
 
 def summarize(values, name, samples):
-    control = accepted(values, "mvp07_control", "elapsedMs", samples)
-    current = accepted(values, "mvp08", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    current_median = statistics.median(current)
-    delta = current_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp07_control",
+        current_mode="mvp08",
+        control_key="mvp07Control",
+        current_key="mvp08",
+    )
     latency_applies = name == "direct"
     return {
-        "mvp07ControlMs": control,
-        "mvp08Ms": current,
-        "mvp07ControlMedianMs": control_median,
-        "mvp08MedianMs": current_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": latency_applies,
         "mvp08InferenceReservationMs": accepted(
             values, "mvp08", "inferenceReservationMs", samples
@@ -588,7 +523,10 @@ def summarize(values, name, samples):
         "mvp08BudgetUsage": accepted(
             values, "mvp08", "budgetUsage", samples
         ),
-        "passed": not latency_applies or delta <= threshold,
+        "passed": (
+            not latency_applies
+            or common["deltaMs"] <= common["thresholdMs"]
+        ),
     }
 
 
@@ -599,29 +537,9 @@ def main():
     parser.add_argument("--scenario", choices=tuple(SCENARIOS))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    backend_url = os.environ.get(
-        "BACKEND_URL", "http://127.0.0.1:3000"
-    ).rstrip("/")
-    assistant = request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 08 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    assistant = create_assistant(request, backend_url, "MVP 08 validation")
+    service, params = deterministic_service()
 
     selected = (
         {args.scenario: SCENARIOS[args.scenario]}
@@ -649,13 +567,7 @@ def main():
         "scenarios": scenarios,
         "passed": all(value["passed"] for value in scenarios.values()),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(report, indent=2) + "\n", encoding="utf-8"
-    )
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

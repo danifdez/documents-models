@@ -1,9 +1,5 @@
 import argparse
-import json
-import os
-import statistics
 import time
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,10 +7,21 @@ from agents.loop import run_agent_loop
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import ToolContext
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
-from tests.execution.benchmark_inference_budget import activate_execution
+from tests.execution.bench_harness import (
+    accepted,
+    activate_execution,
+    backend_client,
+    collect_paired,
+    create_assistant,
+    deterministic_service,
+    latency_block,
+    resolve_backend_url,
+    write_report,
+)
 from tests.execution.benchmark_progress_overhead import CountingLlm
+
+WORKSPACE = "mvp06-benchmark"
+request = backend_client(WORKSPACE, timeout=10)
 
 
 TOOLS = {
@@ -182,21 +189,6 @@ class BatchCountingLlm(CountingLlm):
         return response
 
 
-def request(backend_url, method, path, body=None):
-    value = urllib.request.Request(
-        f"{backend_url}{path}",
-        data=json.dumps(body).encode("utf-8") if body is not None else None,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Workspace-Id": "mvp06-benchmark",
-        },
-    )
-    with urllib.request.urlopen(value, timeout=10) as response:
-        raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
-
 def create_emitter(backend_url, assistant_id, governed):
     created = request(
         backend_url,
@@ -346,41 +338,26 @@ def run_sample(service, backend_url, assistant_id, name, governed):
 
 
 def collect_samples(service, backend_url, assistant_id, name, samples, attempts):
-    values = []
-    accepted = {"mvp05_control": 0, "mvp06": 0}
-    for attempt in range(attempts):
-        order = (False, True) if attempt % 2 == 0 else (True, False)
-        for governed in order:
-            mode = "mvp06" if governed else "mvp05_control"
-            if accepted[mode] >= samples:
-                continue
-            sample = run_sample(service, backend_url, assistant_id, name, governed)
-            values.append(sample)
-            print(name, json.dumps(sample, ensure_ascii=False), flush=True)
-            if sample["correct"]:
-                accepted[mode] += 1
-        if all(count >= samples for count in accepted.values()):
-            break
-    if any(count < samples for count in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return values
-
-
-def accepted(values, mode, key, samples):
-    return [
-        value[key]
-        for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
+    return collect_paired(
+        lambda governed: run_sample(
+            service, backend_url, assistant_id, name, governed
+        ),
+        name,
+        samples,
+        attempts,
+        ("mvp05_control", "mvp06"),
+    )
 
 
 def summarize(values, name, samples):
-    control = accepted(values, "mvp05_control", "elapsedMs", samples)
-    governed = accepted(values, "mvp06", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    governed_median = statistics.median(governed)
-    delta = governed_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp05_control",
+        current_mode="mvp06",
+        control_key="mvp05Control",
+        current_key="mvp06",
+    )
     semantic_match = set(accepted(
         values, "mvp05_control", "content", samples
     )) == set(accepted(values, "mvp06", "content", samples))
@@ -392,15 +369,11 @@ def summarize(values, name, samples):
         == accepted(values, "mvp06", "tools", samples)
     )
     passed = semantic_match and (
-        expected_divergence or (trajectory_match and delta <= threshold)
+        expected_divergence
+        or (trajectory_match and common["deltaMs"] <= common["thresholdMs"])
     )
     return {
-        "mvp05ControlMs": control,
-        "mvp06Ms": governed,
-        "mvp05ControlMedianMs": control_median,
-        "mvp06MedianMs": governed_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": not expected_divergence,
         "semanticMatch": semantic_match,
         "trajectoryMatch": trajectory_match,
@@ -428,27 +401,9 @@ def main():
     parser.add_argument("--max-attempts", type=int, default=8)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:3000").rstrip("/")
-    assistant = request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 06 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    assistant = create_assistant(request, backend_url, "MVP 06 validation")
+    service, params = deterministic_service()
 
     raw = {
         name: collect_samples(
@@ -471,11 +426,7 @@ def main():
         "scenarios": scenarios,
         "passed": all(value["passed"] for value in scenarios.values()),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

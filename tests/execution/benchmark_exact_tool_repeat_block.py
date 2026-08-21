@@ -1,72 +1,48 @@
 import argparse
 import copy
 import json
-import os
-import statistics
 import time
-import urllib.request
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
 from agents.loop import run_agent_loop
-from config import (
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-)
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import Tool, ToolContext
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
 from services import llm_service as llm_service_module
-from tests.execution.benchmark_inference_budget import activate_execution
+from tests.execution.bench_harness import (
+    accepted,
+    activate_execution,
+    backend_client,
+    collect_paired,
+    create_assistant,
+    deterministic_service,
+    ensure_ingest_token,
+    index_tool_schema,
+    latency_block,
+    materialized_prompts,
+    resolve_backend_url,
+    write_report,
+)
 from tools import REGISTRY
+
+WORKSPACE = "mvp11-benchmark"
+request = backend_client(WORKSPACE)
 
 
 REPEAT_WARNING = "An exact tool call was repeated without an intervening tool operation."
 
 
-def ensure_ingest_token():
-    if os.environ.get("EXECUTION_INGEST_TOKEN"):
-        return
-    env_path = Path(__file__).resolve().parents[3] / ".env"
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("EXECUTION_INGEST_TOKEN="):
-            os.environ["EXECUTION_INGEST_TOKEN"] = line.split("=", 1)[1]
-            return
-    raise RuntimeError("EXECUTION_INGEST_TOKEN is not configured for the profile")
-
-
-def tool_schema(name, description):
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "index": {"type": "integer", "minimum": 1},
-                },
-                "required": ["index"],
-            },
-        },
-    }
-
-
-COLLECT = tool_schema(
+COLLECT = index_tool_schema(
     "collect_evidence",
     "Collect the validation evidence for one numeric index.",
 )
-INSPECT = tool_schema(
+INSPECT = index_tool_schema(
     "inspect_evidence",
     "Inspect the validation evidence for one numeric index.",
 )
-FAIL = tool_schema(
+FAIL = index_tool_schema(
     "failing_probe",
     "Run the validation probe. It returns an expected error.",
 )
@@ -468,51 +444,6 @@ class TracingLlm:
         return value
 
 
-def request(backend_url, method, path, body=None):
-    value = urllib.request.Request(
-        f"{backend_url}{path}",
-        data=json.dumps(body).encode("utf-8") if body is not None else None,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Workspace-Id": "mvp11-benchmark",
-        },
-    )
-    with urllib.request.urlopen(value, timeout=30) as response:
-        raw = response.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
-
-
-def database_connection():
-    import psycopg
-    from psycopg.rows import dict_row
-
-    return psycopg.connect(
-        host=POSTGRES_HOST,
-        port=POSTGRES_PORT,
-        dbname=POSTGRES_DB,
-        user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
-        row_factory=dict_row,
-        autocommit=True,
-    )
-
-
-def materialized_prompts(root_execution_id):
-    with database_connection() as connection, connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT body
-            FROM execution_artifacts
-            WHERE root_execution_id = %s AND kind = 'materialized_prompt'
-            ORDER BY created_at, artifact_id
-            """,
-            (root_execution_id,),
-        )
-        rows = cursor.fetchall()
-    return [json.loads(bytes(row["body"]).decode("utf-8")) for row in rows]
-
-
 def create_emitter(backend_url, assistant_id):
     created = request(
         backend_url,
@@ -879,57 +810,35 @@ def collect(
     max_attempts,
     mode_names=("mvp10_control", "mvp11"),
 ):
-    values = []
-    accepted = {mode: 0 for mode in mode_names}
-    for attempt in range(max_attempts):
-        order = (False, True) if attempt % 2 == 0 else (True, False)
-        for enabled in order:
-            mode = mode_names[1] if enabled else mode_names[0]
-            if accepted[mode] >= samples:
-                continue
-            value = run_sample(
-                service,
-                backend_url,
-                assistant_id,
-                name,
-                enabled,
-                mode_names,
-            )
-            values.append(value)
-            print(name, json.dumps(value, ensure_ascii=False), flush=True)
-            if value["correct"]:
-                accepted[mode] += 1
-        if all(count >= samples for count in accepted.values()):
-            break
-    if any(count < samples for count in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return values
-
-
-def accepted(values, mode, key, samples):
-    return [
-        value[key]
-        for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
+    return collect_paired(
+        lambda enabled: run_sample(
+            service,
+            backend_url,
+            assistant_id,
+            name,
+            enabled,
+            mode_names,
+        ),
+        name,
+        samples,
+        max_attempts,
+        mode_names,
+    )
 
 
 def summarize(values, name, samples):
     item = SCENARIOS[name]
-    control = accepted(values, "mvp10_control", "elapsedMs", samples)
-    current = accepted(values, "mvp11", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    current_median = statistics.median(current)
-    delta = current_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp10_control",
+        current_mode="mvp11",
+        control_key="mvp10Control",
+        current_key="mvp11",
+    )
     parity = item["parity"]
     return {
-        "mvp10ControlMs": control,
-        "mvp11Ms": current,
-        "mvp10ControlMedianMs": control_median,
-        "mvp11MedianMs": current_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": parity,
         "mvp11Tools": accepted(values, "mvp11", "tools", samples),
         "mvp11ProposedTools": accepted(
@@ -952,7 +861,7 @@ def summarize(values, name, samples):
         "dispatchesAvoided": samples * (
             len(item["controlTools"]) - len(item["mvp11Tools"])
         ) if not item["forceBlockDisabled"] else 0,
-        "passed": not parity or delta <= threshold,
+        "passed": not parity or common["deltaMs"] <= common["thresholdMs"],
     }
 
 
@@ -964,29 +873,9 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     ensure_ingest_token()
-    backend_url = os.environ.get(
-        "BACKEND_URL", "http://127.0.0.1:3000"
-    ).rstrip("/")
-    assistant = request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 11 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    assistant = create_assistant(request, backend_url, "MVP 11 validation")
+    service, params = deterministic_service()
     selected = (
         {args.scenario: SCENARIOS[args.scenario]}
         if args.scenario else SCENARIOS
@@ -1029,11 +918,7 @@ def main():
             and all(value["passed"] for value in scenarios.values())
         ),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

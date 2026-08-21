@@ -1,7 +1,5 @@
 import argparse
 import json
-import os
-import statistics
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -10,10 +8,24 @@ from agents.loop import run_agent_loop
 from lib.execution import ExecutionEmitter, activate_emitter, reset_emitter
 from lib.framework.agent import AgentSpec
 from lib.framework.tool import ToolContext
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
-from tests.execution.benchmark_inference_budget import activate_execution
-from tests.execution.benchmark_tool_budget import MeasuredEmitter, request
+from tests.execution.bench_harness import (
+    accepted,
+    activate_execution,
+    backend_client,
+    collect_paired,
+    create_assistant,
+    deterministic_service,
+    latency_block,
+    resolve_backend_url,
+    write_report,
+)
+from tests.execution.benchmark_tool_budget import MeasuredEmitter
+
+# This benchmark has always reported under the MVP 06 workspace because it
+# reused that benchmark's HTTP client. Changing it now would regroup the
+# executions already stored on the backend.
+WORKSPACE = "mvp06-benchmark"
+request = backend_client(WORKSPACE, timeout=10)
 
 
 WARNING_PREFIX = "Tool budget is low: 2 of 6 calls remain."
@@ -326,54 +338,35 @@ def run_sample(service, backend_url, assistant_id, name, soft_enabled):
 
 
 def collect(service, backend_url, assistant_id, name, samples, max_attempts):
-    values = []
-    accepted = {"mvp06_control": 0, "mvp07": 0}
-    for attempt in range(max_attempts):
-        order = (False, True) if attempt % 2 == 0 else (True, False)
-        for soft_enabled in order:
-            mode = "mvp07" if soft_enabled else "mvp06_control"
-            if accepted[mode] >= samples:
-                continue
-            sample = run_sample(
-                service, backend_url, assistant_id, name, soft_enabled
-            )
-            values.append(sample)
-            print(name, json.dumps(sample, ensure_ascii=False), flush=True)
-            if sample["correct"]:
-                accepted[mode] += 1
-        if all(value >= samples for value in accepted.values()):
-            break
-    if any(value < samples for value in accepted.values()):
-        raise RuntimeError(f"{name}: insufficient correct samples: {accepted}")
-    return values
-
-
-def accepted(values, mode, key, samples):
-    return [
-        value[key]
-        for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
+    return collect_paired(
+        lambda soft_enabled: run_sample(
+            service, backend_url, assistant_id, name, soft_enabled
+        ),
+        name,
+        samples,
+        max_attempts,
+        ("mvp06_control", "mvp07"),
+    )
 
 
 def summarize(values, name, samples):
-    control = accepted(values, "mvp06_control", "elapsedMs", samples)
-    current = accepted(values, "mvp07", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    current_median = statistics.median(current)
-    delta = current_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp06_control",
+        current_mode="mvp07",
+        control_key="mvp06Control",
+        current_key="mvp07",
+    )
     latency_applies = name in {
         "direct", "one_tool", "three_tools_below_soft_limit",
     }
-    passed = not latency_applies or delta <= threshold
+    passed = (
+        not latency_applies
+        or common["deltaMs"] <= common["thresholdMs"]
+    )
     return {
-        "mvp06ControlMs": control,
-        "mvp07Ms": current,
-        "mvp06ControlMedianMs": control_median,
-        "mvp07MedianMs": current_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": latency_applies,
         "mvp07ToolReservationMs": accepted(
             values, "mvp07", "toolReservationMs", samples
@@ -405,29 +398,9 @@ def main():
     parser.add_argument("--max-attempts", type=int, default=10)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    backend_url = os.environ.get(
-        "BACKEND_URL", "http://127.0.0.1:3000"
-    ).rstrip("/")
-    assistant = request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 07 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    backend_url = resolve_backend_url()
+    assistant = create_assistant(request, backend_url, "MVP 07 validation")
+    service, params = deterministic_service()
 
     raw = {
         name: collect(
@@ -450,13 +423,7 @@ def main():
         "scenarios": scenarios,
         "passed": all(value["passed"] for value in scenarios.values()),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(report, indent=2) + "\n", encoding="utf-8"
-    )
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,15 @@
 import argparse
-import json
-import statistics
 from pathlib import Path
 
-from lib.llm.config import get_llm_params
-from services.llm_service import get_llm_service
+from tests.execution.bench_harness import (
+    accepted,
+    create_assistant,
+    deterministic_service,
+    ensure_ingest_token,
+    latency_block,
+    resolve_backend_url,
+    write_report,
+)
 from tests.execution import benchmark_exact_tool_repeat_block as base
 
 
@@ -221,28 +226,18 @@ SCENARIOS = {
 }
 
 
-def accepted(values, mode, key, samples):
-    return [
-        value[key] for value in values
-        if value["correct"] and value["mode"] == mode
-    ][:samples]
-
-
 def summarize(values, name, samples):
     item = SCENARIOS[name]
-    control = accepted(values, "mvp11_control", "elapsedMs", samples)
-    current = accepted(values, "mvp12", "elapsedMs", samples)
-    control_median = statistics.median(control)
-    current_median = statistics.median(current)
-    delta = current_median - control_median
-    threshold = max(round(control_median * 0.10), 150)
+    common = latency_block(
+        values,
+        samples,
+        control_mode="mvp11_control",
+        current_mode="mvp12",
+        control_key="mvp11Control",
+        current_key="mvp12",
+    )
     return {
-        "mvp11ControlMs": control,
-        "mvp12Ms": current,
-        "mvp11ControlMedianMs": control_median,
-        "mvp12MedianMs": current_median,
-        "deltaMs": delta,
-        "thresholdMs": threshold,
+        **common,
         "latencyThresholdApplies": item["parity"],
         "mvp12Tools": accepted(values, "mvp12", "tools", samples),
         "mvp12ProposedTools": accepted(
@@ -287,7 +282,10 @@ def summarize(values, name, samples):
         "dispatchesAvoidedByTermination": sum(accepted(
             values, "mvp12", "terminateSignals", samples
         )),
-        "passed": not item["parity"] or delta <= threshold,
+        "passed": (
+            not item["parity"]
+            or common["deltaMs"] <= common["thresholdMs"]
+        ),
     }
 
 
@@ -298,30 +296,12 @@ def main():
     parser.add_argument("--scenario", choices=tuple(SCENARIOS))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    base.ensure_ingest_token()
-    backend_url = base.os.environ.get(
-        "BACKEND_URL", "http://127.0.0.1:3000"
-    ).rstrip("/")
-    assistant = base.request(
-        backend_url,
-        "POST",
-        "/assistants",
-        {"name": "MVP 12 validation", "systemPrompt": "Validation fixture"},
-    )
-    params = get_llm_params("assistant-chat")
-    service = get_llm_service(**params)
-    service.sampling = {
-        **service.sampling,
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 0,
-        "min_p": 0.0,
-    }
-    service.chat(
-        [{"role": "user", "content": "/no_think\nReply OK."}],
-        max_tokens=8,
-        allow_thinking=False,
-    )
+    ensure_ingest_token()
+    backend_url = resolve_backend_url()
+    # Shares the MVP 11 client on purpose: both benchmarks report their
+    # executions under the same backend workspace.
+    assistant = create_assistant(base.request, backend_url, "MVP 12 validation")
+    service, params = deterministic_service()
     selected = (
         {args.scenario: SCENARIOS[args.scenario]}
         if args.scenario else SCENARIOS
@@ -365,11 +345,7 @@ def main():
             and all(value["passed"] for value in scenarios.values())
         ),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
-    if not report["passed"]:
-        raise SystemExit(1)
+    write_report(args.output, report)
 
 
 if __name__ == "__main__":
