@@ -1,7 +1,9 @@
 # Canonical execution contract v1
 
-This directory contains the models worker's pinned copy of the
-language-neutral contract for durable executions.
+This directory contains the Models worker's pinned copy of the
+language-neutral contract for durable executions. The canonical source is
+`backend/contracts/execution/v1` in the Documents monorepo; schemas in this
+directory must not be edited independently.
 
 ## Layout
 

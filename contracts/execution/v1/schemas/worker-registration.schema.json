@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/worker-registration.schema.json",
+  "title": "Worker registration v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "workerId",
+    "protocolVersion",
+    "runtimeVersions",
+    "installedArtifacts",
+    "effectiveStepCapabilities",
+    "hardware",
+    "concurrency",
+    "activeAssignments",
+    "heartbeat",
+    "loadSummary"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "worker-registration/1" },
+    "workerId": { "$ref": "common.schema.json#/$defs/id" },
+    "protocolVersion": { "const": "step-protocol/1" },
+    "inferenceServerId": { "$ref": "common.schema.json#/$defs/id" },
+    "runtimeVersions": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "installedArtifacts": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "effectiveStepCapabilities": {
+      "type": "array",
+      "items": { "$ref": "worker-capability.schema.json" }
+    },
+    "hardware": { "type": "object" },
+    "concurrency": {
+      "type": "object",
+      "required": ["maximum", "available"],
+      "properties": {
+        "maximum": { "type": "integer", "minimum": 1 },
+        "available": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "activeAssignments": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "heartbeat": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "loadSummary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

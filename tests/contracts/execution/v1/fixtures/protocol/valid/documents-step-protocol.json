@@ -1,0 +1,182 @@
+{
+  "fixtureVersion": "step-protocol-fixture/1",
+  "records": [
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/execution.schema.json",
+      "instance": {
+        "schemaVersion": "execution/1",
+        "rootExecutionId": "exec-root-001",
+        "executionId": "exec-root-001",
+        "requester": { "type": "user", "id": "user-001" },
+        "coordinator": { "type": "service", "id": "documents-backend" },
+        "payload": { "content": "Validate the deterministic harness task" },
+        "inputArtifactRefs": [],
+        "taskType": "harness-contract-check",
+        "status": "running",
+        "phase": "execute_step",
+        "version": 2,
+        "priority": 0,
+        "availableAt": "2026-08-24T09:00:00Z",
+        "createdAt": "2026-08-24T09:00:00Z",
+        "updatedAt": "2026-08-24T09:00:01Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step.schema.json",
+      "instance": {
+        "schemaVersion": "step/1",
+        "stepId": "step-001",
+        "executionId": "exec-root-001",
+        "stepKind": "inference",
+        "status": "running",
+        "version": 2,
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [
+          { "role": "input", "artifactId": "artifact-input-001", "revision": 1 }
+        ],
+        "work": {
+          "taskType": "harness-contract-check",
+          "taskConfigVersion": 1,
+          "phase": "model_inference",
+          "tools": []
+        },
+        "requiredCapabilities": ["inference.local"],
+        "resourceKeys": ["model:qwen-local"],
+        "budgetReservationId": "reservation-001",
+        "priority": 0,
+        "availableAt": "2026-08-24T09:00:00Z",
+        "deadline": "2026-08-24T09:05:00Z",
+        "operationId": "operation-001",
+        "currentAttemptId": "attempt-001"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-attempt.schema.json",
+      "instance": {
+        "schemaVersion": "step-attempt/1",
+        "attemptId": "attempt-001",
+        "executionId": "exec-root-001",
+        "stepId": "step-001",
+        "operationId": "operation-001",
+        "claimedBy": "models-worker-001",
+        "status": "running",
+        "leaseGrantedAt": "2026-08-24T09:00:01Z",
+        "leaseExpiresAt": "2026-08-24T09:01:01Z",
+        "startedAt": "2026-08-24T09:00:02Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-assignment.schema.json",
+      "instance": {
+        "schemaVersion": "step-assignment/1",
+        "executionId": "exec-root-001",
+        "stepId": "step-001",
+        "operationId": "operation-001",
+        "attemptId": "attempt-001",
+        "stepKind": "inference",
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [
+          { "role": "input", "artifactId": "artifact-input-001", "revision": 1 }
+        ],
+        "work": {
+          "taskType": "harness-contract-check",
+          "taskConfigVersion": 1,
+          "phase": "model_inference",
+          "tools": []
+        },
+        "limits": { "maxInputTokens": 1024, "maxOutputTokens": 128 },
+        "deadline": "2026-08-24T09:05:00Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result.schema.json",
+      "instance": {
+        "schemaVersion": "step-result/1",
+        "executionId": "exec-root-001",
+        "stepId": "step-001",
+        "operationId": "operation-001",
+        "attemptId": "attempt-001",
+        "stepKind": "inference",
+        "status": "succeeded",
+        "output": {
+          "kind": "inference",
+          "outcome": { "kind": "final_text", "text": "Contract fixture validated." }
+        },
+        "usage": { "promptTokens": 48, "completionTokens": 4, "totalTokens": 52 },
+        "inference": {
+          "effectiveModel": "qwen-local-test",
+          "effectiveAdapter": null,
+          "finishReason": "stop",
+          "inferenceMs": 20,
+          "cacheOutcome": "miss",
+          "warnings": []
+        },
+        "artifactRefs": [],
+        "error": null
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result-ack.schema.json",
+      "instance": {
+        "schemaVersion": "step-result-ack/1",
+        "executionId": "exec-root-001",
+        "stepId": "step-001",
+        "operationId": "operation-001",
+        "attemptId": "attempt-001",
+        "code": "received",
+        "receiptId": "receipt-001",
+        "acknowledgedAt": "2026-08-24T09:00:21Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/worker-capability.schema.json",
+      "instance": {
+        "schemaVersion": "worker-capability/1",
+        "capabilityId": "capability-inference-local",
+        "stepKinds": ["inference"],
+        "taskTypes": ["harness-contract-check"],
+        "installedArtifactIds": ["model-qwen-local-test"],
+        "features": ["structured_output"],
+        "maxConcurrency": 1
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/worker-registration.schema.json",
+      "instance": {
+        "schemaVersion": "worker-registration/1",
+        "workerId": "models-worker-001",
+        "protocolVersion": "step-protocol/1",
+        "inferenceServerId": "llama-server-001",
+        "runtimeVersions": { "documents-models": "test", "llama-server": "test" },
+        "installedArtifacts": ["model-qwen-local-test"],
+        "effectiveStepCapabilities": [
+          {
+            "schemaVersion": "worker-capability/1",
+            "capabilityId": "capability-inference-local",
+            "stepKinds": ["inference"],
+            "taskTypes": ["harness-contract-check"],
+            "installedArtifactIds": ["model-qwen-local-test"],
+            "features": ["structured_output"],
+            "maxConcurrency": 1
+          }
+        ],
+        "hardware": { "device": "cpu" },
+        "concurrency": { "maximum": 1, "available": 0 },
+        "activeAssignments": ["attempt-001"],
+        "heartbeat": "2026-08-24T09:00:10Z",
+        "loadSummary": { "state": "busy" }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/error-envelope.schema.json",
+      "instance": {
+        "schemaVersion": "error-envelope/1",
+        "code": "capability_unavailable",
+        "message": "No compatible local worker is available",
+        "retryable": true,
+        "executionId": "exec-root-001",
+        "stepId": "step-001"
+      }
+    }
+  ]
+}

@@ -24,6 +24,18 @@
     "executionStatus": {
       "enum": ["queued", "running", "waiting", "completed", "failed", "cancelled"]
     },
+    "stepKind": {
+      "enum": ["inference", "tool", "service", "code", "verification"]
+    },
+    "stepStatus": {
+      "enum": ["blocked", "ready", "running", "result_received", "completed", "failed", "cancelled"]
+    },
+    "stepAttemptStatus": {
+      "enum": ["leased", "running", "result_received", "expired", "cancelled", "failed", "closed"]
+    },
+    "stepResultStatus": {
+      "enum": ["succeeded", "failed", "cancelled"]
+    },
     "operationStatus": {
       "enum": ["planned", "dispatched", "succeeded", "failed", "cancelled", "unknown"]
     },
@@ -63,6 +75,25 @@
         "message": { "type": "string", "minLength": 1 },
         "retryable": { "type": "boolean" },
         "detailsArtifactId": { "$ref": "#/$defs/id" }
+      },
+      "additionalProperties": true
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["role", "artifactId"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "artifactId": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "serviceIdentity": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "enum": ["user", "service", "system", "local_authority"] },
+        "id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": true
     },

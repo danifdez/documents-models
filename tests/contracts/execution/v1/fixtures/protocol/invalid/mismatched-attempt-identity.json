@@ -1,0 +1,7 @@
+{
+  "base": "../valid/documents-step-protocol.json",
+  "mutations": [
+    { "op": "replace", "path": "/records/4/instance/attemptId", "value": "attempt-other" }
+  ],
+  "expectedError": "invalid_protocol_identity"
+}

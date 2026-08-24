@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/execution.schema.json",
+  "title": "Canonical execution v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "rootExecutionId",
+    "executionId",
+    "requester",
+    "coordinator",
+    "payload",
+    "inputArtifactRefs",
+    "taskType",
+    "status",
+    "version",
+    "priority",
+    "availableAt",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "execution/1" },
+    "rootExecutionId": { "$ref": "common.schema.json#/$defs/id" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "parentExecutionId": { "$ref": "common.schema.json#/$defs/id" },
+    "sessionId": { "$ref": "common.schema.json#/$defs/id" },
+    "turnId": { "$ref": "common.schema.json#/$defs/id" },
+    "requester": { "$ref": "common.schema.json#/$defs/serviceIdentity" },
+    "coordinator": { "$ref": "common.schema.json#/$defs/serviceIdentity" },
+    "payload": { "type": "object" },
+    "inputArtifactRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifactRef" }
+    },
+    "taskType": { "type": "string", "minLength": 1 },
+    "status": { "$ref": "common.schema.json#/$defs/executionStatus" },
+    "phase": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "priority": { "type": "integer" },
+    "availableAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "deadline": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "checkpoint": { "type": "object" },
+    "budgetGrantId": { "$ref": "common.schema.json#/$defs/id" },
+    "waitReason": { "enum": ["confirmation", "user_input", "child_execution", "external_event", "remote_capability"] },
+    "waitCondition": {
+      "type": "object",
+      "required": ["reason", "reference", "resumePhase"],
+      "properties": {
+        "reason": { "enum": ["confirmation", "user_input", "child_execution", "external_event", "remote_capability"] },
+        "reference": { "$ref": "common.schema.json#/$defs/id" },
+        "resumePhase": { "type": "string", "minLength": 1 },
+        "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+      },
+      "additionalProperties": true
+    },
+    "completionKind": { "enum": ["full", "partial"] },
+    "completionReason": { "type": "string", "minLength": 1 },
+    "result": { "$ref": "common.schema.json#/$defs/jsonValue" },
+    "error": { "$ref": "common.schema.json#/$defs/error" },
+    "cancellationReason": { "type": "string", "minLength": 1 },
+    "createdAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "updatedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "finishedAt": { "$ref": "common.schema.json#/$defs/timestamp" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sessionId": {} }, "required": ["sessionId"] },
+      "then": { "properties": { "turnId": {} }, "required": ["turnId"] }
+    },
+    {
+      "if": { "properties": { "turnId": {} }, "required": ["turnId"] },
+      "then": { "properties": { "sessionId": {} }, "required": ["sessionId"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "waiting" } }, "required": ["status"] },
+      "then": {
+        "properties": { "waitReason": {}, "waitCondition": {} },
+        "required": ["waitReason", "waitCondition"]
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+      "then": {
+        "properties": { "completionKind": {}, "completionReason": {}, "result": {}, "finishedAt": {} },
+        "required": ["completionKind", "completionReason", "result", "finishedAt"]
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": {
+        "properties": { "error": {}, "finishedAt": {} },
+        "required": ["error", "finishedAt"]
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "cancelled" } }, "required": ["status"] },
+      "then": {
+        "properties": { "cancellationReason": {}, "finishedAt": {} },
+        "required": ["cancellationReason", "finishedAt"]
+      }
+    },
+    {
+      "if": { "properties": { "completionReason": { "type": "string", "pattern": "^partial_" } }, "required": ["completionReason"] },
+      "then": { "properties": { "completionKind": { "const": "partial" } }, "required": ["completionKind"] }
+    }
+  ],
+  "additionalProperties": true
+}

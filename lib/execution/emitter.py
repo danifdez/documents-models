@@ -42,7 +42,7 @@ _FORBIDDEN_KEYS = {
     "thoughts",
 }
 _MAX_ARTIFACT_BYTES = 1024 * 1024
-CONTRACT_SET_HASH = "sha256:5de857c99bfac5a0c77100e4f3f4abf0b729392269062eef789d8e6463185240"
+CONTRACT_SET_HASH = "sha256:f112a6310e70d83989a8ad90cb65c167835fd5bda89cd13bf209b6bd3f9ed2b6"
 
 
 class InferenceBudgetDenied(RuntimeError):

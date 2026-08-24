@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/step-assignment.schema.json",
+  "title": "Models step assignment v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "stepId",
+    "operationId",
+    "attemptId",
+    "stepKind",
+    "dependsOnStepIds",
+    "inputArtifactRefs",
+    "work",
+    "limits",
+    "deadline"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "step-assignment/1" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepId": { "$ref": "common.schema.json#/$defs/id" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepKind": { "$ref": "common.schema.json#/$defs/stepKind" },
+    "dependsOnStepIds": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "inputArtifactRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifactRef" }
+    },
+    "work": {
+      "type": "object",
+      "required": ["taskType"],
+      "properties": {
+        "taskType": { "type": "string", "minLength": 1 },
+        "taskConfigVersion": { "type": "integer", "minimum": 1 },
+        "phase": { "type": "string", "minLength": 1 },
+        "tools": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxInputTokens": { "type": "integer", "minimum": 1 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "maxDurationMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "deadline": { "$ref": "common.schema.json#/$defs/timestamp" }
+  },
+  "additionalProperties": true
+}

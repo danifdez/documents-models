@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/step-result.schema.json",
+  "title": "Step result v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "stepId",
+    "operationId",
+    "attemptId",
+    "stepKind",
+    "status",
+    "artifactRefs",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "step-result/1" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepId": { "$ref": "common.schema.json#/$defs/id" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepKind": { "$ref": "common.schema.json#/$defs/stepKind" },
+    "status": { "$ref": "common.schema.json#/$defs/stepResultStatus" },
+    "output": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "common.schema.json#/$defs/stepKind" },
+        "outcome": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "text"],
+              "properties": {
+                "kind": { "const": "final_text" },
+                "text": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "required": ["kind", "calls"],
+              "properties": {
+                "kind": { "const": "tool_requests" },
+                "calls": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["toolCallId", "name", "arguments"],
+                    "properties": {
+                      "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+                      "name": { "type": "string", "minLength": 1 },
+                      "arguments": { "type": "object" }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "required": ["kind", "schemaId", "value"],
+              "properties": {
+                "kind": { "const": "structured_result" },
+                "schemaId": { "type": "string", "minLength": 1 },
+                "value": { "$ref": "common.schema.json#/$defs/jsonValue" }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "required": ["kind", "reason"],
+              "properties": {
+                "kind": { "const": "invalid" },
+                "reason": { "type": "string", "minLength": 1 },
+                "details": { "$ref": "common.schema.json#/$defs/jsonValue" }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": { "kind": { "const": "failed" } },
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "required": ["kind", "reason"],
+              "properties": {
+                "kind": { "const": "cancelled" },
+                "reason": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "promptTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "completionTokens": { "type": ["integer", "null"], "minimum": 0 },
+        "totalTokens": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "inference": {
+      "type": "object",
+      "required": ["effectiveModel", "finishReason", "inferenceMs", "cacheOutcome", "warnings"],
+      "properties": {
+        "effectiveModel": { "type": "string", "minLength": 1 },
+        "effectiveAdapter": { "type": ["string", "null"], "minLength": 1 },
+        "finishReason": { "type": "string", "minLength": 1 },
+        "inferenceMs": { "type": "integer", "minimum": 0 },
+        "cacheOutcome": { "enum": ["hit", "miss", "bypass", "unknown"] },
+        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": true
+    },
+    "artifactRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifactRef" }
+    },
+    "error": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/error" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+      "then": {
+        "required": ["output"],
+        "properties": { "output": {}, "error": { "type": "null" } }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "properties": { "error": { "$ref": "common.schema.json#/$defs/error" } } }
+    },
+    {
+      "if": { "properties": { "stepKind": { "const": "inference" } }, "required": ["stepKind"] },
+      "then": {
+        "required": ["output", "usage", "inference"],
+        "properties": {
+          "output": {
+            "type": "object",
+            "required": ["outcome"],
+            "properties": { "kind": { "const": "inference" }, "outcome": {} }
+          },
+          "usage": {},
+          "inference": {}
+        }
+      }
+    },
+    {
+      "if": { "properties": { "stepKind": { "const": "tool" } }, "required": ["stepKind"] },
+      "then": {
+        "properties": {
+          "output": { "type": "object", "properties": { "kind": { "const": "tool" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "stepKind": { "const": "service" } }, "required": ["stepKind"] },
+      "then": {
+        "properties": {
+          "output": { "type": "object", "properties": { "kind": { "const": "service" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "stepKind": { "const": "code" } }, "required": ["stepKind"] },
+      "then": {
+        "properties": {
+          "output": { "type": "object", "properties": { "kind": { "const": "code" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "stepKind": { "const": "verification" } }, "required": ["stepKind"] },
+      "then": {
+        "properties": {
+          "output": { "type": "object", "properties": { "kind": { "const": "verification" } } }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

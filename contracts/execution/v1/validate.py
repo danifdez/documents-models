@@ -94,6 +94,10 @@ def load_schemas():
 
 def validator_for(schema_name, schemas):
     schema = read_json(SCHEMAS / schema_name)
+    return validator_for_schema(schema, schemas)
+
+
+def validator_for_schema(schema, schemas):
     registry = Registry().with_resources(
         (schema_id, Resource.from_contents(value))
         for schema_id, value in schemas.items()
@@ -103,6 +107,69 @@ def validator_for(schema_name, schemas):
         registry=registry,
         format_checker=FormatChecker(),
     )
+
+
+def validate_protocol_fixture(fixture, schemas):
+    records = {}
+    for record in fixture.get("records", []):
+        schema_id = record.get("schemaId")
+        schema = schemas.get(schema_id)
+        if schema is None:
+            return "invalid_contract"
+        validator = validator_for_schema(schema, schemas)
+        errors = sorted(
+            validator.iter_errors(record.get("instance")),
+            key=lambda item: list(item.absolute_path),
+        )
+        if errors:
+            unsupported_version = any(
+                list(error.absolute_path) == ["schemaVersion"]
+                and error.validator == "const"
+                for error in errors
+            )
+            return (
+                "unsupported_schema_version"
+                if unsupported_version
+                else "invalid_contract"
+            )
+        records[schema_id] = record["instance"]
+
+    def schema(name):
+        return records.get(f"https://documents.local/harness/v1/schemas/{name}")
+
+    execution = schema("execution.schema.json")
+    step = schema("step.schema.json")
+    attempt = schema("step-attempt.schema.json")
+    assignment = schema("step-assignment.schema.json")
+    result = schema("step-result.schema.json")
+    ack = schema("step-result-ack.schema.json")
+    if not all((execution, step, attempt, assignment, result, ack)):
+        return "invalid_contract"
+
+    if (
+        (
+            not execution.get("parentExecutionId")
+            and execution["rootExecutionId"] != execution["executionId"]
+        )
+        or step["executionId"] != execution["executionId"]
+        or step.get("currentAttemptId") != attempt["attemptId"]
+    ):
+        return "invalid_protocol_identity"
+
+    for field in ("executionId", "stepId", "operationId", "attemptId"):
+        expected = assignment[field]
+        if any(record[field] != expected for record in (attempt, result, ack)):
+            return "invalid_protocol_identity"
+
+    if (
+        step["stepId"] != assignment["stepId"]
+        or step.get("operationId") != assignment["operationId"]
+        or step["stepKind"] != assignment["stepKind"]
+        or result["stepKind"] != assignment["stepKind"]
+    ):
+        return "invalid_protocol_identity"
+
+    return None
 
 
 def schema_errors(instance, validator):
@@ -363,6 +430,26 @@ def validate_invalid_fixtures(bundle_validator, schema_manifest_hash, valid_fixt
     return failures
 
 
+def validate_protocol_fixtures(protocol_fixtures, schemas):
+    failures = []
+    valid_paths = sorted((protocol_fixtures / "valid").glob("*.json"))
+    invalid_paths = sorted((protocol_fixtures / "invalid").glob("*.json"))
+    for path in valid_paths:
+        error = validate_protocol_fixture(read_json(path), schemas)
+        if error:
+            failures.append(f"{path.name}: expected valid protocol fixture, got {error}")
+    for path in invalid_paths:
+        fixture = read_json(path)
+        base_path = (path.parent / fixture["base"]).resolve()
+        instance = apply_mutations(read_json(base_path), fixture["mutations"])
+        error = validate_protocol_fixture(instance, schemas)
+        if error != fixture["expectedError"]:
+            failures.append(
+                f"{path.name}: expected {fixture['expectedError']} failure, got {error or 'valid'}"
+            )
+    return failures, len(valid_paths), len(invalid_paths)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate canonical execution v1 contracts")
     parser.add_argument(
@@ -376,8 +463,16 @@ def main():
     fixtures = args.fixtures.resolve()
     valid_fixtures = fixtures / "valid"
     invalid_fixtures = fixtures / "invalid"
-    if not valid_fixtures.is_dir() or not invalid_fixtures.is_dir():
-        parser.error("--fixtures must contain valid/ and invalid/ directories")
+    protocol_fixtures = fixtures / "protocol"
+    if (
+        not valid_fixtures.is_dir()
+        or not invalid_fixtures.is_dir()
+        or not (protocol_fixtures / "valid").is_dir()
+        or not (protocol_fixtures / "invalid").is_dir()
+    ):
+        parser.error(
+            "--fixtures must contain bundle and protocol valid/ and invalid/ directories"
+        )
 
     schemas = load_schemas()
     expected_manifest = schema_manifest_value()
@@ -411,13 +506,21 @@ def main():
             invalid_fixtures,
         )
     )
+    protocol_failures, valid_protocol_count, invalid_protocol_count = (
+        validate_protocol_fixtures(protocol_fixtures, schemas)
+    )
+    failures.extend(protocol_failures)
     if failures:
         for failure in failures:
             print(f"FAIL {failure}", file=sys.stderr)
         raise SystemExit(1)
 
     invalid_count = len(list(invalid_fixtures.glob("*.json")))
-    print(f"Validated {len(schemas)} schemas, {valid_count} valid bundles, and {invalid_count} invalid fixtures")
+    print(
+        f"Validated {len(schemas)} schemas, {valid_count} valid bundles, "
+        f"{invalid_count} invalid bundle fixtures, {valid_protocol_count} valid protocol fixtures, "
+        f"and {invalid_protocol_count} invalid protocol fixtures"
+    )
 
 
 if __name__ == "__main__":

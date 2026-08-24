@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/step-result-ack.schema.json",
+  "title": "Step result receipt acknowledgement v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "stepId",
+    "operationId",
+    "attemptId",
+    "code",
+    "acknowledgedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "step-result-ack/1" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepId": { "$ref": "common.schema.json#/$defs/id" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/id" },
+    "code": { "enum": ["received", "duplicate", "stale_attempt", "result_conflict", "rejected"] },
+    "receiptId": { "$ref": "common.schema.json#/$defs/id" },
+    "acknowledgedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "error": { "$ref": "common.schema.json#/$defs/error" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "code": { "enum": ["received", "duplicate"] } }, "required": ["code"] },
+      "then": { "properties": { "receiptId": {} }, "required": ["receiptId"] }
+    },
+    {
+      "if": { "properties": { "code": { "enum": ["result_conflict", "rejected"] } }, "required": ["code"] },
+      "then": { "properties": { "error": {} }, "required": ["error"] }
+    }
+  ],
+  "additionalProperties": true
+}

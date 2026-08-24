@@ -1,0 +1,7 @@
+{
+  "base": "../valid/documents-step-protocol.json",
+  "mutations": [
+    { "op": "replace", "path": "/records/3/instance/schemaVersion", "value": "step-assignment/2" }
+  ],
+  "expectedError": "unsupported_schema_version"
+}

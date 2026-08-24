@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:5de857c99bfac5a0c77100e4f3f4abf0b729392269062eef789d8e6463185240",
+  "contractSetHash": "sha256:f112a6310e70d83989a8ad90cb65c167835fd5bda89cd13bf209b6bd3f9ed2b6",
   "schemas": [
     {
       "path": "schemas/artifact-manifest.schema.json",
@@ -9,7 +9,11 @@
     },
     {
       "path": "schemas/common.schema.json",
-      "sha256": "sha256:b9ded25f24f9478392b586cbe2c3af476c736ff9bb0fc6833a07853d44a48be7"
+      "sha256": "sha256:9d03f545e112b81eafe2cbddfcd3902012646cbd28d47a096738746f97930b94"
+    },
+    {
+      "path": "schemas/error-envelope.schema.json",
+      "sha256": "sha256:a75163a0131acb147ce566b4b8c65ca6e804f2bb4504ace0e1d89745a1b709ed"
     },
     {
       "path": "schemas/execution-bundle.schema.json",
@@ -18,6 +22,10 @@
     {
       "path": "schemas/execution-event.schema.json",
       "sha256": "sha256:a3fe043187a8fe3b5908506a76049b8c01a6d006894a74703b4a57f6a9992c0d"
+    },
+    {
+      "path": "schemas/execution.schema.json",
+      "sha256": "sha256:bc1dd004798b986aa37a6abfeb355651b45ae0c676a40a88a671fe01c8e99716"
     },
     {
       "path": "schemas/payload/execution-created.schema.json",
@@ -46,6 +54,34 @@
     {
       "path": "schemas/payload/source-observed.schema.json",
       "sha256": "sha256:2ea5d6f74d8fa9164f242d5cd45c2d03e9922a5eae67bb007ec8c4e527f01660"
+    },
+    {
+      "path": "schemas/step-assignment.schema.json",
+      "sha256": "sha256:5342a52e74e624796a57b81aab8e504131a9414c74715efe1b41c1991b722452"
+    },
+    {
+      "path": "schemas/step-attempt.schema.json",
+      "sha256": "sha256:0a7a89b4b05aca040c448b784acdb84b73274ec4b96ee1b7cb5dc18da49ba6ec"
+    },
+    {
+      "path": "schemas/step-result-ack.schema.json",
+      "sha256": "sha256:76af3676e4de433830ebfaf80426022f4723f1a5831fb76fbe69a46523839f47"
+    },
+    {
+      "path": "schemas/step-result.schema.json",
+      "sha256": "sha256:cff0663cbac90071cd149c61e7a5b16f1c802db01c6d714ccf92b453caa178f4"
+    },
+    {
+      "path": "schemas/step.schema.json",
+      "sha256": "sha256:cf0d619da5210546b914a9c16fe96de06ec5fbbddddcb0e26bd1f8a174b5736c"
+    },
+    {
+      "path": "schemas/worker-capability.schema.json",
+      "sha256": "sha256:8a82964bd6461e18c46827e7048312dd077bf82d9e7f918b3c62cd50ad1661e9"
+    },
+    {
+      "path": "schemas/worker-registration.schema.json",
+      "sha256": "sha256:92a89362aca2ad3ef7a18d06df1e023285f421b0374b6e46b78f85cc2b78b0bd"
     }
   ]
 }

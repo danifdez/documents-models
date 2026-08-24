@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/step-attempt.schema.json",
+  "title": "Canonical step attempt v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "attemptId",
+    "executionId",
+    "stepId",
+    "operationId",
+    "claimedBy",
+    "status",
+    "leaseGrantedAt",
+    "leaseExpiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "step-attempt/1" },
+    "attemptId": { "$ref": "common.schema.json#/$defs/id" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "stepId": { "$ref": "common.schema.json#/$defs/id" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "claimedBy": { "$ref": "common.schema.json#/$defs/id" },
+    "status": { "$ref": "common.schema.json#/$defs/stepAttemptStatus" },
+    "leaseGrantedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "leaseExpiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "heartbeatAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "startedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "finishedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "finishReason": { "type": "string", "minLength": 1 },
+    "resultReceiptId": { "$ref": "common.schema.json#/$defs/id" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "running" } }, "required": ["status"] },
+      "then": { "properties": { "startedAt": {} }, "required": ["startedAt"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "result_received" } }, "required": ["status"] },
+      "then": {
+        "properties": { "startedAt": {}, "resultReceiptId": {} },
+        "required": ["startedAt", "resultReceiptId"]
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["expired", "cancelled", "failed", "closed"] } }, "required": ["status"] },
+      "then": {
+        "properties": { "finishedAt": {}, "finishReason": {} },
+        "required": ["finishedAt", "finishReason"]
+      }
+    }
+  ],
+  "additionalProperties": true
+}
