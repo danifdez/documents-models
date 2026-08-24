@@ -111,14 +111,23 @@
     },
     "inference": {
       "type": "object",
-      "required": ["effectiveModel", "finishReason", "inferenceMs", "cacheOutcome", "warnings"],
+      "required": [
+        "effectiveModel",
+        "finishReason",
+        "inferenceMs",
+        "cacheOutcome",
+        "warnings"
+      ],
       "properties": {
         "effectiveModel": { "type": "string", "minLength": 1 },
         "effectiveAdapter": { "type": ["string", "null"], "minLength": 1 },
         "finishReason": { "type": "string", "minLength": 1 },
         "inferenceMs": { "type": "integer", "minimum": 0 },
         "cacheOutcome": { "enum": ["hit", "miss", "bypass", "unknown"] },
-        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       },
       "additionalProperties": true
     },
@@ -135,18 +144,29 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+      "if": {
+        "properties": { "status": { "const": "succeeded" } },
+        "required": ["status"]
+      },
       "then": {
         "required": ["output"],
         "properties": { "output": {}, "error": { "type": "null" } }
       }
     },
     {
-      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
-      "then": { "properties": { "error": { "$ref": "common.schema.json#/$defs/error" } } }
+      "if": {
+        "properties": { "status": { "const": "failed" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": { "error": { "$ref": "common.schema.json#/$defs/error" } }
+      }
     },
     {
-      "if": { "properties": { "stepKind": { "const": "inference" } }, "required": ["stepKind"] },
+      "if": {
+        "properties": { "stepKind": { "const": "inference" } },
+        "required": ["stepKind"]
+      },
       "then": {
         "required": ["output", "usage", "inference"],
         "properties": {
@@ -161,34 +181,63 @@
       }
     },
     {
-      "if": { "properties": { "stepKind": { "const": "tool" } }, "required": ["stepKind"] },
+      "if": {
+        "properties": { "stepKind": { "const": "tool" } },
+        "required": ["stepKind"]
+      },
       "then": {
+        "required": ["output"],
         "properties": {
-          "output": { "type": "object", "properties": { "kind": { "const": "tool" } } }
+          "output": {
+            "type": "object",
+            "required": ["kind", "toolResult"],
+            "properties": {
+              "kind": { "const": "tool" },
+              "toolResult": { "$ref": "tool-result.schema.json" }
+            }
+          }
         }
       }
     },
     {
-      "if": { "properties": { "stepKind": { "const": "service" } }, "required": ["stepKind"] },
+      "if": {
+        "properties": { "stepKind": { "const": "service" } },
+        "required": ["stepKind"]
+      },
       "then": {
         "properties": {
-          "output": { "type": "object", "properties": { "kind": { "const": "service" } } }
+          "output": {
+            "type": "object",
+            "properties": { "kind": { "const": "service" } }
+          }
         }
       }
     },
     {
-      "if": { "properties": { "stepKind": { "const": "code" } }, "required": ["stepKind"] },
+      "if": {
+        "properties": { "stepKind": { "const": "code" } },
+        "required": ["stepKind"]
+      },
       "then": {
         "properties": {
-          "output": { "type": "object", "properties": { "kind": { "const": "code" } } }
+          "output": {
+            "type": "object",
+            "properties": { "kind": { "const": "code" } }
+          }
         }
       }
     },
     {
-      "if": { "properties": { "stepKind": { "const": "verification" } }, "required": ["stepKind"] },
+      "if": {
+        "properties": { "stepKind": { "const": "verification" } },
+        "required": ["stepKind"]
+      },
       "then": {
         "properties": {
-          "output": { "type": "object", "properties": { "kind": { "const": "verification" } } }
+          "output": {
+            "type": "object",
+            "properties": { "kind": { "const": "verification" } }
+          }
         }
       }
     }
