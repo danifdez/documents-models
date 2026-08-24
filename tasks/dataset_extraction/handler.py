@@ -33,10 +33,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from agent.llm import get_llm_for_spec
-from agent.types import ModelSpec
 from lib.llm.json import parse_json
-from lib.llm.config import get_llm_defaults, get_task_config
+from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
+from services.llm_service import get_llm_service
 from common.execution_registry import execution_handler
 
 from .grammar import build_grammar
@@ -198,8 +197,9 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     grammar = build_grammar(fields)
     prompt = build_prompt(fields, safe_text, source_title, is_audio=is_audio)
 
-    spec = ModelSpec(path=model_name)
-    llm = get_llm_for_spec(spec)
+    llm = get_llm_service(
+        **get_llm_params("dataset.extract-row", model_name)
+    )
 
     raw = ""
     parsed: Optional[Dict[str, Any]] = None

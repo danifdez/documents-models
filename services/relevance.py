@@ -22,8 +22,6 @@ import os
 import re
 from typing import Any, Dict, List
 
-from agent.llm import get_llm_for_spec
-from agent.types import ModelSpec
 # These helpers are identical in both stacks; `lib.llm.relevance` is the
 # canonical home and they are imported here so the code lives once.
 # `_heuristic_keep_indices` stays local because it calls
@@ -35,6 +33,8 @@ from lib.llm.relevance import (
     _preview_for_judgement,
 )
 from lib.llm.prompts import load_prompt
+from lib.llm.config import llm_params_for
+from services.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ def select_relevant_units(
         return [units[i] for i in heuristic_idx]
 
     try:
-        llm = get_llm_for_spec(ModelSpec(path=str(model_path)))
+        llm = get_llm_service(**llm_params_for(cfg, str(model_path)))
     except Exception as e:
         logger.warning("Relevance filter: LLM unavailable, using heuristic only (%s)", e)
         return [units[i] for i in heuristic_idx]

@@ -29,12 +29,11 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from agent.llm import get_llm_for_spec
-from agent.types import ModelSpec
 from lib.llm.json import parse_json
-from lib.llm.config import get_llm_defaults, get_task_config
+from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config
 from lib.llm.prompts import load_prompt
 from common.execution_registry import execution_handler
+from services.llm_service import get_llm_service
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 _PROPOSE_PROMPT = load_prompt(_PROMPTS_DIR, "propose_columns.md")
@@ -140,8 +139,9 @@ def propose_dataset_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
     seed = cfg.get("seed", 42)
     seed = int(seed) if seed is not None else None
 
-    spec = ModelSpec(path=model_name)
-    llm = get_llm_for_spec(spec)
+    llm = get_llm_service(
+        **get_llm_params("dataset.propose-columns", model_name)
+    )
     prompt = _build_prompt(usable[:3])
 
     try:

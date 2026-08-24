@@ -23,7 +23,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from agent.types import ModelSpec
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
