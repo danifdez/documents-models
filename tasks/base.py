@@ -18,7 +18,7 @@ Every task must follow this structure:
    - model: str           -- model name or path (optional)
    - ...additional task-specific parameters
 
-4. Registration: import the module in utils/process_execution.py
+4. Registration: expose the handler from its conventional task module
 
 Users can override task behavior via:
 - config/tasks/<task-type>/prompt.md   -- custom prompt

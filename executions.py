@@ -122,7 +122,38 @@ def main() -> None:
             )
             if assignment:
                 client.start(assignment["attemptId"])
-                result = execute_assignment(assignment)
+                control = client.read_control(assignment["attemptId"])
+                if control.get("cancelled"):
+                    result = {
+                        "schemaVersion": "step-result/1",
+                        "executionId": assignment["executionId"],
+                        "stepId": assignment["stepId"],
+                        "operationId": assignment["operationId"],
+                        "attemptId": assignment["attemptId"],
+                        "stepKind": assignment["stepKind"],
+                        "status": "cancelled",
+                        "artifactRefs": [],
+                        "error": None,
+                    }
+                    _store_pending(result)
+                    _deliver_pending(client)
+                    continue
+                client.renew_lease(
+                    assignment["attemptId"], LEASE_DURATION_MS
+                )
+                artifacts = {
+                    ref["role"]: client.download_artifact(
+                        assignment["attemptId"], ref["artifactId"]
+                    )
+                    for ref in assignment.get("inputArtifactRefs", [])
+                }
+                result = execute_assignment(assignment, artifacts)
+                if client.read_control(assignment["attemptId"]).get(
+                    "cancelled"
+                ):
+                    result["status"] = "cancelled"
+                    result.pop("output", None)
+                    result["error"] = None
                 _store_pending(result)
                 _deliver_pending(client)
                 continue

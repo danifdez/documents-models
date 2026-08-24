@@ -1,13 +1,8 @@
-"""Librerías y abstracciones del subsistema LLM/agentes.
+"""Librerías del worker de inferencia y ejecución de pasos.
 
-Todo lo que aquí vive es consumido exclusivamente por la parte de la aplicación
-que hace inferencia y orquesta agentes. Está organizado jerárquicamente:
+Todo lo que aquí vive es consumido por handlers autocontenidos. La coordinación
+de agentes pertenece a Backend.
 
-- `lib.llm`       — plumbing de inferencia: carga de config y prompts, gramáticas
-                    GBNF, parseo de JSON del modelo y limpieza de <think>.
-- `lib.framework` — las abstracciones puras del framework: `AgentSpec` (qué es un
-                    agente) y `Tool`/`ToolContext`/`register`/`REGISTRY` (qué es
-                    una tool). Sin imports fuera de la stdlib.
-- `lib.backend`   — transporte HTTP al backend NestJS y resolvers de dominio
-                    (calendario, tareas, carpeta) que las tools comparten.
+- `lib.llm` — cliente y utilidades de inferencia.
+- `lib.execution` — protocolo HTTP de assignments y resultados de pasos.
 """

@@ -30,11 +30,11 @@ def _get_model():
     return _model
 
 
-def _materialize(input_blob: bytes, extension: str) -> str:
+def _materialize(content: bytes, extension: str) -> str:
     fd, path = tempfile.mkstemp(suffix=extension)
     try:
         with os.fdopen(fd, "wb") as f:
-            f.write(input_blob)
+            f.write(content)
     except Exception:
         os.close(fd)
         if os.path.exists(path):
@@ -56,11 +56,11 @@ def _extract_audio_from_video(video_path: str) -> str:
 @execution_handler("transcribe")
 def transcribe(payload) -> dict:
     ext = payload["extension"]
-    input_blob = payload.get("_input_blob")
-    if input_blob is None:
-        return {"error": "transcribe execution is missing input_blob"}
+    content = (payload.get("_input_artifacts") or {}).get("media")
+    if content is None:
+        return {"error": "transcribe step is missing its media artifact"}
 
-    source_path = _materialize(input_blob, ext)
+    source_path = _materialize(content, ext)
     is_video = ext.lower() in _VIDEO_EXTENSIONS
     audio_path = source_path
     temp_audio = None

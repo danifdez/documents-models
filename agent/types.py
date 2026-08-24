@@ -1,12 +1,7 @@
-"""Type definitions for the agent system."""
+"""Model configuration shared by task implementations."""
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
-
-from lib.framework.agent_protocol import LoopStepOutcome
-
-
-StepOutcome = LoopStepOutcome
+from dataclasses import dataclass
+from typing import Any, Optional
 
 
 @dataclass
@@ -29,34 +24,3 @@ class ModelSpec:
                 lora_scale=float(value.get("lora_scale", 1.0)),
             )
         raise TypeError(f"Unsupported model spec: {value!r}")
-
-
-@dataclass
-class AgentDefinition:
-    name: str
-    system_prompt: str
-    tools: List[str]
-    model: Optional[ModelSpec] = None
-    max_steps: int = 8
-    max_depth: int = 2
-    tool_defaults: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    input_schema: Dict[str, Any] = field(default_factory=dict)
-    output_schema: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ToolContext:
-    execution_id: str
-    task_type: str
-    payload: Dict[str, Any]
-    agent_def: AgentDefinition
-    state: Dict[str, Any]
-
-
-@dataclass
-class ToolSpec:
-    name: str
-    description: str
-    args_schema: Dict[str, str]
-    run: Callable[[Dict[str, Any], ToolContext], Dict[str, Any]]
-    kind: str = "python"  # "python" | "task" | "sub_agent"

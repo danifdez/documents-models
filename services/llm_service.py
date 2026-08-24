@@ -38,75 +38,6 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 REQUEST_TIMEOUT_S = float(os.environ.get("LLAMA_TIMEOUT", "600"))
 
 
-def _begin_inference(
-    name: str,
-    request: Dict[str, Any],
-    trace_metadata: Optional[Dict[str, Any]] = None,
-):
-    from lib.execution import get_active_emitter
-    emitter = get_active_emitter()
-    if not emitter:
-        return None, None
-    handle = emitter.start_inference(name, request, trace_metadata)
-    emitter.flush_evidence()
-    return emitter, handle
-
-
-def _response_metrics(response: Dict[str, Any]) -> Dict[str, Any]:
-    usage = response.get("usage") if isinstance(response, dict) else None
-    timings = response.get("timings") if isinstance(response, dict) else None
-    usage = usage if isinstance(usage, dict) else {}
-    timings = timings if isinstance(timings, dict) else {}
-
-    def integer(*values):
-        for value in values:
-            if isinstance(value, (int, float)) and value >= 0:
-                return int(round(value))
-        return "unknown"
-
-    return {
-        "promptTokens": integer(
-            usage.get("prompt_tokens"),
-            timings.get("prompt_n"),
-            response.get("tokens_evaluated") if isinstance(response, dict) else None,
-        ),
-        "generatedTokens": integer(
-            usage.get("completion_tokens"),
-            timings.get("predicted_n"),
-            response.get("tokens_predicted") if isinstance(response, dict) else None,
-        ),
-        "timeToFirstTokenMs": integer(
-            timings.get("time_to_first_token_ms"),
-            timings.get("ttft_ms"),
-        ),
-    }
-
-
-def _finish_inference(
-    emitter,
-    handle,
-    response: Any,
-    *,
-    outcome: str,
-    raw_response: Optional[Dict[str, Any]] = None,
-    error: Optional[str] = None,
-    reason: Optional[str] = None,
-) -> None:
-    if not emitter or not handle:
-        return
-    emitter.finish_inference(
-        handle,
-        response,
-        outcome=outcome,
-        status="failed" if error else "succeeded",
-        error=error,
-        reason=reason,
-        metrics=_response_metrics(raw_response or {}),
-        raw_response=raw_response,
-    )
-    emitter.flush_evidence()
-
-
 def strip_thinking(text: str) -> str:
     """Remove Qwen3 <think>...</think> blocks from a model response."""
     if not text or "<think>" not in text:
@@ -281,23 +212,8 @@ class LLMService:
         body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
-        emitter, trace = _begin_inference("generate", body)
-        try:
-            resp = _post(f"{self.url}/completion", body)
-        except Exception as error:
-            _finish_inference(
-                emitter, trace, {}, outcome="invalid", error=str(error),
-            )
-            raise
+        resp = _post(f"{self.url}/completion", body)
         text = (resp.get("content") or "").strip()
-        _finish_inference(
-            emitter,
-            trace,
-            text,
-            outcome="final_text" if text else "invalid",
-            raw_response=resp,
-            reason=None if text else "empty_model_response",
-        )
         return text if allow_thinking else strip_thinking(text)
 
     def ask(
@@ -364,23 +280,8 @@ class LLMService:
             body["grammar"] = grammar
         if response_format is not None:
             body["response_format"] = response_format
-        emitter, trace = _begin_inference(inference_name, body, trace_metadata)
-        try:
-            resp = _post(f"{self.url}/v1/chat/completions", body)
-        except Exception as error:
-            _finish_inference(
-                emitter, trace, {}, outcome="invalid", error=str(error),
-            )
-            raise
+        resp = _post(f"{self.url}/v1/chat/completions", body)
         text = _content_of(resp)
-        _finish_inference(
-            emitter,
-            trace,
-            text,
-            outcome="final_text" if text else "invalid",
-            raw_response=resp,
-            reason=None if text else "empty_model_response",
-        )
         return text if allow_thinking else strip_thinking(text)
 
     def chat_with_tools(
@@ -419,36 +320,12 @@ class LLMService:
         }
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        emitter, trace = _begin_inference(
-            inference_name,
-            body,
-            trace_metadata,
-        )
-        try:
-            resp = _post(f"{self.url}/v1/chat/completions", body)
-        except Exception as error:
-            _finish_inference(
-                emitter, trace, {}, outcome="invalid", error=str(error),
-            )
-            raise
+        resp = _post(f"{self.url}/v1/chat/completions", body)
         choices = resp.get("choices") or [{}]
         message = choices[0].get("message") or {}
         tool_calls = message.get("tool_calls") or []
         content = message.get("content") or ""
         has_inline_tool_call = isinstance(content, str) and "<tool_call>" in content
-        outcome = (
-            "tool_requests"
-            if tool_calls or has_inline_tool_call
-            else ("final_text" if content else "invalid")
-        )
-        _finish_inference(
-            emitter,
-            trace,
-            {"content": content, "tool_calls": tool_calls},
-            outcome=outcome,
-            raw_response=resp,
-            reason="empty_model_response" if outcome == "invalid" else None,
-        )
         return message
 
     def chat_stream(
@@ -477,46 +354,23 @@ class LLMService:
         }
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        emitter, trace = _begin_inference(
-            inference_name,
-            body,
-            trace_metadata,
-        )
-        parts: List[str] = []
-        last_chunk: Dict[str, Any] = {}
-        try:
-            resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
-            with resp:
-                for raw in resp:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[len("data:"):].strip()
-                    if payload == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload)
-                        last_chunk = chunk
-                        delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                        piece = delta.get("content") or ""
-                    except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
-                        piece = ""
-                    if piece:
-                        parts.append(piece)
-                        yield piece
-        except Exception as error:
-            _finish_inference(
-                emitter, trace, "".join(parts), outcome="invalid", error=str(error),
-            )
-            raise
-        _finish_inference(
-            emitter,
-            trace,
-            "".join(parts),
-            outcome="final_text" if parts else "invalid",
-            raw_response=last_chunk,
-            reason=None if parts else "empty_model_response",
-        )
+        resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
+        with resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:"):].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                    piece = delta.get("content") or ""
+                except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
+                    piece = ""
+                if piece:
+                    yield piece
 
 
 def _content_of(resp: Dict[str, Any]) -> str:

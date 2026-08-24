@@ -2,7 +2,7 @@
 Configuration file for models service.
 
 All configuration is loaded from config/config.json (see services/model_config.py).
-This module re-exports infrastructure constants for backward compatibility.
+This module exposes infrastructure constants used by task-domain stores.
 """
 
 from lib.llm.config import get_config
@@ -16,7 +16,6 @@ POSTGRES_PORT = int(_db.get("port", 5432))
 POSTGRES_DB = _db.get("name", "documents")
 POSTGRES_USER = _db.get("user", "postgres")
 POSTGRES_PASSWORD = _db.get("password", "example")
-EXECUTIONS_TABLE = _db.get("executions_table", "executions")
 
 # Vector store (pgvector) — embeddings live in PostgreSQL tables created by the
 # backend migrations. One table per scope (physically isolated, as before).
@@ -35,4 +34,3 @@ GRAPH_ENABLED = _relationships_on and _graph.get("enabled", True)
 # Multi-hop neighborhood traversal used for GraphRAG.
 GRAPH_NEIGHBORHOOD_DEPTH = int(_graph.get("neighborhood_depth", 2))
 GRAPH_NEIGHBORHOOD_LIMIT = int(_graph.get("neighborhood_limit", 50))
-

@@ -1,21 +1,4 @@
-"""Agentic relationship extraction.
-
-Mirrors the state-machine used by `summarize`, `key-point`, `keywords`, and
-`date-extraction`:
-
-- Top-level cleans the text (HTML → markdown, strip dense blobs), drops
-  auxiliary sections via the relevance filter, and chunks the survivors
-  with `semantic_chunk_text` (overlap-aware so cross-chunk relationships at
-  boundaries still have a chance). Single chunk → run inline; N chunks →
-  fan-out one `relationship-extraction` child per chunk.
-- Each child detects `_chunk_idx` in payload, runs the LLM on its single
-  chunk, validates relationships against the entity list (provided in the
-  payload) and returns the validated raw list.
-- Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; `_phase_merge` deduplicates across chunks and persists to
-  the graph. **Graph writes only happen at merge time** so a partially failed
-  execution never leaves an inconsistent graph.
-"""
+"""Extract and persist relationships from chunked text in one Models step."""
 
 import json
 import logging
@@ -236,12 +219,11 @@ def _run_chunk_llm(
     return _validate_relationships(raw, entity_names)
 
 
-def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
+def _extract(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     text = payload.get("text", "")
     entities = payload.get("entities", [])
     resource_id = payload.get("resource_id") or payload.get("resourceId")
     project_id = payload.get("project_id") or payload.get("projectId")
-    is_child = "_chunk_idx" in payload
 
     if not text or not entities:
         return _final_result([], resource_id)
@@ -255,12 +237,6 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
     if not prompt_template:
         return _final_result([], resource_id, error="Prompt template not found")
 
-    # CHILD: skip chunking; run LLM directly on the received chunk text.
-    if is_child:
-        valid = _run_chunk_llm(text, entities_str, entity_names, prompt_template, cfg)
-        return {"relationships": valid}
-
-    # TOP-LEVEL: clean → units → relevance → semantic chunks.
     units = extract_section_units(strip_dense_blobs(html_to_markdown(str(text))))
     if not units:
         return _final_result([], resource_id)
@@ -287,96 +263,13 @@ def _phase_plan_or_leaf(payload: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Di
         len(chunks), len(entities),
     )
 
-    # TOP-LEVEL with 1 chunk: run inline + persist.
-    if len(chunks) == 1:
-        valid = _run_chunk_llm(chunks[0], entities_str, entity_names, prompt_template, cfg)
-        deduped = _deduplicate(valid)
-        err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
-        return _final_result(deduped, resource_id, error=err)
-
-    # No DB ctx (unit tests / fallback): run all chunks in-process.
-    if ctx is None or getattr(ctx, "db", None) is None or getattr(ctx, "execution_id", None) is None:
-        all_valid: List[Dict[str, Any]] = []
-        for c in chunks:
-            all_valid.extend(_run_chunk_llm(c, entities_str, entity_names, prompt_template, cfg))
-        deduped = _deduplicate(all_valid)
-        err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
-        return _final_result(deduped, resource_id, error=err)
-
-    # FAN-OUT: one child per chunk.
-    pending: Dict[str, int] = {}
-    results: Dict[str, Optional[Dict[str, Any]]] = {}
-    retries: Dict[str, int] = {}
-    for i, chunk in enumerate(chunks):
-        child_payload = {
-            "text": chunk,
-            "entities": entities,
-            "resource_id": resource_id,
-            "project_id": project_id,
-            "_chunk_idx": i,
-        }
-        child_id = ctx.db.enqueue_child_execution(
-            ctx.execution_id,
-            "relationship-extraction",
-            payload=child_payload,
-            agent_max_steps=1,
-        )
-        if child_id is None:
-            return {"error": f"failed to enqueue child for chunk {i}"}
-        pending[str(child_id)] = i
-        results[str(i)] = None
-        retries[str(i)] = 0
-
-    state = {
-        "phase": "merging",
-        "chunks_count": len(chunks),
-        "queued": pending,
-        "results": results,
-        "retries": retries,
-        "chunks": chunks,
-        "entities": entities,
-        "resource_id": resource_id,
-        "project_id": project_id,
-        "chunk_field": "text",
-        "chunk_payload_template": {
-            "entities": entities,
-            "resource_id": resource_id,
-            "project_id": project_id,
-        },
-    }
-    return {
-        "_sub_agent_pending_many": True,
-        "_state": state,
-        "pending_children": pending,
-    }
-
-
-def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, Any]:
-    failed_idx = state.get("failed_idx")
-    if failed_idx is not None:
-        return _final_result(
-            [],
-            state.get("resource_id"),
-            error=(
-                f"chunk {failed_idx} failed after retries: "
-                f"{state.get('failed_error') or 'unknown error'}"
-            ),
-        )
-
-    n = int(state.get("chunks_count", 0))
-    entities = state.get("entities") or []
-    resource_id = state.get("resource_id")
-    project_id = state.get("project_id")
-    entity_map = {e["name"]: e for e in entities}
-    results = state.get("results") or {}
-
     all_rels: List[Dict[str, Any]] = []
-    for i in range(n):
-        r = results.get(str(i))
-        if isinstance(r, dict):
-            for rel in (r.get("relationships") or []):
-                if isinstance(rel, dict):
-                    all_rels.append(rel)
+    for chunk in chunks:
+        all_rels.extend(
+            _run_chunk_llm(
+                chunk, entities_str, entity_names, prompt_template, cfg
+            )
+        )
 
     deduped = _deduplicate(all_rels)
     err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
@@ -392,15 +285,10 @@ def _phase_merge(state: Dict[str, Any], cfg: Dict[str, Any], ctx) -> Dict[str, A
 def extract_relationships(
     payload: Dict[str, Any],
     state: Optional[Dict[str, Any]] = None,
-    ctx=None,
 ) -> Dict[str, Any]:
-    """Reentrant handler. `state` is None on first invocation; populated by the
-    dispatcher when the parent is woken after all children complete."""
     try:
         cfg = get_task_config("relationship-extraction")
-        if state and state.get("phase") == "merging":
-            return _phase_merge(state, cfg, ctx)
-        return _phase_plan_or_leaf(payload, cfg, ctx)
+        return _extract(payload, cfg)
     except Exception as e:
         logger.exception("relationship-extraction failed")
         resource_id = (

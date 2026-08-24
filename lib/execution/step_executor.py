@@ -2,12 +2,14 @@ import logging
 from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
-from utils.process_execution import _call_handler, _ensure_task_for_type
+from utils.task_dispatch import call_handler, ensure_task_handler
 
 logger = logging.getLogger(__name__)
 
 
-def execute_assignment(assignment: Dict[str, Any]) -> Dict[str, Any]:
+def execute_assignment(
+    assignment: Dict[str, Any], artifacts: Dict[str, bytes] | None = None
+) -> Dict[str, Any]:
     work = assignment.get("work") or {}
     task_type = work.get("taskType")
     step_kind = assignment.get("stepKind")
@@ -20,7 +22,7 @@ def execute_assignment(assignment: Dict[str, Any]) -> Dict[str, Any]:
         "stepKind": step_kind,
         "artifactRefs": [],
     }
-    if not isinstance(task_type, str) or not _ensure_task_for_type(task_type):
+    if not isinstance(task_type, str) or not ensure_task_handler(task_type):
         return {
             **base,
             "status": "failed",
@@ -44,7 +46,9 @@ def execute_assignment(assignment: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
     try:
-        value = _call_handler(handler, payload)
+        handler_payload = dict(payload)
+        handler_payload["_input_artifacts"] = artifacts or {}
+        value = call_handler(handler, handler_payload)
         return {
             **base,
             "status": "succeeded",

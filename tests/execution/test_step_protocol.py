@@ -58,7 +58,12 @@ class StepProtocolTest(unittest.TestCase):
 
     def test_executes_a_deterministic_assignment_without_database_context(self):
         task_type = "protocol-test-task"
-        TASK_HANDLERS[task_type] = lambda payload: {"echo": payload["value"]}
+        TASK_HANDLERS[task_type] = lambda payload: {
+            "echo": payload["value"],
+            "artifact": payload["_input_artifacts"]["source"].decode(
+                "utf-8"
+            ),
+        }
         assignment = {
             "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
             "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
@@ -69,16 +74,22 @@ class StepProtocolTest(unittest.TestCase):
         }
         try:
             with patch(
-                "lib.execution.step_executor._ensure_task_for_type",
+                "lib.execution.step_executor.ensure_task_handler",
                 return_value=True,
             ):
-                result = execute_assignment(assignment)
+                result = execute_assignment(
+                    assignment, {"source": b"artifact body"}
+                )
         finally:
             TASK_HANDLERS.pop(task_type, None)
 
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(
-            result["output"], {"kind": "service", "value": {"echo": "ok"}}
+            result["output"],
+            {
+                "kind": "service",
+                "value": {"echo": "ok", "artifact": "artifact body"},
+            },
         )
         self.assertIsNone(result["error"])
 

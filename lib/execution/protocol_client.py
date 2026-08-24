@@ -78,8 +78,89 @@ class ExecutionProtocolClient:
             f"/models-work/attempts/{attempt_id}/start", {}
         )
 
+    def renew_lease(
+        self, attempt_id: str, lease_duration_ms: int
+    ) -> Dict[str, Any]:
+        return self._authenticated_request(
+            f"/models-work/attempts/{attempt_id}/lease",
+            {"leaseDurationMs": lease_duration_ms},
+        )
+
+    def read_control(self, attempt_id: str) -> Dict[str, Any]:
+        if not self.credential:
+            raise RuntimeError("Worker is not registered")
+        return self._authenticated_get(
+            f"/models-work/attempts/{attempt_id}/control"
+        )
+
     def submit_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         return self._authenticated_request("/models-work/results", result)
+
+    def download_artifact(self, attempt_id: str, artifact_id: str) -> bytes:
+        if not self.credential:
+            raise RuntimeError("Worker is not registered")
+        path = f"/models-work/attempts/{attempt_id}/artifacts/{artifact_id}"
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            headers={
+                "x-worker-id": WORKER_ID,
+                "x-worker-credential": self.credential,
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
+                raise WorkerAuthenticationError(
+                    "Backend rejected worker credential for artifact download"
+                ) from error
+            detail = error.read().decode("utf-8", errors="replace")
+            raise ProtocolTransportError(
+                f"Backend rejected {path}: HTTP {error.code} {detail}"
+            ) from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise ProtocolTransportError(
+                f"Backend artifact download failed: {error}"
+            ) from error
+
+    def _authenticated_get(self, path: str) -> Dict[str, Any]:
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            headers={
+                "x-worker-id": WORKER_ID,
+                "x-worker-credential": self.credential,
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                payload = response.read()
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
+                raise WorkerAuthenticationError(
+                    f"Backend rejected worker credential for {path}"
+                ) from error
+            detail = error.read().decode("utf-8", errors="replace")
+            raise ProtocolTransportError(
+                f"Backend rejected {path}: HTTP {error.code} {detail}"
+            ) from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise ProtocolTransportError(
+                f"Backend request failed for {path}: {error}"
+            ) from error
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError as error:
+            raise ProtocolTransportError(
+                f"Backend returned invalid JSON for {path}"
+            ) from error
+        if not isinstance(decoded, dict):
+            raise ProtocolTransportError(
+                f"Backend returned an invalid response for {path}"
+            )
+        return decoded
 
     def reset_credential(self) -> None:
         self.credential_path.unlink(missing_ok=True)

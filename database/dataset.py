@@ -6,13 +6,12 @@ Pure DataFrame/value transformations live in ``common.dataset``.
 
 import json
 
-from database.execution import get_execution_database
+from database.connection import open_database_connection
 
 
 def get_dataset_records(dataset_id: int):
     """Fetch dataset schema and records directly from PostgreSQL."""
-    db = get_execution_database()
-    conn = db.get_connection()
+    conn = open_database_connection()
 
     with conn.cursor() as cur:
         cur.execute("SELECT schema FROM datasets WHERE id = %s", (dataset_id,))
@@ -61,8 +60,7 @@ def resolve_fk_labels(schema, field_key, raw_values):
     if not norm_values:
         return {}
 
-    db = get_execution_database()
-    conn = db.get_connection()
+    conn = open_database_connection()
     result_map = {}
 
     def _extract_display(data):
