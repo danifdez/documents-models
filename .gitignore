@@ -3,6 +3,8 @@ models/
 .env
 .venv/
 .worker_id
+.worker_credential
+.pending_step_result.json
 .llama.cpp/
 .llama-server-build/
 bin/

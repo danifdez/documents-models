@@ -1,15 +1,8 @@
-import json
-import logging
 import os
 import sys
 import uuid
-import threading
-import time
 
 from lib.llm.config import get_worker_config
-
-logger = logging.getLogger(__name__)
-
 
 def _default_data_dir() -> str:
     # In a PyInstaller bundle the source tree lives inside the archive, so a path
@@ -47,65 +40,5 @@ WORKER_NAME = _worker_cfg.get("name", "") or f"worker-{WORKER_ID[:8]}"
 HEARTBEAT_INTERVAL = int(_worker_cfg.get("heartbeat_interval", 15))
 
 
-def register_worker(capabilities: list, metadata: dict):
-    """Register or update this worker in the workers table."""
-    from database.execution import get_execution_database
-
-    db = get_execution_database()
-    conn = db.get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO workers (id, name, capabilities, status, last_heartbeat, started_at, metadata)
-                VALUES (%s, %s, %s::jsonb, 'online', NOW(), NOW(), %s::jsonb)
-                ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    capabilities = EXCLUDED.capabilities,
-                    status = 'online',
-                    last_heartbeat = NOW(),
-                    started_at = NOW(),
-                    metadata = EXCLUDED.metadata
-            """, (WORKER_ID, WORKER_NAME, json.dumps(capabilities), json.dumps(metadata)))
-    finally:
-        conn.close()
-
-
-def start_heartbeat_thread():
-    """Start a daemon thread that updates last_heartbeat every HEARTBEAT_INTERVAL seconds."""
-    def _heartbeat_loop():
-        from database.execution import get_execution_database
-        db = get_execution_database()
-        conn = db.get_connection()
-        while True:
-            time.sleep(HEARTBEAT_INTERVAL)
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE workers SET last_heartbeat = NOW() WHERE id = %s",
-                        (WORKER_ID,)
-                    )
-            except Exception as e:
-                logger.error("Heartbeat error: %s", e)
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = db.get_connection()
-
-    t = threading.Thread(target=_heartbeat_loop, daemon=True)
-    t.start()
-    return t
-
-
-def deregister_worker():
-    """Mark this worker as offline on graceful shutdown."""
-    try:
-        from database.execution import get_execution_database
-        db = get_execution_database()
-        with db.conn.cursor() as cur:
-            cur.execute(
-                "UPDATE workers SET status = 'offline' WHERE id = %s",
-                (WORKER_ID,)
-            )
-    except Exception:
-        pass
+def worker_data_dir() -> str:
+    return _DATA_DIR
