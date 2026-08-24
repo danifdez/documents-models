@@ -1,18 +1,23 @@
 ## Summarize
 
-The **summarize** task generates a condensed summary of a document or piece of text. It supports cross-lingual summarization, meaning the input and output can be in different languages.
+Documents materializes summarization as a durable workflow. Models exposes two
+self-contained capabilities: **summarize-map** summarizes one bounded chunk and
+**summarize-reduce** merges the ordered partials.
 
 ### What it does
 
-The task strips any HTML formatting from the input, then uses a multilingual sequence-to-sequence model to produce a shorter version that captures the main ideas of the original content.
+Backend owns HTML-to-text conversion, chunking, step identities and dependencies.
+Models uses the configured local GGUF model for map and reduce inference and
+never creates child executions.
 
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `content` | string | Yes | The text or HTML content to summarize |
-| `sourceLanguage` | string | Yes | Language code of the input text (e.g. `en`, `es`, `fr`) |
-| `targetLanguage` | string | Yes | Language code for the output summary (e.g. `en`, `es`) |
+| `content` | string | Map only | One bounded plain-text chunk |
+| `partials` | string[] | Reduce only | Ordered map responses materialized by Backend |
+| `sourceLanguage` | string | No | Language code of the input text |
+| `targetLanguage` | string | Yes | Language code for the output summary |
 
 Language codes follow the ISO 639-1 standard.
 
@@ -26,12 +31,21 @@ Language codes follow the ISO 639-1 standard.
 
 ### Example
 
-**Input:**
+**Map input:**
 
 ```json
 {
-  "content": "<p>Artificial intelligence has transformed the way we interact with technology. From voice assistants to recommendation systems, AI is now embedded in everyday life. Researchers continue to push boundaries, exploring new architectures and training methods that improve model accuracy and efficiency. Despite significant progress, challenges around interpretability, bias, and energy consumption remain open problems in the field.</p>",
+  "content": "Artificial intelligence has transformed everyday technology.",
   "sourceLanguage": "en",
+  "targetLanguage": "en"
+}
+```
+
+**Reduce input:**
+
+```json
+{
+  "partials": ["First partial.", "Second partial."],
   "targetLanguage": "en"
 }
 ```

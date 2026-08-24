@@ -16,28 +16,24 @@ Detects the language of one or more text samples and returns ISO 639-1 language 
 
 ## Summarization
 
-**Execution type:** `summarize`
-**File:** `tasks/summarize/summarize.py`
-**Model:** configured in `config/tasks.json` (default: `facebook/mbart-large-50-one-to-many-mmt`)
+**Step types:** `summarize-map`, `summarize-reduce`
+**Files:** `tasks/summarize_map/summarize_map.py`, `tasks/summarize_reduce/summarize_reduce.py`
+**Model:** local GGUF model configured independently for both step types
 
-Generates a summary of the input text with cross-lingual support (source and target language can differ).
+Backend creates the durable map/reduce graph. Models executes one bounded map
+or one reduce assignment at a time and returns a canonical inference outcome.
 
 **Processing steps:**
 
-1. HTML tags are stripped from the content using regex.
-2. The tokenizer is configured with the source language (`sourceLanguage` + `_XX` suffix).
-3. Input is tokenized with a maximum length of 1024 tokens (truncated if longer).
-4. The model generates a summary with:
-   - Beam search: 4 beams
-   - Length: 30-200 tokens
-   - No-repeat n-gram: size 3
-   - Forced BOS token for the target language
-5. The summary is decoded and returned.
+1. `summarize-map` summarizes exactly one chunk supplied by Backend.
+2. Backend waits until every required map result is durably accepted.
+3. Backend materializes the ordered response strings into the reduce payload.
+4. `summarize-reduce` merges those partials into the final response.
 
 **Notes:**
 
-- The model and tokenizer are loaded on first use (lazy loading).
-- mBART-50 supports 50 languages. Language codes use the `xx_XX` format internally (e.g., `en_XX`, `es_XX`).
+- Models does not chunk, enqueue children or finalize the execution.
+- `config/tasks.json` has separate `summarize-map` and `summarize-reduce` entries.
 
 ## Translation
 

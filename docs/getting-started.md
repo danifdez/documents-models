@@ -72,7 +72,7 @@ The service uses several AI models. Most are downloaded automatically from Huggi
 
 ### LLM Setup
 
-The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `install` script during local setup, and by `setup_models.py --setup` when the standalone bundle is installed by the Electron app. The filename used is whatever is declared in `config/tasks.json` under the `keywords`, `key-point`, `ask`, and `summarize` task entries (default: `Qwen3-8B-Q5_K_M.gguf`). If the file is missing at runtime, tasks fall back to heuristics or fail gracefully.
+The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `install` script during local setup, and by `setup_models.py --setup` when the standalone bundle is installed by the Electron app. The filename used is whatever is declared in `config/tasks.json` under the `keywords`, `key-point`, `ask`, `summarize-map`, and `summarize-reduce` task entries (default: `Qwen3-8B-Q5_K_M.gguf`). If the file is missing at runtime, tasks fall back to heuristics or fail gracefully.
 
 **Optional LoRA adapters.** To fine-tune any LLM task, place a LoRA adapter `.gguf` in `models/` and add `lora_model` (and optionally `lora_scale`) to the task entry. See [configuration.md](configuration.md#tasksjson) for details.
 

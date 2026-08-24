@@ -1,6 +1,8 @@
 # Execution Types
 
-The models service processes 13 execution types, each registered via the `@execution_handler` decorator. All handlers receive a `payload` dict and return a result dict.
+Each Models capability is registered with `@execution_handler`. Handlers receive
+a self-contained payload and return a result dictionary; Backend owns workflow
+coordination and execution finalization.
 
 ## Overview
 
@@ -8,7 +10,8 @@ The models service processes 13 execution types, each registered via the `@execu
 |------|---------|------|-----------------|
 | `document-extraction` | `extract()` | `tasks/extraction/extractor.py` | Docling, Trafilatura |
 | `detect-language` | `detect_language()` | `tasks/detect_language/detect_language.py` | langdetect |
-| `summarize` | `summarize_text()` | `tasks/summarize/summarize.py` | mBART-50 |
+| `summarize-map` | `summarize_map()` | `tasks/summarize_map/summarize_map.py` | Local GGUF LLM |
+| `summarize-reduce` | `summarize_reduce()` | `tasks/summarize_reduce/summarize_reduce.py` | Local GGUF LLM |
 | `translate` | `translate()` | `tasks/translate/translate.py` | Helsinki-NLP/OPUS |
 | `entity-extraction` | `entities()` | `tasks/entities/entities.py` | Local Qwen LLM (GBNF-constrained JSON) |
 | `ingest-content` | `ingest()` | `tasks/ingest/ingest.py` | intfloat/multilingual-e5-small |
@@ -80,15 +83,15 @@ Uses the `langdetect` library. Returns ISO 639-1 language codes.
 
 ---
 
-## summarize
+## summarize-map / summarize-reduce
 
-Generates a summary of the provided text, with cross-lingual support.
+Executes one stage of the durable summarization workflow created by Backend.
 
 **Input:**
 
 ```json
 {
-  "content": "<p>Long document text...</p>",
+  "content": "One bounded document chunk...",
   "sourceLanguage": "en",
   "targetLanguage": "es"
 }
@@ -102,10 +105,9 @@ Generates a summary of the provided text, with cross-lingual support.
 }
 ```
 
-- Uses `facebook/mbart-large-50-one-to-many-mmt`.
-- HTML tags are stripped before running.
-- Input is truncated to 1024 tokens.
-- Summary length: 30-200 tokens, with beam search (4 beams) and no-repeat n-gram (size 3).
+- `summarize-map` accepts one chunk and returns one response.
+- `summarize-reduce` accepts ordered `partials` and returns the merged response.
+- Backend owns chunking, dependencies, retries and finalization.
 
 ---
 
@@ -450,4 +452,3 @@ Computes descriptive statistics for a dataset stored in the `datasets` / `datase
 - Reads schema and records directly from PostgreSQL.
 - Builds a pandas DataFrame and computes per-field statistics (numeric: mean/std/min/max/percentiles; string: unique count and most-frequent value; boolean: true/false counts).
 - Does not require any capability (any worker can handle it).
-

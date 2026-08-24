@@ -1,11 +1,8 @@
-"""Agentic summarization task.
-"""
+"""Self-contained map and reduce steps for durable summarization workflows."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from common.execution_registry import execution_handler
-from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
+from lib.llm.config import get_llm_params
 from lib.llm.prompts import get_prompt
 from lib.llm.text import strip_dense_blobs, truncate_for_llm
 from services.llm_service import get_llm_service
@@ -21,7 +18,7 @@ def _target_language(payload: Dict[str, Any]) -> str:
 
 
 def _summarize_chunk(text: str, target_language: str, cfg: Dict[str, Any]) -> str:
-    llm = get_llm_service(**get_llm_params("summarize"))
+    llm = get_llm_service(**get_llm_params("summarize-map"))
     max_tokens = int(cfg.get("chunk_max_tokens", 400))
     safe_text = truncate_for_llm(strip_dense_blobs(text), cfg)
     messages = [
@@ -39,12 +36,17 @@ def _summarize_chunk(text: str, target_language: str, cfg: Dict[str, Any]) -> st
 
 
 def _merge_summaries(partials: List[str], target_language: str, cfg: Dict[str, Any]) -> str:
-    llm = get_llm_service(**get_llm_params("summarize"))
+    llm = get_llm_service(**get_llm_params("summarize-reduce"))
     max_tokens = int(cfg.get("merge_max_tokens", 800))
     joined = "\n\n---\n\n".join(
         f"[part {i + 1}]\n{p}" for i, p in enumerate(partials) if p
     )
-    joined = truncate_for_llm(joined, cfg)
+    joined = truncate_for_llm(
+        joined,
+        cfg,
+        tokens_key="merge_max_tokens",
+        default_tokens=800,
+    )
     messages = [
         {"role": "system", "content": _MERGE_SYSTEM},
         {
@@ -57,30 +59,3 @@ def _merge_summaries(partials: List[str], target_language: str, cfg: Dict[str, A
         },
     ]
     return llm.chat(messages, max_tokens=max_tokens, temperature=0.0).strip()
-
-
-def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> str:
-    return _summarize_chunk(chunk, _target_language(payload), cfg)
-
-
-def _reduce(partials: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]) -> str:
-    return _merge_summaries(partials, _target_language(payload), cfg)
-
-
-_SPEC = MapReduceSpec(
-    task_name="summarize",
-    leaf_fn=_leaf,
-    reduce_fn=_reduce,
-    carry_fields=("targetLanguage", "sourceLanguage"),
-    chunk_field="content",
-    units_filters=["relevance"],
-    recursive_merge=True,
-)
-
-
-@execution_handler("summarize")
-def summarize_text(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, ctx=None) -> Dict[str, Any]:
-    """Reentrant handler. `state` is None on first invocation; populated by the
-    dispatcher when the parent is woken after all children complete."""
-    cfg = get_task_config("summarize")
-    return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)

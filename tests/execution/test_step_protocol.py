@@ -93,6 +93,44 @@ class StepProtocolTest(unittest.TestCase):
         )
         self.assertIsNone(result["error"])
 
+    def test_wraps_inference_output_in_canonical_outcome(self):
+        task_type = "protocol-inference-test"
+        TASK_HANDLERS[task_type] = lambda _payload: {"response": "summary"}
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca704",
+            "stepKind": "inference",
+            "work": {"taskType": task_type, "payload": {}},
+        }
+        try:
+            with patch(
+                "lib.execution.step_executor.ensure_task_handler",
+                return_value=True,
+            ), patch(
+                "lib.execution.step_executor.get_task_config",
+                return_value={"model": "test-model"},
+            ):
+                result = execute_assignment(assignment)
+        finally:
+            TASK_HANDLERS.pop(task_type, None)
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(
+            result["output"],
+            {
+                "kind": "inference",
+                "outcome": {
+                    "kind": "structured_result",
+                    "schemaId": f"{task_type}-output/1",
+                    "value": {"response": "summary"},
+                },
+            },
+        )
+        self.assertEqual(result["inference"]["effectiveModel"], "test-model")
+        self.assertEqual(result["usage"]["totalTokens"], None)
+
     def test_keeps_a_result_until_backend_acknowledges_it(self):
         result = {"attemptId": "attempt-1", "status": "succeeded"}
 

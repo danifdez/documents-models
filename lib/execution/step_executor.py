@@ -1,7 +1,9 @@
 import logging
+import time
 from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
+from lib.llm.config import get_task_config
 from utils.task_dispatch import call_handler, ensure_task_handler
 
 logger = logging.getLogger(__name__)
@@ -45,10 +47,26 @@ def execute_assignment(
                 "retryable": False,
             },
         }
+    started_at = time.monotonic()
     try:
         handler_payload = dict(payload)
         handler_payload["_input_artifacts"] = artifacts or {}
         value = call_handler(handler, handler_payload)
+        if step_kind == "inference":
+            return {
+                **base,
+                "status": "succeeded",
+                "output": {
+                    "kind": "inference",
+                    "outcome": {
+                        "kind": "structured_result",
+                        "schemaId": f"{task_type}-output/1",
+                        "value": value,
+                    },
+                },
+                **_inference_metadata(task_type, started_at, "completed"),
+                "error": None,
+            }
         return {
             **base,
             "status": "succeeded",
@@ -57,7 +75,7 @@ def execute_assignment(
         }
     except Exception as error:
         logger.exception("Step %s failed", assignment.get("stepId"))
-        return {
+        failed = {
             **base,
             "status": "failed",
             "error": {
@@ -66,3 +84,41 @@ def execute_assignment(
                 "retryable": False,
             },
         }
+        if step_kind == "inference":
+            failed.update(
+                {
+                    "output": {
+                        "kind": "inference",
+                        "outcome": {"kind": "failed"},
+                    },
+                    **_inference_metadata(
+                        task_type,
+                        started_at,
+                        "error",
+                    ),
+                }
+            )
+        return failed
+
+
+def _inference_metadata(
+    task_type: str,
+    started_at: float,
+    finish_reason: str,
+) -> Dict[str, Any]:
+    config = get_task_config(task_type)
+    return {
+        "usage": {
+            "promptTokens": None,
+            "completionTokens": None,
+            "totalTokens": None,
+        },
+        "inference": {
+            "effectiveModel": str(config.get("model") or "unreported"),
+            "effectiveAdapter": None,
+            "finishReason": finish_reason,
+            "inferenceMs": max(0, int((time.monotonic() - started_at) * 1000)),
+            "cacheOutcome": "unknown",
+            "warnings": ["token_usage_unavailable"],
+        },
+    }
