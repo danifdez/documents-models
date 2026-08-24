@@ -34,7 +34,13 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1
 LEASE_DURATION_MS = 30_000
-CAPABILITIES = ["detect-language", "summarize-map", "summarize-reduce"]
+CAPABILITIES = [
+    "assistant-chat",
+    "agent-chat",
+    "detect-language",
+    "summarize-map",
+    "summarize-reduce",
+]
 STEP_KINDS = ["service", "code", "inference"]
 ACK_CODES = {
     "received",

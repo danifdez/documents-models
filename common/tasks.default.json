@@ -39,6 +39,22 @@
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm", "embeddings"]
   },
+  "assistant-chat": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 1200,
+    "max_tool_calls": 4
+  },
+  "agent-chat": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 1200,
+    "max_tool_calls": 4
+  },
   "embedding": {
     "enabled": true,
     "type": "sentence-transformer",

@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
+from lib.execution.outcome import InferenceOutcome
 from lib.llm.config import get_task_config
 from utils.task_dispatch import call_handler, ensure_task_handler
 
@@ -50,21 +51,33 @@ def execute_assignment(
     started_at = time.monotonic()
     try:
         handler_payload = dict(payload)
+        handler_payload["_task_type"] = task_type
         handler_payload["_input_artifacts"] = artifacts or {}
         value = call_handler(handler, handler_payload)
         if step_kind == "inference":
+            outcome = (
+                value.value
+                if isinstance(value, InferenceOutcome)
+                else {
+                    "kind": "structured_result",
+                    "schemaId": f"{task_type}-output/1",
+                    "value": value,
+                }
+            )
             return {
                 **base,
                 "status": "succeeded",
                 "output": {
                     "kind": "inference",
-                    "outcome": {
-                        "kind": "structured_result",
-                        "schemaId": f"{task_type}-output/1",
-                        "value": value,
-                    },
+                    "outcome": outcome,
                 },
-                **_inference_metadata(task_type, started_at, "completed"),
+                **_inference_metadata(
+                    task_type,
+                    started_at,
+                    "tool_calls"
+                    if outcome.get("kind") == "tool_requests"
+                    else "completed",
+                ),
                 "error": None,
             }
         return {

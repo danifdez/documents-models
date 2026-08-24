@@ -19,6 +19,8 @@ _CONFIG_TASKS_DIR = os.path.join(_PROJECT_DIR, 'config', 'tasks')
 _TASKS_DIR = os.path.join(_PROJECT_DIR, 'tasks')
 
 _TASK_DIR_MAP = {
+    "assistant-chat": "assistant_chat",
+    "agent-chat": "assistant_chat",
     "key-point": "key_points",
     "detect-language": "detect_language",
     "entity-extraction": "entities",

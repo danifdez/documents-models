@@ -7,6 +7,7 @@ from unittest.mock import patch
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.protocol_client import ExecutionProtocolClient
 from lib.execution.step_executor import execute_assignment
+from lib.execution.outcome import InferenceOutcome
 import executions
 
 
@@ -25,6 +26,10 @@ class _Response:
 
 
 class StepProtocolTest(unittest.TestCase):
+    def test_worker_advertises_chat_inference_capabilities(self):
+        self.assertIn("assistant-chat", executions.CAPABILITIES)
+        self.assertIn("agent-chat", executions.CAPABILITIES)
+
     def test_registers_once_and_uses_worker_credential(self):
         requests = []
 
@@ -130,6 +135,36 @@ class StepProtocolTest(unittest.TestCase):
         )
         self.assertEqual(result["inference"]["effectiveModel"], "test-model")
         self.assertEqual(result["usage"]["totalTokens"], None)
+
+    def test_preserves_an_explicit_canonical_inference_outcome(self):
+        task_type = "protocol-chat-test"
+        TASK_HANDLERS[task_type] = lambda _payload: InferenceOutcome(
+            {"kind": "final_text", "text": "Ready"}
+        )
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca704",
+            "stepKind": "inference",
+            "work": {"taskType": task_type, "payload": {}},
+        }
+        try:
+            with patch(
+                "lib.execution.step_executor.ensure_task_handler",
+                return_value=True,
+            ), patch(
+                "lib.execution.step_executor.get_task_config",
+                return_value={"model": "test-model"},
+            ):
+                result = execute_assignment(assignment)
+        finally:
+            TASK_HANDLERS.pop(task_type, None)
+
+        self.assertEqual(
+            result["output"]["outcome"],
+            {"kind": "final_text", "text": "Ready"},
+        )
 
     def test_keeps_a_result_until_backend_acknowledges_it(self):
         result = {"attemptId": "attempt-1", "status": "succeeded"}

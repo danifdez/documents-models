@@ -21,6 +21,8 @@ TASK_MODULES = {
     "memory-ingest": "tasks.memory.memory",
     "memory-search": "tasks.memory.memory",
     "memory-delete-vectors": "tasks.memory.memory",
+    "assistant-chat": "tasks.assistant_chat.assistant_chat",
+    "agent-chat": "tasks.assistant_chat.assistant_chat",
     "dataset.extract-row": "tasks.dataset_extraction.handler",
     "dataset.propose-columns": "tasks.dataset_extraction.propose_columns",
 }
