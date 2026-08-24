@@ -21,7 +21,6 @@
     "budgetBucket": {
       "$ref": "progress-reported.schema.json#/$defs/budgetBucket"
     },
-    "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
     "budgetSoftLimitWarningApplied": { "type": "boolean" },
     "operationFingerprint": { "$ref": "../common.schema.json#/$defs/hash" },
     "operationFingerprintVersion": {
@@ -60,7 +59,6 @@
         "required": [
           "budgetReservationId",
           "budgetBucket",
-          "executionAttemptId",
           "loopId",
           "loopKind",
           "phase"
@@ -68,7 +66,6 @@
         "properties": {
           "budgetReservationId": true,
           "budgetBucket": true,
-          "executionAttemptId": true,
           "loopId": true,
           "loopKind": true,
           "phase": true

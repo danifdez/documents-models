@@ -113,7 +113,6 @@
         "executionId",
         "turnId",
         "loopId",
-        "executionAttemptId",
         "profileId",
         "policyVersion",
         "requestedPolicy",
@@ -126,7 +125,6 @@
         "executionId": { "$ref": "../common.schema.json#/$defs/id" },
         "turnId": { "$ref": "../common.schema.json#/$defs/nullableId" },
         "loopId": { "$ref": "../common.schema.json#/$defs/id" },
-        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "profileId": { "const": "documents_chat_v1" },
         "policyVersion": { "const": "1" },
         "requestedPolicy": { "$ref": "#/$defs/budgetPolicy" },
@@ -147,7 +145,6 @@
         "reservationId",
         "grantId",
         "operationId",
-        "executionAttemptId",
         "bucket",
         "phase",
         "round",
@@ -160,7 +157,6 @@
         "reservationId": { "$ref": "../common.schema.json#/$defs/id" },
         "grantId": { "$ref": "../common.schema.json#/$defs/id" },
         "operationId": { "$ref": "../common.schema.json#/$defs/id" },
-        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "operationKind": { "enum": ["inference", "tool_call"] },
         "bucket": { "$ref": "#/$defs/budgetBucket" },
         "toolCallId": { "$ref": "../common.schema.json#/$defs/id" },
@@ -257,7 +253,6 @@
         "committed",
         "available",
         "triggeringOperationId",
-        "executionAttemptId",
         "decidedAt"
       ],
       "properties": {
@@ -270,7 +265,6 @@
         "committed": { "type": "integer", "minimum": 1 },
         "available": { "type": "integer", "minimum": 0 },
         "triggeringOperationId": { "$ref": "../common.schema.json#/$defs/id" },
-        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
       "allOf": [
@@ -303,7 +297,6 @@
         "triggeringOperationId",
         "operationFingerprint",
         "operationFingerprintVersion",
-        "executionAttemptId",
         "decidedAt"
       ],
       "properties": {
@@ -329,7 +322,6 @@
         "resultFingerprintVersion": {
           "const": "tool_output_content_hash_v1"
         },
-        "executionAttemptId": { "$ref": "../common.schema.json#/$defs/id" },
         "decidedAt": { "$ref": "../common.schema.json#/$defs/timestamp" }
       },
       "allOf": [
