@@ -143,6 +143,9 @@ def validate_protocol_fixture(fixture, schemas):
     assignment = schema("step-assignment.schema.json")
     result = schema("step-result.schema.json")
     ack = schema("step-result-ack.schema.json")
+    tool_invocation = schema("tool-invocation.schema.json")
+    tool_plan = schema("tool-plan.schema.json")
+    tool_result = schema("tool-result.schema.json")
     if not all((execution, step, attempt, assignment, result, ack)):
         return "invalid_contract"
 
@@ -168,6 +171,20 @@ def validate_protocol_fixture(fixture, schemas):
         or result["stepKind"] != assignment["stepKind"]
     ):
         return "invalid_protocol_identity"
+
+    tool_records = (tool_invocation, tool_plan, tool_result)
+    if any(tool_records) and not all(tool_records):
+        return "invalid_contract"
+    if tool_invocation:
+        if (
+            tool_invocation["executionContext"]["executionId"]
+            != execution["executionId"]
+            or tool_invocation["toolCallId"] != tool_plan["toolCallId"]
+            or tool_plan["toolCallId"] != tool_result["toolCallId"]
+            or tool_plan["operationId"] != tool_result["operationId"]
+            or tool_invocation["name"] != tool_plan["toolName"]
+        ):
+            return "invalid_protocol_identity"
 
     return None
 

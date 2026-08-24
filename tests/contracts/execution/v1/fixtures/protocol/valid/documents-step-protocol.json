@@ -100,9 +100,16 @@
         "status": "succeeded",
         "output": {
           "kind": "inference",
-          "outcome": { "kind": "final_text", "text": "Contract fixture validated." }
+          "outcome": {
+            "kind": "final_text",
+            "text": "Contract fixture validated."
+          }
         },
-        "usage": { "promptTokens": 48, "completionTokens": 4, "totalTokens": 52 },
+        "usage": {
+          "promptTokens": 48,
+          "completionTokens": 4,
+          "totalTokens": 52
+        },
         "inference": {
           "effectiveModel": "qwen-local-test",
           "effectiveAdapter": null,
@@ -129,6 +136,70 @@
       }
     },
     {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-invocation.schema.json",
+      "instance": {
+        "schemaVersion": "tool-invocation/1",
+        "toolCallId": "tool-call-001",
+        "name": "documents.search",
+        "arguments": { "query": "canonical harness" },
+        "requester": {
+          "kind": "model",
+          "operationId": "operation-001",
+          "attemptId": "attempt-001"
+        },
+        "executionContext": {
+          "executionId": "exec-root-001",
+          "causedByEventId": "event-inference-finished-001",
+          "phase": "tool",
+          "dataClassification": "workspace"
+        }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-plan.schema.json",
+      "instance": {
+        "schemaVersion": "tool-plan/1",
+        "operationId": "operation-tool-001",
+        "toolCallId": "tool-call-001",
+        "toolName": "documents.search",
+        "descriptorVersion": "documents.search/1",
+        "normalizedArguments": { "query": "canonical harness", "limit": 10 },
+        "resources": [
+          {
+            "resourceKey": "workspace:default:documents",
+            "mode": "shared",
+            "kind": "document_collection"
+          }
+        ],
+        "effects": [],
+        "policyDecision": {
+          "decision": "allowed",
+          "rule": "workspace_read"
+        },
+        "confirmationRequirement": null,
+        "recoveryClass": "read_only_replayable",
+        "idempotencyKey": null,
+        "requiredCapabilities": ["tool.documents.search/1"],
+        "deadline": "2026-08-24T09:05:00Z",
+        "preparedAt": "2026-08-24T09:00:22Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-result.schema.json",
+      "instance": {
+        "schemaVersion": "tool-result/1",
+        "operationId": "operation-tool-001",
+        "toolCallId": "tool-call-001",
+        "status": "succeeded",
+        "content": "Found one matching document.",
+        "structuredContent": { "count": 1 },
+        "artifactRefs": [],
+        "sourceRefs": ["source-document-001"],
+        "effects": [],
+        "error": null
+      }
+    },
+    {
       "schemaId": "https://documents.local/harness/v1/schemas/worker-capability.schema.json",
       "instance": {
         "schemaVersion": "worker-capability/1",
@@ -147,7 +218,10 @@
         "workerId": "models-worker-001",
         "protocolVersion": "step-protocol/1",
         "inferenceServerId": "llama-server-001",
-        "runtimeVersions": { "documents-models": "test", "llama-server": "test" },
+        "runtimeVersions": {
+          "documents-models": "test",
+          "llama-server": "test"
+        },
         "installedArtifacts": ["model-qwen-local-test"],
         "effectiveStepCapabilities": [
           {

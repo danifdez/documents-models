@@ -8,10 +8,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"
     },
     "nullableId": {
-      "oneOf": [
-        { "$ref": "#/$defs/id" },
-        { "type": "null" }
-      ]
+      "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
     },
     "hash": {
       "type": "string",
@@ -22,22 +19,71 @@
       "format": "date-time"
     },
     "executionStatus": {
-      "enum": ["queued", "running", "waiting", "completed", "failed", "cancelled"]
+      "enum": [
+        "queued",
+        "running",
+        "waiting",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
     },
     "stepKind": {
       "enum": ["inference", "tool", "service", "code", "verification"]
     },
     "stepStatus": {
-      "enum": ["blocked", "ready", "running", "result_received", "completed", "failed", "cancelled"]
+      "enum": [
+        "blocked",
+        "ready",
+        "running",
+        "result_received",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
     },
     "stepAttemptStatus": {
-      "enum": ["leased", "running", "result_received", "expired", "cancelled", "failed", "closed"]
+      "enum": [
+        "leased",
+        "running",
+        "result_received",
+        "expired",
+        "cancelled",
+        "failed",
+        "closed"
+      ]
     },
     "stepResultStatus": {
       "enum": ["succeeded", "failed", "cancelled"]
     },
     "operationStatus": {
-      "enum": ["planned", "dispatched", "succeeded", "failed", "cancelled", "unknown"]
+      "enum": [
+        "planned",
+        "prepared",
+        "dispatched",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "unknown",
+        "not_executed"
+      ]
+    },
+    "recoveryClass": {
+      "enum": [
+        "read_only_replayable",
+        "idempotent",
+        "effect_checked",
+        "non_resumable"
+      ]
+    },
+    "effectClass": {
+      "enum": [
+        "none",
+        "local_reversible",
+        "local_destructive",
+        "external_reversible",
+        "external_irreversible"
+      ]
     },
     "operationKind": {
       "enum": [
@@ -55,7 +101,13 @@
       "enum": ["public", "workspace", "personal", "sensitive", "secret"]
     },
     "trustLevel": {
-      "enum": ["trusted_policy", "user_instruction", "untrusted_data", "tool_observation", "model_generated"]
+      "enum": [
+        "trusted_policy",
+        "user_instruction",
+        "untrusted_data",
+        "tool_observation",
+        "model_generated"
+      ]
     },
     "jsonValue": {
       "oneOf": [
@@ -101,7 +153,9 @@
       "type": "object",
       "required": ["component", "instanceId", "version"],
       "properties": {
-        "component": { "enum": ["documents-backend", "documents-models", "ia-browser"] },
+        "component": {
+          "enum": ["documents-backend", "documents-models", "ia-browser"]
+        },
         "instanceId": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 }
       },
@@ -111,14 +165,21 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": { "enum": ["user", "system", "model", "tool", "browser", "worker"] },
+        "type": {
+          "enum": ["user", "system", "model", "tool", "browser", "worker"]
+        },
         "id": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": true
     },
     "security": {
       "type": "object",
-      "required": ["dataClassification", "purpose", "allowedDestinations", "redactionApplied"],
+      "required": [
+        "dataClassification",
+        "purpose",
+        "allowedDestinations",
+        "redactionApplied"
+      ],
       "properties": {
         "dataClassification": { "$ref": "#/$defs/dataClassification" },
         "purpose": { "enum": ["operation", "diagnostic", "evaluation"] },
@@ -132,10 +193,7 @@
       "additionalProperties": true
     },
     "metricValue": {
-      "oneOf": [
-        { "type": "integer", "minimum": 0 },
-        { "const": "unknown" }
-      ]
+      "oneOf": [{ "type": "integer", "minimum": 0 }, { "const": "unknown" }]
     }
   }
 }

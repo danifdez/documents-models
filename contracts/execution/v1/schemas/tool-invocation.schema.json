@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/tool-invocation.schema.json",
+  "title": "Canonical tool invocation v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "toolCallId",
+    "name",
+    "arguments",
+    "requester",
+    "executionContext"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "tool-invocation/1" },
+    "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "arguments": { "type": "object" },
+    "requester": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["model", "deterministic"] },
+        "operationId": { "$ref": "common.schema.json#/$defs/id" },
+        "attemptId": { "$ref": "common.schema.json#/$defs/id" },
+        "component": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "kind": { "const": "model" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "operationId": true,
+              "attemptId": true
+            },
+            "required": ["operationId", "attemptId"]
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "kind": { "const": "deterministic" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "component": true },
+            "required": ["component"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "executionContext": {
+      "type": "object",
+      "required": ["executionId", "causedByEventId", "dataClassification"],
+      "properties": {
+        "executionId": { "$ref": "common.schema.json#/$defs/id" },
+        "turnId": { "$ref": "common.schema.json#/$defs/id" },
+        "causedByEventId": { "$ref": "common.schema.json#/$defs/id" },
+        "phase": { "type": "string", "minLength": 1 },
+        "userGoalRef": { "$ref": "common.schema.json#/$defs/id" },
+        "dataClassification": {
+          "$ref": "common.schema.json#/$defs/dataClassification"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

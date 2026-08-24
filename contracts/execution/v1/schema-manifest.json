@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:f112a6310e70d83989a8ad90cb65c167835fd5bda89cd13bf209b6bd3f9ed2b6",
+  "contractSetHash": "sha256:bfc11f338d9387fb5bababcfeed498b66daadb3343dc2989fee42f7921bd6104",
   "schemas": [
     {
       "path": "schemas/artifact-manifest.schema.json",
@@ -9,7 +9,7 @@
     },
     {
       "path": "schemas/common.schema.json",
-      "sha256": "sha256:9d03f545e112b81eafe2cbddfcd3902012646cbd28d47a096738746f97930b94"
+      "sha256": "sha256:99f8ce86f493c20b0681ddb304bcc89c9a5e2bdb32cf74d434b5e1f03ea70c93"
     },
     {
       "path": "schemas/error-envelope.schema.json",
@@ -74,6 +74,18 @@
     {
       "path": "schemas/step.schema.json",
       "sha256": "sha256:cf0d619da5210546b914a9c16fe96de06ec5fbbddddcb0e26bd1f8a174b5736c"
+    },
+    {
+      "path": "schemas/tool-invocation.schema.json",
+      "sha256": "sha256:9d3200162f02f53d527d884245ef1e43a3453b4174fad5d313a4979d92b01c4d"
+    },
+    {
+      "path": "schemas/tool-plan.schema.json",
+      "sha256": "sha256:f48ec3e9321ab2f8d9c67201112a1f1cdd3b2e4ea7e68ffa8885302a436d26f6"
+    },
+    {
+      "path": "schemas/tool-result.schema.json",
+      "sha256": "sha256:1578084cd45a35741c2fba9376ebec37290621a184c70fb5fc3ce0f0acdbd68c"
     },
     {
       "path": "schemas/worker-capability.schema.json",

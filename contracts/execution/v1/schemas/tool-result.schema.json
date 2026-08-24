@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/tool-result.schema.json",
+  "title": "Canonical tool result v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "toolCallId",
+    "status",
+    "content",
+    "structuredContent",
+    "artifactRefs",
+    "sourceRefs",
+    "effects",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "tool-result/1" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+    "status": {
+      "enum": ["succeeded", "failed", "cancelled", "unknown", "not_executed"]
+    },
+    "content": { "type": "string", "maxLength": 8000 },
+    "structuredContent": { "$ref": "common.schema.json#/$defs/jsonValue" },
+    "artifactRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifactRef" }
+    },
+    "sourceRefs": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["effectClass", "resourceKey", "status"],
+        "properties": {
+          "effectClass": { "$ref": "common.schema.json#/$defs/effectClass" },
+          "resourceKey": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["applied", "not_applied", "inconclusive"] },
+          "evidenceArtifactId": { "$ref": "common.schema.json#/$defs/id" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "error": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/error" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": { "status": { "const": "succeeded" } },
+        "required": ["status"]
+      },
+      "then": {
+        "type": "object",
+        "properties": { "error": { "type": "null" } }
+      },
+      "else": {
+        "type": "object",
+        "properties": { "error": { "$ref": "common.schema.json#/$defs/error" } }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": { "status": { "const": "unknown" } },
+        "required": ["status"]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "const": "effect_unknown" },
+              "message": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}
