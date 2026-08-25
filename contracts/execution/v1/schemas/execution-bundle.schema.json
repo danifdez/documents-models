@@ -6,7 +6,7 @@
   "required": [
     "bundleSchema", "bundleId", "rootExecutionId", "executionSchema", "product",
     "eventRange", "events", "artifacts", "environment", "redactionProfile",
-    "bundleCompleteness", "integrity", "purpose", "exportedAt", "manifestHash"
+    "bundleCompleteness", "integrity", "policySummary", "exportedAt", "manifestHash"
   ],
   "properties": {
     "bundleSchema": { "const": "execution-bundle/1" },
@@ -79,15 +79,78 @@
       },
       "additionalProperties": true
     },
-    "purpose": { "enum": ["diagnostic", "evaluation"] },
-    "accessScope": {
+    "policySummary": {
       "type": "object",
+      "required": [
+        "decision", "purpose", "consent", "allowedDestinations",
+        "retentionClass", "accessScope"
+      ],
       "properties": {
-        "ownerPrincipal": { "type": "string", "minLength": 1 },
-        "workspaceId": { "type": "string", "minLength": 1 }
+        "decision": { "const": "allow" },
+        "purpose": { "enum": ["diagnostic", "evaluation"] },
+        "consent": {
+          "type": "object",
+          "required": ["status", "basis"],
+          "properties": {
+            "status": { "enum": ["granted", "not_required"] },
+            "basis": {
+              "enum": [
+                "explicit_export_request", "workspace_policy", "local_policy"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "allowedDestinations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["documents", "ia-browser", "ai-train"] },
+          "uniqueItems": true
+        },
+        "retentionClass": { "enum": ["diagnostic", "evaluation"] },
+        "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "accessScope": {
+          "type": "object",
+          "required": ["ownerPrincipal"],
+          "properties": {
+            "ownerPrincipal": { "type": "string", "minLength": 1 },
+            "workspaceId": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
       },
-      "additionalProperties": true
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": { "purpose": { "const": "evaluation" } }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "consent": {
+                "type": "object",
+                "properties": { "status": { "const": "granted" } }
+              },
+              "retentionClass": { "const": "evaluation" }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "purpose": { "const": "diagnostic" } }
+          },
+          "then": {
+            "type": "object",
+            "properties": { "retentionClass": { "const": "diagnostic" } }
+          }
+        }
+      ],
+      "additionalProperties": false
     },
+    "purpose": false,
+    "accessScope": false,
     "exportedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
     "manifestHash": { "$ref": "common.schema.json#/$defs/hash" }
   },

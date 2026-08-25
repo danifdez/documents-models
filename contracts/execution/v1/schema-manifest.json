@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:c7011018a49e62c9d5d22cdb4d91400489732a1fc40fb7b21115ae65fb6ffbc8",
+  "contractSetHash": "sha256:5d239ecf66f5050ca0d32cceb6d0145c91df3ff482136e1b362e2d30e53248a2",
   "schemas": [
     {
       "path": "schemas/artifact-manifest.schema.json",
@@ -17,7 +17,7 @@
     },
     {
       "path": "schemas/execution-bundle.schema.json",
-      "sha256": "sha256:c54491f3a6d2bfa2dc054d666f2ffd4c9e6f5e93e158a5a90fa4bc24e344df95"
+      "sha256": "sha256:a23ecc81be4676d231c62e783f32db1a674d6433ec8b6f3c0ebc4edada8475fb"
     },
     {
       "path": "schemas/execution-event.schema.json",

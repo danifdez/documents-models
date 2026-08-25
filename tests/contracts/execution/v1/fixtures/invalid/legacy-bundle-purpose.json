@@ -1,0 +1,11 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    {
+      "op": "add",
+      "path": "/purpose",
+      "value": "evaluation"
+    }
+  ],
+  "expectedFailure": "schema"
+}

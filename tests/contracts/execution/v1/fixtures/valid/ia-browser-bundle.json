@@ -639,14 +639,25 @@
   },
   "integrity": {
     "eventsHash": "sha256:aa3387a121aaa59705a40a3b1861bf70d63fda077968eb4fdc744ccd18ae2306",
-    "schemaManifestHash": "sha256:c7011018a49e62c9d5d22cdb4d91400489732a1fc40fb7b21115ae65fb6ffbc8"
+    "schemaManifestHash": "sha256:5d239ecf66f5050ca0d32cceb6d0145c91df3ff482136e1b362e2d30e53248a2"
   },
-  "purpose": "evaluation",
-  "accessScope": {
-    "ownerPrincipal": "fixture-device-user"
+  "policySummary": {
+    "decision": "allow",
+    "purpose": "evaluation",
+    "consent": {
+      "status": "granted",
+      "basis": "explicit_export_request"
+    },
+    "allowedDestinations": [
+      "ai-train"
+    ],
+    "retentionClass": "evaluation",
+    "accessScope": {
+      "ownerPrincipal": "fixture-device-user"
+    }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:8718b2ad82ff243dfe407f75a49f9f629acba2e2f7422c6a2c8be4157def00b8",
+  "manifestHash": "sha256:b90ca7547b1be082aff1494ab440ead565233573ff4bfd58c01efed83f84bb97",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

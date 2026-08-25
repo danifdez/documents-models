@@ -1,0 +1,16 @@
+{
+  "base": "../valid/documents-bundle.json",
+  "mutations": [
+    {
+      "op": "replace",
+      "path": "/policySummary/purpose",
+      "value": "diagnostic"
+    },
+    {
+      "op": "replace",
+      "path": "/policySummary/retentionClass",
+      "value": "diagnostic"
+    }
+  ],
+  "expectedFailure": "invariant"
+}

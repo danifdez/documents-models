@@ -618,15 +618,26 @@
   },
   "integrity": {
     "eventsHash": "sha256:a393baf889d972fead0d847216c45ed878e71de9908f3f87a973c9263f89d503",
-    "schemaManifestHash": "sha256:c7011018a49e62c9d5d22cdb4d91400489732a1fc40fb7b21115ae65fb6ffbc8"
+    "schemaManifestHash": "sha256:5d239ecf66f5050ca0d32cceb6d0145c91df3ff482136e1b362e2d30e53248a2"
   },
-  "purpose": "evaluation",
-  "accessScope": {
-    "ownerPrincipal": "fixture-user",
-    "workspaceId": "fixture-workspace"
+  "policySummary": {
+    "decision": "allow",
+    "purpose": "evaluation",
+    "consent": {
+      "status": "granted",
+      "basis": "explicit_export_request"
+    },
+    "allowedDestinations": [
+      "ai-train"
+    ],
+    "retentionClass": "evaluation",
+    "accessScope": {
+      "ownerPrincipal": "fixture-user",
+      "workspaceId": "fixture-workspace"
+    }
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:bc374f29ee3239c97f96ae8d9471bfb36d62d01365556a3bef28259278c7a48f",
+  "manifestHash": "sha256:ed8731a05c83e3d1b08f048690b355d141f6e2cfeb159228d6cf39d80686eefd",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

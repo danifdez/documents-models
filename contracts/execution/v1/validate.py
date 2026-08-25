@@ -278,6 +278,10 @@ def validate_bundle_invariants(
     operation_finishes = set()
     event_types = set()
     source_events = {}
+    policy = bundle["policySummary"]
+    policy_purpose = policy["purpose"]
+    policy_destinations = set(policy["allowedDestinations"])
+    policy_retention = policy["retentionClass"]
 
     sequences = [event["sequence"] for event in events]
     expected_sequences = list(range(bundle["eventRange"]["firstSequence"], bundle["eventRange"]["lastSequence"] + 1))
@@ -304,6 +308,10 @@ def validate_bundle_invariants(
     for artifact_id, artifact in artifact_by_id.items():
         if str(artifact.get("storageRef", "")).startswith("bundle:") and artifact_id not in embedded:
             raise ContractError(f"embedded artifact body is absent: {artifact_id}")
+        if artifact["retentionClass"] != policy_retention:
+            raise ContractError(
+                f"artifact retention differs from bundle policy: {artifact_id}"
+            )
 
     for event in events:
         event_id = event["eventId"]
@@ -330,6 +338,13 @@ def validate_bundle_invariants(
         expected_hash = canonical_hash({key: value for key, value in event.items() if key != "contentHash"})
         if event["contentHash"] != expected_hash:
             raise ContractError(f"{event_id}: contentHash mismatch")
+        security = event["security"]
+        if security["purpose"] != policy_purpose:
+            raise ContractError(f"{event_id}: purpose differs from bundle policy")
+        if not policy_destinations.issubset(security["allowedDestinations"]):
+            raise ContractError(
+                f"{event_id}: destination differs from bundle policy"
+            )
 
         if event["eventType"] == "source.observed":
             payload = event["payload"]
