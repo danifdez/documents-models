@@ -1,24 +1,17 @@
 """Agentic date-extraction task.
 
-Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
-`summarize` and `key-point`:
+Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
 
-- Top-level invocation cleans the text (HTML → markdown, strip dense blobs),
-  splits it into section units, optionally drops auxiliary sections via the
-  shared relevance filter, and chunks the survivors. If the result is one
-  chunk, the full pipeline runs inline. Otherwise, one child `date-extraction`
-  execution per chunk is fanned out and the parent waits.
-- Each child receives a single chunk plus its global character offset and
-  returns a list of dated entries with global `charOffset` already applied.
-- Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; the reduce step concatenates, dedupes, and sorts.
+- The invocation cleans and filters the text before chunking it.
+- Each chunk receives its global character offset and returns dated entries;
+  the reduce step concatenates, deduplicates and sorts them.
 
 The worker extracts **in the document's own language**. The backend detects the
 language and enqueues the original text with it (see `detect-language-processor`:
 "Original language is preserved — no translation"), so `payload["language"]` is
-authoritative and is threaded down to dateparser, to the children and to the
-retry template. Hardcoding "en" here silently loses every relative expression
-and every spelled-out month in a non-English document.
+authoritative and is threaded down to dateparser. Hardcoding "en" here silently
+loses every relative expression and every spelled-out month in a non-English
+document.
 
 Per-chunk LLM fallback budget (`chunk_max_llm_fallbacks`, default 5) replaces
 the previous global `max_llm_fallbacks=10`, so long documents no longer get
@@ -668,30 +661,17 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     return _dedupe_and_sort(all_entries)
 
 
-def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "language": _language_of(payload),
-        "anchorDate": payload.get("anchorDate"),
-    }
-
-
-def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
+def _leaf_payload_extras(
+    chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     # Re-cleans the text (cheap and deterministic) because the chunk offsets
     # are measured against the cleaned document, not the raw payload.
     cleaned = strip_dense_blobs(html_to_markdown(payload.get("text") or ""))
     chunk_offsets = _chunk_offsets(cleaned, chunks)
-    return (
-        [{"_chunk_offset": off} for off in chunk_offsets],
-        {
-            "chunk_offsets": chunk_offsets,
-            "language": _language_of(payload),
-            "anchorDate": payload.get("anchorDate"),
-        },
-    )
+    return [{"_chunk_offset": off} for off in chunk_offsets]
 
 
 _SPEC = MapReduceSpec(
-    task_name="date-extraction",
     leaf_fn=_leaf,
     reduce_fn=_reduce,
     chunk_field="text",
@@ -700,8 +680,7 @@ _SPEC = MapReduceSpec(
     empty_value=[],
     list_results=True,
     chunks_fn=_chunks,
-    child_static_fn=_child_static,
-    fanout_extras_fn=_fanout_extras,
+    leaf_payload_extras_fn=_leaf_payload_extras,
 )
 
 
@@ -716,16 +695,13 @@ def extract_dates(
     state: Optional[Dict[str, Any]] = None,
     ctx=None,
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Reentrant handler. `state` is None on first invocation; populated by the
-    dispatcher when the parent is woken after all children complete.
+    """Extract dates from every inline chunk and merge the results.
 
     Payload (top-level):
         text: str — the document content (HTML or plain).
         language: str — the document's own language, as detected by the
             backend. Used verbatim for parsing; not translated.
         anchorDate: str | null — YYYY-MM-DD, the resource's publication date.
-
-    Children additionally carry `_chunk_idx` and `_chunk_offset`.
     """
     try:
         # Module-level binding on purpose: a function-local re-import would

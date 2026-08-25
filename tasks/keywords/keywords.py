@@ -1,17 +1,10 @@
 """Agentic keyword extraction.
 
-Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
-`summarize`, `key-point` and `date-extraction`:
+Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
 
-- Top-level invocation cleans the text (HTML → markdown, strip dense blobs),
-  runs the relevance filter to drop bibliography/appendix-like sections, and
-  chunks the survivors. Single chunk → run extraction inline; N chunks →
-  fan-out one `keywords` child per chunk and wait.
-- Each child detects `_chunk_idx` in payload and returns the *raw*
-  per-chunk candidate list. The parent merges them with the existing
-  frequency-then-first-appearance ranking.
-- Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; the reduce step produces the final ranked keyword list.
+- The invocation cleans and filters the text before chunking it.
+- Each chunk produces raw candidates, and the reduce step merges them using
+  frequency followed by first appearance.
 
 Defends against pathological inputs (data URIs, long base64 blobs) and
 truncates per-chunk LLM input to a safe character budget so a degenerate
@@ -214,23 +207,7 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     return _merge_pipeline(per_chunk_lists, payload.get("content", "") or "", cfg)
 
 
-def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
-    return {"targetLanguage": _target_lang(payload)}
-
-
-def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
-    return None, {
-        "targetLanguage": _target_lang(payload),
-        "raw_content": payload.get("content", "") or "",
-    }
-
-
-def _merge_payload(state: Dict[str, Any]) -> Dict[str, Any]:
-    return {"content": state.get("raw_content", "")}
-
-
 _SPEC = MapReduceSpec(
-    task_name="keywords",
     leaf_fn=_leaf,
     reduce_fn=_reduce,
     chunk_field="content",
@@ -239,9 +216,6 @@ _SPEC = MapReduceSpec(
     empty_value=[],
     list_results=True,
     chunks_fn=_chunks,
-    child_static_fn=_child_static,
-    fanout_extras_fn=_fanout_extras,
-    merge_payload_fn=_merge_payload,
 )
 
 
@@ -256,8 +230,7 @@ def keywords(
     state: Optional[Dict[str, Any]] = None,
     ctx=None,
 ) -> Dict[str, Any]:
-    """Reentrant handler. `state` is None on first invocation; populated by the
-    dispatcher when the parent is woken after all children complete."""
+    """Extract and merge keywords from every inline chunk."""
     try:
         cfg = get_task_config("keywords")
         return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)

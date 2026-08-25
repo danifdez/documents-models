@@ -1,17 +1,10 @@
 """Agentic key-point extraction.
 
-Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
-`summarize`:
+Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
 
-- Top-level invocation chunks the content. Single chunk → run the full
-  extraction + dedup + refine + rank pipeline inline. Multiple chunks → fan
-  out one `key-point` child execution per chunk and wait.
-- Each child detects it's running on a single chunk (via the `_chunk_idx` marker
-  in payload) and returns only the *raw* per-chunk candidates so the parent can
-  do cross-chunk semantic dedup, refine and ranking.
-- Once all children finish, the dispatcher re-invokes the handler with the
-  persisted state; the reduce step runs the cross-chunk pipeline and returns
-  the final `key_points` list.
+- The invocation chunks the content and extracts raw candidates from each chunk.
+- The reduce step performs cross-chunk semantic deduplication, refinement and
+  ranking, returning the final `key_points` list.
 
 Defends against pathological inputs (data URIs, base64 blobs) the same way as
 `summarize` so a single inline blob can't blow Phi's context window.
@@ -358,26 +351,7 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     )
 
 
-def _child_static(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
-    return {"targetLanguage": _target_lang(payload)}
-
-
-def _fanout_extras(chunks: List[str], payload: Dict[str, Any], cfg: Dict[str, Any]):
-    return None, {
-        "targetLanguage": _target_lang(payload),
-        "raw_content": payload.get("content", "") or "",
-    }
-
-
-def _merge_payload(state: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "content": state.get("raw_content", ""),
-        "targetLanguage": state.get("targetLanguage"),
-    }
-
-
 _SPEC = MapReduceSpec(
-    task_name="key-point",
     leaf_fn=_leaf,
     reduce_fn=_reduce,
     chunk_field="content",
@@ -386,9 +360,6 @@ _SPEC = MapReduceSpec(
     empty_value=[],
     list_results=True,
     chunks_fn=_chunks,
-    child_static_fn=_child_static,
-    fanout_extras_fn=_fanout_extras,
-    merge_payload_fn=_merge_payload,
 )
 
 
@@ -399,8 +370,7 @@ _SPEC = MapReduceSpec(
 
 @execution_handler("key-point")
 def key_points(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, ctx=None) -> Dict[str, Any]:
-    """Reentrant handler. `state` is None on first invocation; populated by the
-    dispatcher when the parent is woken after all children complete."""
+    """Extract and merge key points from every inline chunk."""
     try:
         cfg = get_task_config("key-point")
         return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)

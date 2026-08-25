@@ -1,13 +1,11 @@
-"""Reentrant entity-extraction task.
+"""Entity-extraction task.
 
-Runs on the shared map-reduce state machine (`lib.llm.map_reduce`), like
-`keywords` and `date-extraction`:
+Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
 
 - The root invocation cleans the text, splits it into section units and chunks
-  them. One chunk runs inline; several fan out one child execution per chunk.
-- Each child returns the entities of its own chunk.
-- Once every child is done the dispatcher re-invokes the handler with the
-  persisted state and the reduce step concatenates and dedupes.
+  them.
+- Each chunk returns its entities and the reduce step concatenates and
+  deduplicates them.
 
 Chunking is not an optimisation here: the previous single-shot version pushed
 the whole document through `truncate_for_llm`, so everything past the model's
@@ -138,7 +136,6 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
 
 
 _SPEC = MapReduceSpec(
-    task_name="entity-extraction",
     leaf_fn=_leaf,
     reduce_fn=_reduce,
     chunk_field="text",
@@ -157,10 +154,6 @@ def entities(
     ctx=None,
 ) -> Dict[str, Any]:
     """Extract named entities from text using the local LLM.
-
-    Reentrant: `state` is None on the first invocation and carries
-    `phase == "merging"` when the dispatcher wakes the parent after its
-    children finish.
 
     Payload:
         texts: list of strings or {text: string} dicts — or `text`, a single one.

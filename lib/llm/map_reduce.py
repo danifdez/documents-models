@@ -6,7 +6,7 @@ writing execution state in PostgreSQL.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from lib.llm.text import build_chunks, word_count
 from lib.llm.unit_filters import build_units_filter
@@ -14,20 +14,16 @@ from lib.llm.unit_filters import build_units_filter
 LeafFn = Callable[[str, Dict[str, Any], Dict[str, Any]], Any]
 ReduceFn = Callable[[List[Any], Dict[str, Any], Dict[str, Any]], Any]
 ChunksFn = Callable[[Dict[str, Any], Dict[str, Any], bool], List[str]]
-ChildStaticFn = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
-FanoutExtrasFn = Callable[
+LeafPayloadExtrasFn = Callable[
     [List[str], Dict[str, Any], Dict[str, Any]],
-    Tuple[Optional[List[Dict[str, Any]]], Dict[str, Any]],
+    Optional[List[Dict[str, Any]]],
 ]
-MergePayloadFn = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
 @dataclass(frozen=True)
 class MapReduceSpec:
-    task_name: str
     leaf_fn: LeafFn
     reduce_fn: ReduceFn
-    carry_fields: Tuple[str, ...] = ()
     chunk_field: str = "content"
     units_filters: Sequence[str] = ()
     recursive_merge: bool = True
@@ -35,9 +31,7 @@ class MapReduceSpec:
     empty_value: Any = ""
     list_results: bool = False
     chunks_fn: Optional[ChunksFn] = None
-    child_static_fn: Optional[ChildStaticFn] = None
-    fanout_extras_fn: Optional[FanoutExtrasFn] = None
-    merge_payload_fn: Optional[MergePayloadFn] = None
+    leaf_payload_extras_fn: Optional[LeafPayloadExtrasFn] = None
 
 
 def run_map_reduce(
@@ -48,6 +42,11 @@ def run_map_reduce(
     spec: MapReduceSpec,
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """Run a self-contained step inline.
+
+    ``_state`` and ``_ctx`` remain in the signature for compatibility with
+    handlers registered before durable fan-out moved to the backend.
+    """
     return _run_inline(payload, spec=spec, cfg=cfg)
 
 
@@ -74,8 +73,8 @@ def _run_inline(
         return {spec.result_key: spec.empty_value}
 
     extras = None
-    if spec.fanout_extras_fn is not None:
-        extras, _ = spec.fanout_extras_fn(chunks, payload, cfg)
+    if spec.leaf_payload_extras_fn is not None:
+        extras = spec.leaf_payload_extras_fn(chunks, payload, cfg)
 
     partials: List[Any] = []
     for index, chunk in enumerate(chunks):
