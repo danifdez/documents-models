@@ -11,6 +11,7 @@ from lib.execution.protocol_client import (
     WorkerAuthenticationError,
 )
 from lib.execution.step_executor import execute_assignment
+from lib.execution.code_identity import code_fingerprint
 from lib.execution.runtime_identity import runtime_fingerprint
 from utils.device import (
     CPU_COUNT,
@@ -59,6 +60,7 @@ def _metadata() -> dict:
         "hasCuda": HAS_CUDA,
         "gpuName": GPU_NAME,
         "vramGb": VRAM_GB,
+        "codeFingerprint": code_fingerprint(),
         "runtimeFingerprint": runtime_fingerprint(),
     }
 
@@ -140,6 +142,7 @@ def main() -> None:
                         "attemptId": assignment["attemptId"],
                         "stepKind": assignment["stepKind"],
                         "status": "cancelled",
+                        "codeFingerprint": code_fingerprint(),
                         "runtimeFingerprint": runtime_fingerprint(),
                         "artifactRefs": [],
                         "error": None,

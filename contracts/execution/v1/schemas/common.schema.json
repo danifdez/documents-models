@@ -158,6 +158,7 @@
         },
         "instanceId": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 },
+        "codeFingerprint": { "$ref": "#/$defs/hash" },
         "runtimeFingerprint": { "$ref": "#/$defs/hash" }
       },
       "additionalProperties": true

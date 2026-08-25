@@ -20,6 +20,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -42,7 +43,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:d13a37511e0aa49da564e0e776cbcee493623a5fa55afe66699d230f4f6fcc55"
+      "contentHash": "sha256:6a8ebdb8bce04c79df9541c90569c236278df0ce09aae886dbbce93991cc1dc7"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -57,6 +58,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -81,7 +83,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:9bbc1c8e7c76ddf027791cab338bdbeda8710775a6befcfa2d308d49191bd408"
+      "contentHash": "sha256:9ee16ec8911a2fbdd51e8b7941baa5b7740dff8750fd90b5b62e472cc6862f04"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -96,6 +98,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -122,7 +125,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:d3c6fc67aba3c3e9b9e3876b592d1e2fda2c725f2bf42c66e04625ef0b8e01f3"
+      "contentHash": "sha256:9eaa725cfdb56464fe26f8ddd64e1ed021a3af71512287d9af4c560a549a7a11"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -137,6 +140,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -172,7 +176,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:c140e846d8079667cb9f36d2a4bea57c8cafe33c11e7261b27e8c25c894abba4"
+      "contentHash": "sha256:22f194019ceb7320f6bdf7ba93a3d30f5c4bf9fb2bf6a221665e46d786807aec"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -187,6 +191,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -214,7 +219,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:a396e4acf530d7ab5bbad0ef36eaaf2e916f3dd13e92580d2a68b69e6b36c467"
+      "contentHash": "sha256:26ed1b4d08eea4fdc0ffdef1830fb73ac1e873ae8b70d9b5c457538debd468da"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -229,6 +234,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -265,7 +271,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:fcf0fac39433189d88bf93e06d1edc4720e169b4b11346073b177914cf0038ba"
+      "contentHash": "sha256:a8d598a88f4670ec8a6ebfe24eebcc529e28c840cc3680eac059942639b806fb"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -280,6 +286,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -315,7 +322,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:8561df5f98d13906e00554c957aa1b581b20d5622873081826967a4861e87154"
+      "contentHash": "sha256:bf0cabdf6b8d3d0bd7dff427d07d687dc7a19ae377fbadf07ab183755ff736ea"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -330,6 +337,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -360,7 +368,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:c1719e6c34b5dceb653246547759c57e77d4cdf7907c156c55cec513ce40a003"
+      "contentHash": "sha256:12e0deb8759d256bf298f29a90efe590cfaaf4f91d15109e1405e105ffbdcf0d"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -375,6 +383,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -408,7 +417,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:084c02febe932045adaab0af92e732e847f5802c06dd9a59856aea9f42d1198b"
+      "contentHash": "sha256:868f5e9b54eab09b2125707ed129d85c65eac32144ed1c9f9bf1496f8543121f"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -423,6 +432,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -451,7 +461,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:7cd04fe9a86da2277b51e888ebeda51f28edaefddfc2ccaf7eaf900ea5de3114"
+      "contentHash": "sha256:f7ddafc01ecb79156a0dcfeec817452b605edf980d2c79b1ddae5a3552755a9b"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -466,6 +476,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -504,7 +515,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:0dd892244896fdecd0b158ae82eebb4e60a8fc155ffe147f1418597003dee10a"
+      "contentHash": "sha256:c8fa7617d55d95e58430afac85f9393795a6f4c39c6ab422b0fcd66771622759"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -519,6 +530,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -547,7 +559,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:1239acb58ea17da5f2f33b0eea457c6a61b233a612fa4db3286cab3171b6abee"
+      "contentHash": "sha256:af39e24e86744a4dda3c80b02bdb23a983c93070f4fd8ad8a55daf8b669fa6d0"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -562,6 +574,7 @@
         "component": "ia-browser",
         "instanceId": "browser-fixture",
         "version": "fixture",
+        "codeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
@@ -593,7 +606,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:6e6da2cab484c2ec3202c75ceee4c724a19b211abb23b44c9f54a63cd1c438ec"
+      "contentHash": "sha256:64c7fe56c7ba1140154f8f6999f097a828028f97812826ea4e3c2960ca9bf436"
     }
   ],
   "artifacts": [
@@ -635,7 +648,9 @@
     }
   ],
   "environment": {
-    "browserRevision": "fixture",
+    "codeFingerprints": [
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
     "promptPackages": [
       "fixture-prompt"
     ],
@@ -658,8 +673,8 @@
     "missing": []
   },
   "integrity": {
-    "eventsHash": "sha256:4be49fb433ef247e0150dd214a3fa1cc35b0349c73087c141ffcc650cd248057",
-    "schemaManifestHash": "sha256:c0a8ba6c16eac96501f021f38c7da5068703f6436b44cbafa3a8931ab730da33"
+    "eventsHash": "sha256:a35d7d1f74736f4a094bddcc2e35c7d7854b750d5e5c61cf5c018a54ba1919c7",
+    "schemaManifestHash": "sha256:76f4d8995847602216b1e687c554d9d336ba791dd864cc96c310d5bd9abafd46"
   },
   "policySummary": {
     "decision": "allow",
@@ -677,7 +692,7 @@
     }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:a2a4a27b17ad0ca8e93f27c9ea001faf1299cb60ac69698410c6e5bce66b7f41",
+  "manifestHash": "sha256:80888c11e5c67ccd484e56fc7cfb4cd4e39719cd79e87bbdb3ed4f797dbf2375",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

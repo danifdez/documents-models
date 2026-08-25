@@ -48,12 +48,11 @@
     "environment": {
       "type": "object",
       "required": [
-        "promptPackages", "toolVersions", "modelFingerprints",
+        "codeFingerprints", "promptPackages", "toolVersions", "modelFingerprints",
         "adapterFingerprints", "runtimeFingerprints", "featureFlags"
       ],
       "properties": {
-        "documentsRevision": { "type": "string" },
-        "browserRevision": { "type": "string" },
+        "codeFingerprints": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/hash" }, "uniqueItems": true },
         "promptPackages": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "toolVersions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "modelFingerprints": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },

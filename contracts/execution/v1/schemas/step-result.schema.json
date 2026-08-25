@@ -23,6 +23,7 @@
     "attemptId": { "$ref": "common.schema.json#/$defs/id" },
     "stepKind": { "$ref": "common.schema.json#/$defs/stepKind" },
     "status": { "$ref": "common.schema.json#/$defs/stepResultStatus" },
+    "codeFingerprint": { "$ref": "common.schema.json#/$defs/hash" },
     "runtimeFingerprint": { "$ref": "common.schema.json#/$defs/hash" },
     "output": {
       "type": "object",
@@ -177,13 +178,14 @@
         "required": ["stepKind"]
       },
       "then": {
-        "required": ["output", "usage", "inference"],
+        "required": ["output", "usage", "inference", "codeFingerprint"],
         "properties": {
           "output": {
             "type": "object",
             "required": ["outcome"],
             "properties": { "kind": { "const": "inference" }, "outcome": {} }
           },
+          "codeFingerprint": {},
           "usage": {},
           "inference": {}
         }

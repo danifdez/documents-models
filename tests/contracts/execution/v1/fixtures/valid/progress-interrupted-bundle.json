@@ -898,7 +898,9 @@
     }
   ],
   "environment": {
-    "documentsRevision": "fixture",
+    "codeFingerprints": [
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
     "promptPackages": [
       "fixture-prompt"
     ],
@@ -924,7 +926,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:60e4475278eb5da7cadbc7eee0e5cbab5cda3f9144130e7617c6dd53e5ce0cdd",
-    "schemaManifestHash": "sha256:c0a8ba6c16eac96501f021f38c7da5068703f6436b44cbafa3a8931ab730da33"
+    "schemaManifestHash": "sha256:76f4d8995847602216b1e687c554d9d336ba791dd864cc96c310d5bd9abafd46"
   },
   "policySummary": {
     "decision": "allow",
@@ -943,7 +945,7 @@
     }
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:0f8a40814c47664b40f84b5a006628b4d29a2d3c6f6f9962e0fe1863fdbcaf02",
+  "manifestHash": "sha256:b212a22bb28f4190b009447299a42893ee60da6d23bd14275a572e725c5cf47d",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

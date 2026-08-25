@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:c0a8ba6c16eac96501f021f38c7da5068703f6436b44cbafa3a8931ab730da33",
+  "contractSetHash": "sha256:76f4d8995847602216b1e687c554d9d336ba791dd864cc96c310d5bd9abafd46",
   "schemas": [
     {
       "path": "schemas/artifact-manifest.schema.json",
@@ -9,7 +9,7 @@
     },
     {
       "path": "schemas/common.schema.json",
-      "sha256": "sha256:319dc82ad875dcc15d001897046671c1e157443ff6a78261cd4f778e72964fa1"
+      "sha256": "sha256:353a359844a3eaf95ada8faff55dd34812c70f1bd467ab7fed5e430a9bbd6918"
     },
     {
       "path": "schemas/error-envelope.schema.json",
@@ -17,7 +17,7 @@
     },
     {
       "path": "schemas/execution-bundle.schema.json",
-      "sha256": "sha256:b079741ce7d2470c6b0c1a6a3da527776aa91030454107f9e2f4ef9b04b1c5ba"
+      "sha256": "sha256:f72a470db363095c7de00584eca5709c685673d92ec318420bc328a8b18ae27f"
     },
     {
       "path": "schemas/execution-event.schema.json",
@@ -69,7 +69,7 @@
     },
     {
       "path": "schemas/step-result.schema.json",
-      "sha256": "sha256:4fe91fbe9a9c05ffee0b1a825fd6811cc828879224d0d585fcb922bc2e2a19d1"
+      "sha256": "sha256:bf398ba2062f3e0767f8946588b71fb53e8c4946a17c4cf8cb94eb3b9e4d62c3"
     },
     {
       "path": "schemas/step.schema.json",

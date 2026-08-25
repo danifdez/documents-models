@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "versionScope": [
+    "common/**",
+    "config/**",
+    "config.py",
+    "database/**",
+    "lib/**",
+    "rag/**",
+    "services/**",
+    "tasks/**",
+    "utils/**"
+  ],
+  "exclude": [
+    "models/**",
+    "**/*.gguf",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/build/**",
+    ".git/**",
+    ".env",
+    "**/.env",
+    ".env.*",
+    "**/.env.*",
+    "**/*.pem",
+    "**/*.key"
+  ]
+}

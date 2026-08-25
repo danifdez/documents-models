@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
+from lib.execution.code_identity import code_fingerprint
 from lib.execution.outcome import InferenceOutcome
 from lib.execution.runtime_identity import runtime_fingerprint
 from lib.llm.config import get_task_config
@@ -28,6 +29,7 @@ def execute_assignment(
         "operationId": assignment["operationId"],
         "attemptId": assignment["attemptId"],
         "stepKind": step_kind,
+        "codeFingerprint": code_fingerprint(),
         "runtimeFingerprint": runtime_fingerprint(),
         "artifactRefs": [],
     }

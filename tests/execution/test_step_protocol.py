@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from common.execution_registry import TASK_HANDLERS
+from lib.execution.code_identity import code_fingerprint
 from lib.execution.protocol_client import ExecutionProtocolClient
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
@@ -101,6 +102,7 @@ class StepProtocolTest(unittest.TestCase):
             },
         )
         self.assertIsNone(result["error"])
+        self.assertEqual(result["codeFingerprint"], code_fingerprint())
         self.assertEqual(result["runtimeFingerprint"], runtime_fingerprint())
 
     def test_runtime_fingerprint_changes_with_the_dependency_lock(self):
