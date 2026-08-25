@@ -17,9 +17,7 @@ from config import (
 
 
 def _memory_db_connection():
-    # Same effective parameters as Execution.get_connection(), but kept local:
-    # reusing it would instantiate the Execution singleton, which opens an extra
-    # persistent connection as a side effect.
+    # Memory queries use their own short-lived domain connection.
     return psycopg.connect(
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,

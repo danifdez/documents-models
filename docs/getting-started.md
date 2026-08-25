@@ -36,7 +36,9 @@ Running this service on its own, without `manage`:
 ```bash
 source .venv/bin/activate
 python -m services.llama_server     # starts the engine in the foreground
-python executions.py                      # the worker, which talks to it
+BACKEND_URL=http://localhost:3000 \
+MODELS_ENROLLMENT_TOKEN=<backend-token> \
+python executions.py                # registers with Backend and claims steps
 ```
 
 ## Installation
@@ -48,7 +50,7 @@ cd models
 chmod +x install && ./install
 ```
 
-The script creates `config/tasks.json` from defaults (prompting for database, vector tables, and storage settings), sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv with `source .venv/bin/activate` and start the worker with `python executions.py`.
+The script creates `config/tasks.json` from defaults, prompts for task-domain database and storage settings, sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv and start the worker through the root `manage` command or with the standalone environment shown above.
 
 ## Running the service
 
@@ -78,16 +80,15 @@ The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `in
 
 ## Verifying the Service
 
-Once started, the service logs hardware info, registers the worker, and then prints:
+Once started, the service logs hardware info and registers the worker through Backend:
 
 ```
-Worker registered: <name> (<id>)
-Capabilities: ['llm', 'embeddings']
-Execution service started. Polling for queued executions...
+Worker registered through Backend: <name> (<id>)
 ```
 
-It polls the PostgreSQL `executions` table every 1 second for queued executions. To verify running:
+To verify the service:
 
-1. Insert a test execution into the `executions` table with `status = 'queued'` and a valid `type` (e.g., `detect-language`).
-2. Watch the service logs for `Processing execution: <id> of type: <type>`.
-3. Check the `executions` table — the row should have `status = 'completed'` and a populated `result` column.
+1. Start Backend and Models with the same `MODELS_ENROLLMENT_TOKEN`.
+2. Create a supported execution through the Backend API or application UI.
+3. Confirm that Models registers and Backend grants a compatible step.
+4. Confirm that Models logs the terminal result ACK. Models must never read or update execution control-plane tables directly.

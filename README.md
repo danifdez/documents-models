@@ -5,12 +5,12 @@
 ## Overview
 
 The models service is the AI/ML running layer of the [documents](https://github.com/danifdez/documents-dev) project.
-It runs as a background worker that picks up executions from a PostgreSQL queue, processes documents using a set of
-AI and NLP models, and writes results back for the rest of the system to consume.
+It runs as a background worker that receives fenced step assignments from Documents Backend over an authenticated
+HTTP protocol, processes documents using AI and NLP models, and retries result delivery until Backend acknowledges it.
 
 It is designed to run alongside the backend service and can be deployed on any machine — including CPU-only,
-GPU-accelerated, or multi-worker setups. Workers automatically detect hardware capabilities and only claim
-the executions they are able to handle.
+GPU-accelerated, or multi-worker setups. Workers report hardware and task capabilities so Backend only assigns
+compatible steps.
 
 ## What it does
 
@@ -34,16 +34,12 @@ the executions they are able to handle.
 
 ### Infrastructure
 
-- **Priority queue** — Executions are completed in order: `high` → `normal` → `background`. Background executions run
-  only when the queue is idle or during configured off-peak hours.
-- **Multi-worker support** — Multiple instances can run on different machines, all sharing the same
-  PostgreSQL database. Load is distributed automatically.
+- **Backend-owned scheduling** — Backend applies priority, dependency, deadline and retry policy before granting a step.
+- **Multi-worker support** — Multiple instances can run on different machines and receive compatible work from Backend.
 - **Hardware detection** — At startup each worker detects CPU cores, RAM, GPU and VRAM, and registers
   its capabilities. Workers without a GPU or LLM skip executions that require them.
-- **Atomic execution claiming** — Uses `SELECT FOR UPDATE SKIP LOCKED` to prevent two workers from running
-  the same execution.
-- **Heartbeat & recovery** — Workers send a heartbeat every 15 seconds. If a worker dies mid-execution,
-  the execution is automatically requeued after 60 seconds.
+- **Fenced attempts** — Every assignment carries a lease-bound attempt identity; Backend rejects stale results.
+- **Heartbeat & recovery** — Workers heartbeat through Backend, persist undelivered results locally and resend them until a terminal ACK.
 
 ## Models used
 

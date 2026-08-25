@@ -4,8 +4,7 @@
     "port": 5432,
     "name": "documents",
     "user": "postgres",
-    "password": "example",
-    "executions_table": "executions"
+    "password": "example"
   },
   "vectors": {
     "rag_table": "rag_chunks",
@@ -43,9 +42,7 @@
     "name": "",
     "heartbeat_interval": 15,
     "disable_llm": false,
-    "disable_embeddings": false,
-    "background_hours_start": 2,
-    "background_hours_end": 6
+    "disable_embeddings": false
   },
   "features": {
     "entities": true,

@@ -19,10 +19,13 @@ Per-task overrides can also be placed in `config/tasks/<task-name>/`.
   "port": 5432,
   "name": "documents",
   "user": "postgres",
-  "password": "example",
-  "executions_table": "executions"
+  "password": "example"
 }
 ```
+
+This connection is only for task-domain stores such as datasets, pgvector and
+the entity graph. Execution scheduling, attempts, leases and results use the
+authenticated Backend protocol and have no table setting in Models.
 
 ### Vectors
 
@@ -92,9 +95,7 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
   "name": "",
   "heartbeat_interval": 15,
   "disable_llm": false,
-  "disable_embeddings": false,
-  "background_hours_start": 2,
-  "background_hours_end": 6
+  "disable_embeddings": false
 }
 ```
 
@@ -105,10 +106,9 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
 | `heartbeat_interval` | `15` | Seconds between heartbeat updates |
 | `disable_llm` | `false` | Disable all LLM capabilities on this worker |
 | `disable_embeddings` | `false` | Disable all embedding capabilities on this worker |
-| `background_hours_start` | `2` | Hour (0-23) when background window opens |
-| `background_hours_end` | `6` | Hour (0-23) when background window closes |
 
-`background` priority executions are completed only when no `high`/`normal` executions are queued, **or** when the current time falls inside the background window.
+Backend owns priority, fairness, deadlines and retry scheduling. Models does
+not expose queue or background-window configuration.
 
 ## tasks.json
 
@@ -170,6 +170,6 @@ Create `config/tasks/<task-type>/config.json` with parameter overrides. These ar
 
 ## Installation
 
-Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for database, vector table, and storage settings.
+Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for task-domain database, embedding and storage settings.
 
 See [creating-tasks.md](creating-tasks.md) for how to add new tasks.

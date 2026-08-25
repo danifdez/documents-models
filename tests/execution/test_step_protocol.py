@@ -35,6 +35,16 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
         self.assertIn("agent-chat", executions.CAPABILITIES)
 
+    def test_worker_does_not_advertise_disabled_inference_tasks(self):
+        with patch(
+            "worker.capabilities.get_worker_config",
+            return_value={"disable_llm": True, "disable_embeddings": True},
+        ):
+            self.assertEqual(
+                executions.effective_task_capabilities(),
+                ["detect-language"],
+            )
+
     def test_registers_once_and_uses_worker_credential(self):
         requests = []
 

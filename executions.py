@@ -27,6 +27,10 @@ from worker.identity import (
     WORKER_NAME,
     worker_data_dir,
 )
+from worker.capabilities import (
+    detect_worker_capabilities,
+    get_supported_task_types,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,13 +40,13 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1
 LEASE_DURATION_MS = 30_000
-CAPABILITIES = [
+MIGRATED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
     "detect-language",
     "summarize-map",
     "summarize-reduce",
-]
+)
 STEP_KINDS = ["service", "code", "inference"]
 ACK_CODES = {
     "received",
@@ -51,6 +55,20 @@ ACK_CODES = {
     "result_conflict",
     "rejected",
 }
+
+
+def effective_task_capabilities() -> list[str]:
+    supported = set(
+        get_supported_task_types(detect_worker_capabilities())
+    )
+    return [
+        task_type
+        for task_type in MIGRATED_TASK_TYPES
+        if task_type in supported
+    ]
+
+
+CAPABILITIES = effective_task_capabilities()
 
 
 def _metadata() -> dict:
