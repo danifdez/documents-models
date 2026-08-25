@@ -410,6 +410,52 @@ See [Keywords](./tasks/keywords.md) for both payloads and failure behavior.
 
 ---
 
+## date-extraction-map / date-extraction-reduce
+
+Executes one stage of the durable date-extraction workflow created by Backend.
+
+**Map input:**
+
+```json
+{
+  "content": "The mission launched on 20 July 1969.",
+  "language": "en",
+  "anchorDate": null,
+  "charOffset": 0
+}
+```
+
+**Output:**
+
+```json
+{
+  "dates": [
+    {
+      "rawExpression": "20 July 1969",
+      "date": "1969-07-20",
+      "endDate": null,
+      "precision": "day",
+      "charOffset": 24,
+      "contextSnippet": "The mission launched on 20 July 1969.",
+      "unresolvedReason": null
+    }
+  ]
+}
+```
+
+- `date-extraction-map` accepts one chunk of at most 1,500 words, performs one
+  grammar-constrained detection inference and resolves the detected spans with
+  `dateparser`.
+- Relative expressions require `anchorDate`; without it they remain explicit
+  with `unresolvedReason: "missing_anchor"`.
+- Backend supplies the accepted date arrays to `date-extraction-reduce` as
+  ordered `partials`. The reduce step is deterministic and admits empty map
+  arrays because a valid chunk may contain no dates.
+- Backend owns HTML extraction, chunking, dependencies, retries and root
+  finalization. There is no `date-extraction` handler in Models.
+
+---
+
 ## embedding
 
 Generates a vector embedding for a single text input.

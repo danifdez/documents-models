@@ -34,7 +34,7 @@ _TASK_DIR_MAP = {
     "detect-language": "detect_language",
     "entity-extraction-map": "entities",
     "keywords-map": "keywords",
-    "date-extraction": "dates",
+    "date-extraction-map": "dates",
     "document-extraction": "extraction",
     "ingest-content": "ingest",
     "delete-vectors": "ingest",

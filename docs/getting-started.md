@@ -70,11 +70,11 @@ The service uses several AI models. Most are downloaded automatically from Huggi
 | `intfloat/multilingual-e5-small` | Text embeddings (384-dim, multilingual) | sentence-transformers (auto on first request) |
 | `facebook/mbart-large-50-one-to-many-mmt` | Summarization | Hugging Face transformers (auto on first request) |
 | `Helsinki-NLP/opus-mt-{src}-{tgt}` | Translation (per language pair) | Hugging Face transformers (auto on first request) |
-| GGUF LLM (see `tasks.json`, default: Qwen3-8B) | Key points, keywords, Q&A | Auto-downloaded from `Qwen/Qwen3-8B-GGUF` into `models/` by `install` / `setup_models.py` |
+| GGUF LLM (see `tasks.json`, default: Qwen3-8B) | Summaries, entities, dates, key points, keywords, Q&A | Auto-downloaded from `Qwen/Qwen3-8B-GGUF` into `models/` by `install` / `setup_models.py` |
 
 ### LLM Setup
 
-The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `install` script during local setup, and by `setup_models.py --setup` when the standalone bundle is installed by the Electron app. The filename used is whatever is declared in `config/tasks.json` under the `keywords-map`, `key-point-map`, `ask`, `summarize-map`, and `summarize-reduce` task entries (default: `Qwen3-8B-Q5_K_M.gguf`). If the file is missing at runtime, the affected inference step fails unless that task explicitly defines a fallback.
+The base LLM GGUF is auto-downloaded into the `models/` subdirectory: by the `install` script during local setup, and by `setup_models.py --setup` when the standalone bundle is installed by the Electron app. The filename used is whatever is declared in `config/tasks.json` under the `keywords-map`, `key-point-map`, `date-extraction-map`, `ask`, `summarize-map`, and `summarize-reduce` task entries (default: `Qwen3-8B-Q5_K_M.gguf`). If the file is missing at runtime, the affected inference step fails unless that task explicitly defines a fallback.
 
 **Optional LoRA adapters.** To fine-tune any LLM task, place a LoRA adapter `.gguf` in `models/` and add `lora_model` (and optionally `lora_scale`) to the task entry. See [configuration.md](configuration.md#tasksjson) for details.
 

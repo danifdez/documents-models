@@ -19,7 +19,6 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # proportion to how long each download really takes. The GGUF LLM dwarfs the rest.
 STEP_WEIGHTS = {
     "embeddings": 0.15,
-    "summarization": 1.0,
     "whisper": 0.5,
     "llm": 5.7,
 }
@@ -56,33 +55,21 @@ def setup():
         model = embedding_task.get("model", "intfloat/multilingual-e5-small")
         steps.append(("embeddings", model, download_embedding))
 
-    # Summarization model — only seq2seq HF repos here; GGUF/LLM summarizers are
-    # handled by the GGUF step below (download_seq2seq would treat the .gguf
-    # filename as a repo_id and 401).
-    summarize_task = tasks.get("summarize", {})
-    summarize_model = summarize_task.get("model", "facebook/mbart-large-50-one-to-many-mmt")
-    if (
-        summarize_task.get("enabled", False)
-        and summarize_task.get("type") != "llm"
-        and not summarize_model.endswith(".gguf")
-    ):
-        steps.append(("summarization", summarize_model, download_seq2seq))
-
     # Whisper (transcription)
     transcribe_task = tasks.get("transcribe", {})
     if transcribe_task.get("enabled", False):
         model = transcribe_task.get("model", "base")
         steps.append(("whisper", model, download_whisper))
 
-    # LLM (GGUF) — download from HuggingFace
-    llm_tasks = ["keywords-map", "key-point-map", "ask", "summarize"]
-    for task_name in llm_tasks:
-        task = tasks.get(task_name, {})
+    # Several steps normally share one GGUF, but distinct configured files are
+    # all materialized so task discovery and model setup cannot drift apart.
+    gguf_models = set()
+    for task in tasks.values():
         if task.get("enabled", False) and task.get("type") == "llm":
             model = task.get("model", "")
-            if model and model.endswith(".gguf"):
+            if model and model.endswith(".gguf") and model not in gguf_models:
+                gguf_models.add(model)
                 steps.append(("llm", model, download_gguf))
-                break  # Only need to download once
 
     # LoRA adapters are placed manually; warn if configured but missing
     check_lora_files(tasks)
@@ -120,12 +107,6 @@ def download_embedding(model_name, report=None):
     SentenceTransformer(model_name)
 
 
-
-
-def download_seq2seq(model_name, report=None):
-    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-    AutoTokenizer.from_pretrained(model_name)
-    AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 
 def download_whisper(model_size, report=None):

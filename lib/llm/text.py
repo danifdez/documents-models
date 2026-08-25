@@ -3,8 +3,7 @@
 Two groups:
 
 - `strip_thinking`: post-processing of a chat reply.
-- The rest: the input pipeline of the agentic content tasks (summarize,
-  keywords, key-point, date-extraction). They clean a document
+- The rest: the input pipeline of the content tasks. They clean a document
   (HTML → markdown, drop dense blobs), split it into semantic units and pack
   those units into chunks that fit the LLM context.
 

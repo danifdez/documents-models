@@ -40,6 +40,9 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("entity-extraction-map", executions.CAPABILITIES)
         self.assertIn("entity-extraction-reduce", executions.CAPABILITIES)
         self.assertNotIn("entity-extraction", executions.CAPABILITIES)
+        self.assertIn("date-extraction-map", executions.CAPABILITIES)
+        self.assertIn("date-extraction-reduce", executions.CAPABILITIES)
+        self.assertNotIn("date-extraction", executions.CAPABILITIES)
         self.assertIn("keywords-map", executions.CAPABILITIES)
         self.assertIn("keywords-reduce", executions.CAPABILITIES)
         self.assertNotIn("keywords", executions.CAPABILITIES)
@@ -62,6 +65,7 @@ class StepProtocolTest(unittest.TestCase):
                     "detect-language",
                     "document-extraction",
                     "entity-extraction-reduce",
+                    "date-extraction-reduce",
                     "keywords-reduce",
                     "distribution",
                     "correlation",

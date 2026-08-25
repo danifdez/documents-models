@@ -61,17 +61,6 @@ rel  ::= "{" ws "\"subject\"" ws ":" ws sstring "," ws "\"predicate\"" ws ":" ws
     + _BOUNDED_STRING + _JSON_COMMON
 )
 
-# date-extraction LLM fallback: either a resolved date or an unresolved marker.
-DATE_RESOLUTION_GBNF = (
-    r"""
-root       ::= resolved | unresolved
-resolved   ::= "{" ws "\"date\"" ws ":" ws datestr "," ws "\"endDate\"" ws ":" ws ( datestr | "null" ws ) "," ws "\"precision\"" ws ":" ws ( "\"day\"" | "\"month\"" | "\"year\"" ) ws "}" ws
-unresolved ::= "{" ws "\"unresolved\"" ws ":" ws "true" ws "," ws "\"reason\"" ws ":" ws string "}" ws
-datestr    ::= "\"" [0-9] [0-9] [0-9] [0-9] "-" [0-9] [0-9] "-" [0-9] [0-9] "\"" ws
-"""
-    + _JSON_COMMON
-)
-
 # Agent step decision: {"thought": ..., "tool": ..., "args": {...}}
 # or {"thought": ..., "finish": <value>}.
 AGENT_DECISION_GBNF = (

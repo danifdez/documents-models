@@ -8,7 +8,8 @@ from common.execution_registry import TASK_HANDLERS
 logger = logging.getLogger(__name__)
 
 TASK_MODULES = {
-    "date-extraction": "tasks.dates.dates",
+    "date-extraction-map": "tasks.dates.dates",
+    "date-extraction-reduce": "tasks.dates.dates",
     "delete-vectors": "tasks.ingest.ingest",
     "document-extraction": "tasks.extraction.extractor",
     "entity-extraction-map": "tasks.entities.entities",

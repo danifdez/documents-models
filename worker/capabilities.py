@@ -8,7 +8,8 @@ EMBEDDINGS = "embeddings"
 TASK_FEATURE_MAP = {
     "entity-extraction-map": "relationships",
     "entity-extraction-reduce": "relationships",
-    "date-extraction": "timelines",
+    "date-extraction-map": "timelines",
+    "date-extraction-reduce": "timelines",
     "distribution": "datasets",
     "correlation": "datasets",
     "correlation-matrix": "datasets",
