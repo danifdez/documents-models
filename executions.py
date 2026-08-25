@@ -44,6 +44,7 @@ MIGRATED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
     "detect-language",
+    "translate",
     "summarize-map",
     "summarize-reduce",
 )

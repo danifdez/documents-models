@@ -31,18 +31,19 @@ class _Response:
 
 
 class StepProtocolTest(unittest.TestCase):
-    def test_worker_advertises_chat_inference_capabilities(self):
+    def test_worker_advertises_migrated_inference_capabilities(self):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
         self.assertIn("agent-chat", executions.CAPABILITIES)
+        self.assertIn("translate", executions.CAPABILITIES)
 
-    def test_worker_does_not_advertise_disabled_inference_tasks(self):
+    def test_worker_filters_tasks_by_effective_requirements(self):
         with patch(
             "worker.capabilities.get_worker_config",
             return_value={"disable_llm": True, "disable_embeddings": True},
         ):
             self.assertEqual(
                 executions.effective_task_capabilities(),
-                ["detect-language"],
+                ["detect-language", "translate"],
             )
 
     def test_registers_once_and_uses_worker_credential(self):
