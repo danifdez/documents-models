@@ -1,14 +1,13 @@
 """
 Shared utilities for dataset tasks.
 
-Provides common functions for building DataFrames from dataset records
-and applying filters. Raw PostgreSQL access lives in ``database.dataset``.
+Provides common functions for building DataFrames from immutable assignment
+artifacts and applying filters.
 """
 
 import json
 import pandas as pd
 import numpy as np
-from database.dataset import get_dataset_records, resolve_fk_labels
 
 
 def build_dataframe(schema, records):
@@ -73,17 +72,14 @@ def apply_filters(df, filters):
 
 
 def load_dataset(payload):
-    """Load a dataset from payload. Returns (dataset_id, df, schema).
-
-    Raises ValueError if dataset not found or has no records.
-    """
+    """Load one dataset from the assignment artifact."""
     dataset_id = payload.get("datasetId")
     if not dataset_id:
         raise ValueError("datasetId is required")
 
-    schema, records = get_dataset_records(dataset_id)
+    schema, records = get_dataset_records(payload, dataset_id)
     if schema is None:
-        raise ValueError(f"Dataset {dataset_id} not found")
+        raise ValueError(f"Dataset {dataset_id} is missing from the assignment")
     if not records:
         raise ValueError("Dataset has no records")
 
@@ -104,16 +100,63 @@ def normalize_fk_value(val):
     return str(val)
 
 
-# Deprecated: use normalize_fk_value. Kept for backwards compatibility.
-_normalize_fk_value = normalize_fk_value
+def get_dataset_records(payload, dataset_id):
+    """Return ``(schema, records)`` from the canonical datasets artifact."""
+    bundle = _dataset_bundle(payload)
+    for snapshot in bundle.get("datasets", []):
+        if snapshot.get("datasetId") != dataset_id:
+            continue
+        schema = snapshot.get("schema")
+        raw_records = snapshot.get("records")
+        if not isinstance(schema, list) or not isinstance(raw_records, list):
+            raise ValueError(f"Dataset {dataset_id} snapshot is invalid")
+        records = []
+        for record in raw_records:
+            if not isinstance(record, dict) or "id" not in record:
+                raise ValueError(f"Dataset {dataset_id} record is invalid")
+            data = record.get("data")
+            if not isinstance(data, dict):
+                raise ValueError(f"Dataset {dataset_id} record data is invalid")
+            records.append((record["id"], data))
+        return schema, records
+    return None, []
 
 
-def get_multiple_datasets(dataset_ids):
-    """Fetch multiple datasets and return list of (schema, dataframe) tuples."""
-    results = []
-    for did in dataset_ids:
-        schema, records = get_dataset_records(did)
-        if schema is not None and records:
-            df = build_dataframe(schema, records)
-            results.append((schema, df))
-    return results
+def resolve_fk_labels(schema, field_key, raw_values):
+    """Resolve linked labels frozen into the assignment schema."""
+    field = next((item for item in schema if item.get("key") == field_key), None)
+    labels = field.get("linkedLabels", {}) if field else {}
+    if not isinstance(labels, dict):
+        return {}
+    wanted = {
+        normalize_fk_value(value)
+        for value in raw_values
+        if normalize_fk_value(value) is not None
+    }
+    return {
+        str(key): str(value)
+        for key, value in labels.items()
+        if str(key) in wanted
+    }
+
+
+def _dataset_bundle(payload):
+    cached = payload.get("_dataset_bundle")
+    if isinstance(cached, dict):
+        return cached
+    artifact = (payload.get("_input_artifacts") or {}).get("datasets")
+    if artifact is None:
+        raise ValueError("Dataset analysis step is missing its datasets artifact")
+    try:
+        raw = artifact.decode("utf-8") if isinstance(artifact, bytes) else artifact
+        bundle = json.loads(raw) if isinstance(raw, str) else raw
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Dataset analysis artifact is invalid JSON") from error
+    if not isinstance(bundle, dict) or bundle.get("schemaVersion") != (
+        "dataset-analysis-input/1"
+    ):
+        raise ValueError("Dataset analysis artifact has an invalid schema")
+    if not isinstance(bundle.get("datasets"), list):
+        raise ValueError("Dataset analysis artifact requires datasets")
+    payload["_dataset_bundle"] = bundle
+    return bundle

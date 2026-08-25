@@ -14,7 +14,7 @@ def distribution(payload) -> dict:
         field_key = params.get("field")
         field_def = next((f for f in schema if f["key"] == field_key), None)
         if not field_def or field_key not in df.columns:
-            return {"error": f"Field '{field_key}' not found"}
+            raise ValueError(f"Field '{field_key}' not found")
 
         col = df[field_key].dropna()
         ftype = field_def["type"]
@@ -69,5 +69,5 @@ def distribution(payload) -> dict:
 
         return result
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset distribution failed") from error

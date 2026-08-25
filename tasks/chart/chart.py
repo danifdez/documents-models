@@ -21,18 +21,20 @@ def chart(payload) -> dict:
         df = apply_filters(df, params.get("filters", []))
 
         if len(df) == 0:
-            return {"error": "No data after applying filters", "chartType": "none"}
+            raise ValueError("No data after applying filters")
 
         x_def = next((f for f in schema if f["key"] == x_field), None)
         if not x_def or x_field not in df.columns:
-            return {"error": f"Field '{x_field}' not found"}
+            raise ValueError(f"Field '{x_field}' not found")
 
         y_def = next((f for f in schema if f["key"] == y_field), None) if y_field else None
 
         # Scatter: return raw X/Y points
         if chart_type == "scatter":
             if not y_field or y_field not in df.columns:
-                return {"error": "Scatter chart requires both X and Y numeric fields"}
+                raise ValueError(
+                    "Scatter chart requires both X and Y numeric fields"
+                )
 
             sub = df[[x_field, y_field]].copy()
             sub[x_field] = pd.to_numeric(sub[x_field], errors="coerce")
@@ -40,7 +42,7 @@ def chart(payload) -> dict:
             sub = sub.dropna()
 
             if len(sub) == 0:
-                return {"error": "No valid numeric data points"}
+                raise ValueError("No valid numeric data points")
 
             points = [{"x": safe_float(row[x_field]), "y": safe_float(row[y_field])} for _, row in sub.iterrows()]
 
@@ -106,5 +108,5 @@ def chart(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset chart generation failed") from error

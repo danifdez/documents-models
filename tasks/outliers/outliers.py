@@ -14,11 +14,11 @@ def outliers(payload) -> dict:
         field_key = params.get("field")
         field_def = next((f for f in schema if f["key"] == field_key), None)
         if not field_def or field_key not in df.columns:
-            return {"error": f"Field '{field_key}' not found"}
+            raise ValueError(f"Field '{field_key}' not found")
 
         col = pd.to_numeric(df[field_key], errors="coerce").dropna()
         if len(col) < 4:
-            return {"error": "Not enough data points"}
+            raise ValueError("Not enough data points")
 
         q1 = col.quantile(0.25)
         q3 = col.quantile(0.75)
@@ -80,5 +80,5 @@ def outliers(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset outlier analysis failed") from error

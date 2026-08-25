@@ -17,7 +17,7 @@ def correlation_matrix(payload) -> dict:
             numeric_fields = [f for f in numeric_fields if f["key"] in selected_keys]
 
         if len(numeric_fields) < 2:
-            return {"error": "At least 2 numeric fields are required"}
+            raise ValueError("At least 2 numeric fields are required")
 
         keys = [f["key"] for f in numeric_fields]
         sub = df[keys].apply(pd.to_numeric, errors="coerce")
@@ -74,5 +74,5 @@ def correlation_matrix(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset correlation matrix failed") from error

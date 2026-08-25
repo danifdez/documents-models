@@ -17,10 +17,10 @@ def group_by(payload) -> dict:
         v_def = next((f for f in schema if f["key"] == value_field), None)
         g_def = next((f for f in schema if f["key"] == group_field), None)
         if not v_def or not g_def:
-            return {"error": "Both fields must exist"}
+            raise ValueError("Both fields must exist")
 
         if value_field not in df.columns or group_field not in df.columns:
-            return {"error": "Fields not found in data"}
+            raise ValueError("Fields not found in data")
 
         sub = df[[group_field, value_field]].copy()
         sub[value_field] = pd.to_numeric(sub[value_field], errors="coerce")
@@ -59,5 +59,5 @@ def group_by(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset grouping failed") from error

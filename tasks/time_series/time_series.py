@@ -21,7 +21,7 @@ def time_series(payload) -> dict:
         d_def = next((f for f in schema if f["key"] == date_field), None)
         v_def = next((f for f in schema if f["key"] == value_field), None)
         if not d_def or not v_def:
-            return {"error": "Both fields must exist"}
+            raise ValueError("Both fields must exist")
 
         sub = df[[date_field, value_field]].copy()
         sub[date_field] = pd.to_datetime(sub[date_field], errors="coerce")
@@ -29,7 +29,7 @@ def time_series(payload) -> dict:
         sub = sub.dropna()
 
         if len(sub) == 0:
-            return {"error": "No valid data points"}
+            raise ValueError("No valid data points")
 
         grouped = sub.set_index(date_field).resample(period)[value_field].mean().dropna()
 
@@ -56,5 +56,5 @@ def time_series(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset time series analysis failed") from error

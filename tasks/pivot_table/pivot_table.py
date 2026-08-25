@@ -18,9 +18,9 @@ def pivot_table(payload) -> dict:
         r_def = next((f for f in schema if f["key"] == row_field), None)
         c_def = next((f for f in schema if f["key"] == col_field), None)
         if not r_def or not c_def:
-            return {"error": "Row and column fields are required"}
+            raise ValueError("Row and column fields are required")
         if row_field not in df.columns or col_field not in df.columns:
-            return {"error": "Fields not found in data"}
+            raise ValueError("Fields not found in data")
 
         if value_field and value_field in df.columns:
             v_def = next((f for f in schema if f["key"] == value_field), None)
@@ -93,5 +93,5 @@ def pivot_table(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset pivot table failed") from error

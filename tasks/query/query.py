@@ -12,17 +12,17 @@ def query(payload) -> dict:
         params = payload.get("params", {})
 
         if not dataset_id and not dataset_ids:
-            return {"error": "datasetId or datasetIds is required"}
+            raise ValueError("datasetId or datasetIds is required")
 
         if dataset_id:
             _, df, schema = load_dataset(payload)
         else:
             primary_id = dataset_ids[0]
-            schema, records = get_dataset_records(primary_id)
+            schema, records = get_dataset_records(payload, primary_id)
             if schema is None:
-                return {"error": f"Dataset {primary_id} not found"}
+                raise ValueError(f"Dataset {primary_id} not found")
             if not records:
-                return {"error": "Primary dataset has no records"}
+                raise ValueError("Primary dataset has no records")
             df = build_dataframe(schema, records)
             dataset_id = primary_id
 
@@ -31,7 +31,7 @@ def query(payload) -> dict:
             join_field = params.get("joinField")
             if join_field:
                 for did in dataset_ids[1:]:
-                    s, r = get_dataset_records(did)
+                    s, r = get_dataset_records(payload, did)
                     if s and r:
                         extra_df = build_dataframe(s, r)
                         if join_field in df.columns and join_field in extra_df.columns:
@@ -40,7 +40,7 @@ def query(payload) -> dict:
         df = apply_filters(df, params.get("filters", []))
 
         if len(df) == 0:
-            return {"error": "No data after applying filters", "chartType": "none"}
+            raise ValueError("No data after applying filters")
 
         select_fields = params.get("select", [])
         group_by_field = params.get("groupBy")
@@ -103,5 +103,5 @@ def query(payload) -> dict:
             "datasetId": dataset_id,
         }
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset query failed") from error

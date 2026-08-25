@@ -18,10 +18,10 @@ def correlation(payload) -> dict:
         f1_def = next((f for f in schema if f["key"] == field1), None)
         f2_def = next((f for f in schema if f["key"] == field2), None)
         if not f1_def or not f2_def:
-            return {"error": "Both fields must exist"}
+            raise ValueError("Both fields must exist")
 
         if field1 not in df.columns or field2 not in df.columns:
-            return {"error": "Fields not found in data"}
+            raise ValueError("Fields not found in data")
 
         valid = df[[field1, field2]].dropna()
         x = pd.to_numeric(valid[field1], errors="coerce")
@@ -30,7 +30,7 @@ def correlation(payload) -> dict:
         x, y = x[mask], y[mask]
 
         if len(x) < 3:
-            return {"error": "Not enough data points (minimum 3)"}
+            raise ValueError("Not enough data points (minimum 3)")
 
         r, p_value = scipy_stats.pearsonr(x, y)
         slope, intercept = np.polyfit(x, y, 1)
@@ -67,5 +67,5 @@ def correlation(payload) -> dict:
 
         return result
 
-    except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+    except Exception as error:
+        raise RuntimeError("Dataset correlation failed") from error

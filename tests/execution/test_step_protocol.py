@@ -36,6 +36,8 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("agent-chat", executions.CAPABILITIES)
         self.assertIn("document-extraction", executions.CAPABILITIES)
         self.assertIn("dataset.propose-columns", executions.CAPABILITIES)
+        self.assertIn("distribution", executions.CAPABILITIES)
+        self.assertIn("query", executions.CAPABILITIES)
         self.assertIn("transcribe", executions.CAPABILITIES)
         self.assertIn("translate", executions.CAPABILITIES)
 
@@ -49,6 +51,16 @@ class StepProtocolTest(unittest.TestCase):
                 [
                     "detect-language",
                     "document-extraction",
+                    "distribution",
+                    "correlation",
+                    "correlation-matrix",
+                    "group-by",
+                    "time-series",
+                    "outliers",
+                    "pivot-table",
+                    "summary",
+                    "query",
+                    "chart",
                     "transcribe",
                     "translate",
                 ],
