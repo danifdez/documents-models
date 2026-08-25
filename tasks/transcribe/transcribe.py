@@ -36,7 +36,6 @@ def _materialize(content: bytes, extension: str) -> str:
         with os.fdopen(fd, "wb") as f:
             f.write(content)
     except Exception:
-        os.close(fd)
         if os.path.exists(path):
             os.remove(path)
         raise
@@ -44,7 +43,8 @@ def _materialize(content: bytes, extension: str) -> str:
 
 
 def _extract_audio_from_video(video_path: str) -> str:
-    audio_path = tempfile.mktemp(suffix=".wav")
+    fd, audio_path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
     subprocess.run(
         ["ffmpeg", "-i", video_path, "-vn", "-acodec", "pcm_s16le",
          "-ar", "16000", "-ac", "1", audio_path, "-y"],
@@ -55,10 +55,15 @@ def _extract_audio_from_video(video_path: str) -> str:
 
 @execution_handler("transcribe")
 def transcribe(payload) -> dict:
-    ext = payload["extension"]
+    ext = payload.get("extension")
+    if not isinstance(ext, str) or ext.lower() not in (
+        _AUDIO_EXTENSIONS | _VIDEO_EXTENSIONS
+    ):
+        raise ValueError("Transcribe requires a supported media extension")
+    ext = ext.lower()
     content = (payload.get("_input_artifacts") or {}).get("media")
     if content is None:
-        return {"error": "transcribe step is missing its media artifact"}
+        raise ValueError("Transcribe step is missing its media artifact")
 
     source_path = _materialize(content, ext)
     is_video = ext.lower() in _VIDEO_EXTENSIONS

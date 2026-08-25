@@ -18,7 +18,6 @@ def _materialize(content: bytes, extension: str) -> str:
         with os.fdopen(fd, "wb") as f:
             f.write(content)
     except Exception:
-        os.close(fd)
         if os.path.exists(path):
             os.remove(path)
         raise
@@ -29,7 +28,7 @@ def _extract_by_extension(payload: dict) -> dict:
     ext = payload["extension"]
     content = (payload.get("_input_artifacts") or {}).get("document")
     if content is None:
-        return {"error": "extraction step is missing its document artifact"}
+        raise ValueError("Extraction step is missing its document artifact")
 
     if ext in ['.html', '.htm']:
         html_content = content.decode('utf-8', errors='replace')
@@ -63,10 +62,7 @@ def _extract_by_extension(payload: dict) -> dict:
 
 @execution_handler("document-extraction")
 def extract(payload) -> dict:
-    try:
-        return _extract_by_extension(payload)
-    except Exception as e:
-        return {"error": str(e)}
+    return _extract_by_extension(payload)
 
 
 @execution_handler("indexed-file-extraction")
@@ -80,10 +76,6 @@ def extract_indexed_file(payload) -> dict:
         - indexedFileId (int): the IndexedFile id (echoed in the response so the
           backend processor knows which row to update).
     """
-    try:
-        result = _extract_by_extension(payload)
-        if isinstance(result, dict) and "error" not in result:
-            result.setdefault("indexedFileId", payload.get("indexedFileId"))
-        return result
-    except Exception as e:
-        return {"error": str(e)}
+    result = _extract_by_extension(payload)
+    result.setdefault("indexedFileId", payload.get("indexedFileId"))
+    return result

@@ -34,6 +34,8 @@ class StepProtocolTest(unittest.TestCase):
     def test_worker_advertises_migrated_inference_capabilities(self):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
         self.assertIn("agent-chat", executions.CAPABILITIES)
+        self.assertIn("document-extraction", executions.CAPABILITIES)
+        self.assertIn("transcribe", executions.CAPABILITIES)
         self.assertIn("translate", executions.CAPABILITIES)
 
     def test_worker_filters_tasks_by_effective_requirements(self):
@@ -43,7 +45,12 @@ class StepProtocolTest(unittest.TestCase):
         ):
             self.assertEqual(
                 executions.effective_task_capabilities(),
-                ["detect-language", "translate"],
+                [
+                    "detect-language",
+                    "document-extraction",
+                    "transcribe",
+                    "translate",
+                ],
             )
 
     def test_registers_once_and_uses_worker_credential(self):
