@@ -13,11 +13,10 @@ Payload (set by backend `DatasetController.proposeColumns` in T05):
       ]
     }
 
-Result:
-    {
-      "columns": list[DatasetField] | None,   # null when error
-      "error":   str | None
-    }
+Result: ``{"columns": list[DatasetField]}``.
+
+Invalid input and model failures raise so the execution protocol emits a
+failed ``StepResult``.
 
 The chosen DatasetField objects are guaranteed to carry a non-empty
 `description`. Downstream extraction (T03) refuses to populate columns
@@ -120,19 +119,16 @@ def _normalize_columns(raw: List[Any]) -> List[Dict[str, Any]]:
 def propose_dataset_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
     resources: List[Dict[str, Any]] = payload.get("resources") or []
     if not resources:
-        return {"columns": None, "error": "needs at least 1 resource"}
+        raise ValueError("Column proposal requires at least one resource")
 
     usable = [r for r in resources if (r.get("excerpt") or "").strip()]
     if not usable:
-        return {
-            "columns": None,
-            "error": "no readable content in any of the given resources",
-        }
+        raise ValueError("Column proposal requires readable resource content")
 
     cfg = get_task_config("dataset.propose-columns") or {}
     model_name = cfg.get("model") or get_llm_defaults().get("model")
     if not model_name:
-        return {"columns": None, "error": "No model configured for dataset.propose-columns"}
+        raise ValueError("No model configured for dataset.propose-columns")
 
     max_tokens = int(cfg.get("max_tokens", 1500))
     temperature = float(cfg.get("temperature", 0.2))
@@ -154,7 +150,7 @@ def propose_dataset_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("dataset.propose-columns: LLM call failed")
-        return {"columns": None, "error": f"LLM call failed: {exc}"}
+        raise RuntimeError("Column proposal inference failed") from exc
 
     parsed = parse_json(raw, default=None)
     if not isinstance(parsed, list):
@@ -169,13 +165,13 @@ def propose_dataset_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
             parsed = parse_json(raw_retry, default=None)
         except Exception as exc:  # noqa: BLE001
             logger.exception("dataset.propose-columns: retry failed")
-            return {"columns": None, "error": f"LLM retry failed: {exc}"}
+            raise RuntimeError("Column proposal retry failed") from exc
 
     if not isinstance(parsed, list):
-        return {"columns": None, "error": "LLM did not return a JSON array"}
+        raise ValueError("Column proposal did not return a JSON array")
 
     columns = _normalize_columns(parsed)
     if not columns:
-        return {"columns": None, "error": "LLM proposal had no usable columns"}
+        raise ValueError("Column proposal did not contain usable columns")
 
-    return {"columns": columns, "error": None}
+    return {"columns": columns}
