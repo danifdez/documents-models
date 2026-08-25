@@ -1,378 +1,149 @@
-"""Agentic key-point extraction.
+"""Self-contained inference steps for the durable key-point workflow."""
 
-Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
-
-- The invocation chunks the content and extracts raw candidates from each chunk.
-- The reduce step performs cross-chunk semantic deduplication, refinement and
-  ranking, returning the final `key_points` list.
-
-Defends against pathological inputs (data URIs, base64 blobs) the same way as
-`summarize` so a single inline blob can't blow Phi's context window.
-"""
-
-import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-import numpy as np
-
-from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import (
-    InlineListMapReduceSpec,
-    run_inline_list_map_reduce,
-)
-from lib.llm.prompts import get_prompt
-from lib.llm.text import truncate_for_llm
-from services.relevance import select_relevant_units
-from services.text import (
-    chunk_units,
-    extract_section_units,
-    html_to_markdown,
-    normalize_text,
-    strip_dense_blobs,
-)
 from common.execution_registry import execution_handler
-
-logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Defensive content sanitization is shared with summarize via services.text.
-# ─────────────────────────────────────────────────────────────────────────────
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.prompts import get_prompt
+from lib.llm.text import strip_dense_blobs
+from services.llm_service import get_llm_service
 
 
-def _build_chunks(
-    content: str,
-    chunk_word_budget: int,
-    *,
-    units_filter=None,
-) -> List[str]:
-    cleaned = strip_dense_blobs(html_to_markdown(content or ""))
-    units = extract_section_units(cleaned)
-    if not units:
-        return []
-    if units_filter is not None:
-        units = units_filter(units) or units
-    return chunk_units(units, chunk_word_budget, joiner="\n\n")
+def clean_sentence(sentence: str) -> str:
+    return re.sub(r"^\s*(?:\d+\.|[-*])\s*", "", sentence).strip()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Existing helpers (preserved from the seq2seq version)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def clean_sentence(s: str) -> str:
-    s = s.strip()
-    s = re.sub(r'^\d+\.|^-|^\*', '', s).strip()
-    return s
-
-
-def word_count(s: str) -> int:
-    return len(re.findall(r"\w+", s))
+def word_count(sentence: str) -> int:
+    return len(re.findall(r"\w+", sentence))
 
 
 def _candidates_from_generated(generated: str) -> List[str]:
     if not generated:
         return []
     candidates = [clean_sentence(line) for line in generated.splitlines()]
-    candidates = [c for c in candidates if c]
+    candidates = [candidate for candidate in candidates if candidate]
+    if candidates:
+        return candidates
+    return [
+        clean_sentence(sentence)
+        for sentence in re.split(r"(?<=[.!?])\s+", generated)
+        if sentence.strip()
+    ]
+
+
+def _bounded_candidates(
+    candidates: List[str],
+    min_words: int,
+    max_words: int,
+) -> List[str]:
+    seen = set()
+    result = []
+    for candidate in candidates:
+        cleaned = clean_sentence(candidate)
+        key = cleaned.casefold()
+        if (
+            not key
+            or key in seen
+            or not min_words <= word_count(cleaned) <= max_words
+        ):
+            continue
+        seen.add(key)
+        result.append(cleaned)
+    return result
+
+
+def _extract_candidates(
+    content: str,
+    target_language: str,
+    config: Dict[str, Any],
+) -> List[str]:
+    safe_content = strip_dense_blobs(content).strip()
+    if not safe_content:
+        raise ValueError("key-point-map requires non-empty content")
+    max_input_words = int(config.get("max_input_words", 1500))
+    if len(safe_content.split()) > max_input_words:
+        raise ValueError("key-point-map content exceeds its word budget")
+
+    prompt_template = get_prompt("key-point-map")
+    if not prompt_template:
+        raise RuntimeError("key-point-map prompt is unavailable")
+    generated = get_llm_service(**get_llm_params("key-point-map")).ask(
+        prompt_template.format(target_lang=target_language, text=safe_content),
+        max_tokens=int(config.get("max_tokens", 1000)),
+        temperature=0.0,
+    )
+    candidates = _bounded_candidates(
+        _candidates_from_generated(generated),
+        min_words=int(config.get("min_words", 3)),
+        max_words=int(config.get("max_words", 10)),
+    )
     if not candidates:
-        candidates = [clean_sentence(s) for s in re.split(r'(?<=[.!?])\s+', generated) if s.strip()]
+        raise ValueError("key-point-map returned no valid candidates")
     return candidates
 
 
-def _embed(texts: List[str]):
-    if not texts:
-        return None
-    try:
-        from services.embedding_service import get_embedding_service
-        emb = get_embedding_service().encode(texts, normalize_embeddings=True)
-        return np.asarray(emb, dtype=np.float32)
-    except Exception as e:
-        logger.warning("Embedding service unavailable, skipping semantic step: %s", e)
-        return None
-
-
-def _semantic_dedupe(candidates: List[str], threshold: float) -> Tuple[List[str], Optional[np.ndarray]]:
-    if len(candidates) <= 1:
-        return candidates, None
-    emb = _embed(candidates)
-    if emb is None:
-        return candidates, None
-    kept_idx: List[int] = []
-    kept_emb: List[np.ndarray] = []
-    for i, vec in enumerate(emb):
-        if not kept_emb:
-            kept_idx.append(i)
-            kept_emb.append(vec)
-            continue
-        sims = np.array([float(np.dot(vec, k)) for k in kept_emb])
-        if sims.max() < threshold:
-            kept_idx.append(i)
-            kept_emb.append(vec)
-    deduped = [candidates[i] for i in kept_idx]
-    return deduped, np.stack(kept_emb) if kept_emb else None
-
-
-def _rank_by_centrality(
-    candidates: List[str],
-    cand_emb: Optional[np.ndarray],
-    doc_centroid: Optional[np.ndarray],
-) -> List[str]:
-    if cand_emb is None or doc_centroid is None or len(candidates) != len(cand_emb):
-        return candidates
-    scores = cand_emb @ doc_centroid
-    order = np.argsort(-scores)
-    return [candidates[i] for i in order]
-
-
-def _refine_chunk(
-    items: List[str],
-    target_lang: str,
-    max_items: int,
-    prompt_template: str,
-    llm_service,
-    max_tokens: int,
-) -> List[str]:
-    if not items or llm_service is None:
-        return items
-    candidates_block = "\n".join(f"- {c}" for c in items)
-    try:
-        prompt = prompt_template.format(
-            target_lang=target_lang,
-            candidates=candidates_block,
-            max_items=max_items,
+@execution_handler("key-point-map")
+def key_point_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise ValueError("key-point-map content must be a string")
+    target_language = payload.get("targetLanguage")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise ValueError("key-point-map targetLanguage must be a string")
+    return {
+        "key_points": _extract_candidates(
+            content,
+            target_language,
+            get_task_config("key-point-map"),
         )
-    except (KeyError, IndexError):
-        return items
-    try:
-        generated = llm_service.ask(prompt, max_tokens=max_tokens, temperature=0.0)
-    except Exception as e:
-        logger.warning("Refine LLM call failed: %s", e)
-        return items
-    refined = _candidates_from_generated(generated)
-    return refined or items
+    }
 
 
-def _refine_chunked(
-    candidates: List[str],
-    target_lang: str,
-    max_items: int,
-    prompt_template: str,
-    llm_service,
-    max_tokens: int,
-    chunk_size: int,
-    overselect: int,
-    threshold: float,
-) -> List[str]:
-    if not candidates:
-        return candidates
-    if len(candidates) <= chunk_size:
-        return _refine_chunk(candidates, target_lang, max_items, prompt_template, llm_service, max_tokens)
+@execution_handler("key-point-reduce")
+def key_point_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
+    partials = payload.get("partials")
+    if not isinstance(partials, list) or not partials:
+        raise ValueError("key-point-reduce requires partials")
+    target_language = payload.get("targetLanguage")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise ValueError("key-point-reduce targetLanguage must be a string")
 
-    per_chunk_target = max(max_items, max_items * overselect)
-    partials: List[str] = []
-    for start in range(0, len(candidates), chunk_size):
-        piece = candidates[start:start + chunk_size]
-        partials.extend(
-            _refine_chunk(piece, target_lang, per_chunk_target, prompt_template, llm_service, max_tokens)
-        )
-
-    seen = set()
-    flat: List[str] = []
-    for p in partials:
-        k = p.lower().strip()
-        if k and k not in seen:
-            seen.add(k)
-            flat.append(p)
-    flat, _ = _semantic_dedupe(flat, threshold)
-
-    if len(flat) > chunk_size:
-        return _refine_chunked(
-            flat, target_lang, max_items, prompt_template,
-            llm_service, max_tokens, chunk_size, overselect, threshold,
-        )
-    return _refine_chunk(flat, target_lang, max_items, prompt_template, llm_service, max_tokens)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Per-chunk LLM extraction (used by both leaf and child paths)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any]) -> List[str]:
-    if not chunk or not chunk.strip():
-        return []
-    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
-                            tokens_key="max_tokens", default_tokens=1000)
-    try:
-        params = get_llm_params("key-point")
-        llm_service = get_llm_service(**params)
-    except Exception as e:
-        logger.warning("LLM service unavailable for key-point extraction: %s", e)
-        return []
-    if llm_service is None:
-        return []
-    prompt_template = get_prompt("key-point")
-    max_tokens = int(cfg.get("max_tokens", 1000))
-    try:
-        prompt = prompt_template.format(target_lang=target_lang, text=safe)
-        generated = llm_service.ask(prompt, max_tokens=max_tokens, temperature=0.0)
-    except Exception as e:
-        logger.warning("key-point chunk extraction failed: %s", e)
-        return []
-    return _candidates_from_generated(generated)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Cross-chunk merge pipeline (dedup + refine + rank + fallback)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _merge_pipeline(
-    per_chunk_lists: List[List[str]],
-    chunks: List[str],
-    raw_content: str,
-    target_lang: str,
-    cfg: Dict[str, Any],
-) -> List[str]:
-    min_words = int(cfg.get("min_words", 3))
-    max_words = int(cfg.get("max_words", 10))
-    max_items = int(cfg.get("max_items", 5))
-    threshold = float(cfg.get("dedupe_similarity_threshold", 0.85))
-
-    seen = set()
     candidates: List[str] = []
-    for lst in per_chunk_lists:
-        for c in lst or []:
-            k = c.lower().strip()
-            if k and k not in seen:
-                seen.add(k)
-                candidates.append(c)
+    for partial in partials:
+        if not isinstance(partial, list) or not partial or any(
+            not isinstance(candidate, str) for candidate in partial
+        ):
+            raise ValueError("key-point-reduce partials must be string arrays")
+        candidates.extend(partial)
 
-    candidates = [c for c in candidates if min_words <= word_count(c) <= max_words]
-    deduped, deduped_emb = _semantic_dedupe(candidates, threshold)
-
-    refine_enabled = bool(cfg.get("refine_enabled", True))
-    if refine_enabled and len(deduped) > max_items:
-        try:
-            params = get_llm_params("key-point")
-            llm_service = get_llm_service(**params)
-        except Exception:
-            llm_service = None
-        if llm_service is not None:
-            refine_template = get_prompt("key-point", "refine_prompt.md")
-            if refine_template:
-                refine_max_tokens = int(cfg.get("refine_max_tokens", cfg.get("max_tokens", 1000)))
-                refine_chunk_size = int(cfg.get("refine_chunk_size", 30))
-                overselect = int(cfg.get("refine_overselect", 3))
-                refined = _refine_chunked(
-                    deduped, target_lang, max_items, refine_template,
-                    llm_service, refine_max_tokens, refine_chunk_size, overselect, threshold,
-                )
-                refined = [c for c in refined if min_words <= word_count(c) <= max_words]
-                refined, deduped_emb = _semantic_dedupe(refined, threshold)
-                deduped = refined
-
-    chunk_emb = _embed(chunks) if deduped_emb is not None else None
-    doc_centroid = None
-    if chunk_emb is not None and len(chunk_emb) > 0:
-        centroid = chunk_emb.mean(axis=0)
-        norm = float(np.linalg.norm(centroid))
-        if norm > 0:
-            doc_centroid = centroid / norm
-
-    ranked = _rank_by_centrality(deduped, deduped_emb, doc_centroid)
-
-    selected: List[str] = []
-    selected_keys: set = set()
-    for s in ranked:
-        key = s.lower()
-        if key in selected_keys:
-            continue
-        selected_keys.add(key)
-        selected.append(s)
-        if len(selected) >= max_items:
-            break
-
-    if len(selected) < max_items:
-        full_text = normalize_text(str(raw_content))
-        for s in re.split(r'(?<=[.!?])\s+', full_text):
-            cs = clean_sentence(s)
-            if not cs:
-                continue
-            wc = word_count(cs)
-            if min_words <= wc <= max_words and cs.lower() not in selected_keys:
-                selected_keys.add(cs.lower())
-                selected.append(cs)
-            if len(selected) >= max_items:
-                break
-
-    return selected
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Map-reduce spec
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _target_lang(payload: Dict[str, Any]) -> str:
-    return payload.get("targetLanguage") or payload.get("target_language") or "en"
-
-
-def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
-    raw_content = payload.get("content", "") or ""
-    if not str(raw_content).strip():
-        return []
-    units_filter = None
-    if not is_child:
-        target_lang = _target_lang(payload)
-        units_filter = lambda us: select_relevant_units(
-            us, cfg, task_label="key-point extraction", target_lang=target_lang,
-        )
-    return _build_chunks(
-        raw_content, int(cfg.get("chunk_word_budget", 1500)), units_filter=units_filter
+    config = get_task_config("key-point-reduce")
+    candidates = _bounded_candidates(
+        candidates,
+        min_words=int(config.get("min_words", 3)),
+        max_words=int(config.get("max_words", 10)),
     )
+    if not candidates:
+        raise ValueError("key-point-reduce received no valid candidates")
 
-
-def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
-    return _extract_chunk_candidates(chunk, _target_lang(payload), cfg)
-
-
-def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
-    per_chunk_lists: List[List[str]] = []
-    for kp in partials:
-        kp = kp or []
-        per_chunk_lists.append([str(x) for x in kp] if isinstance(kp, list) else [])
-    return _merge_pipeline(
-        per_chunk_lists,
-        payload.get("_chunks") or [],
-        payload.get("content", "") or "",
-        _target_lang(payload),
-        cfg,
+    prompt_template = get_prompt("key-point-reduce", "refine_prompt.md")
+    if not prompt_template:
+        raise RuntimeError("key-point-reduce prompt is unavailable")
+    max_items = int(config.get("max_items", 5))
+    generated = get_llm_service(**get_llm_params("key-point-reduce")).ask(
+        prompt_template.format(
+            target_lang=target_language,
+            candidates="\n".join(f"- {candidate}" for candidate in candidates),
+            max_items=max_items,
+        ),
+        max_tokens=int(config.get("max_tokens", 800)),
+        temperature=0.0,
     )
-
-
-_SPEC = InlineListMapReduceSpec(
-    leaf_fn=_leaf,
-    reduce_fn=_reduce,
-    chunks_fn=_chunks,
-    result_key="key_points",
-)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@execution_handler("key-point")
-def key_points(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, ctx=None) -> Dict[str, Any]:
-    """Extract and merge key points from every inline chunk."""
-    try:
-        cfg = get_task_config("key-point")
-        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
-    except Exception as e:
-        logger.exception("Error extracting key points")
-        return {"error": f"Error extracting key points: {e}"}
+    selected = _bounded_candidates(
+        _candidates_from_generated(generated),
+        min_words=int(config.get("min_words", 3)),
+        max_words=int(config.get("max_words", 10)),
+    )[:max_items]
+    if not selected:
+        raise ValueError("key-point-reduce returned no valid key points")
+    return {"key_points": selected}

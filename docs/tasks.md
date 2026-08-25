@@ -16,7 +16,7 @@ These tasks work with unstructured text, documents, and natural language.
 | [summarize](./tasks/summarize.md) | Generate a summary of a document or text, with cross-lingual support |
 | [embedding](./tasks/embedding.md) | Convert text into a numerical vector for semantic search and comparison |
 | [keywords map/reduce](./tasks/keywords.md) | Extract and deterministically rank keyword candidates through durable steps |
-| [key-point](./tasks/key-point.md) | Extract the main ideas from a text as a short list of concise statements |
+| [key-point map/reduce](./tasks/key-point.md) | Extract and refine concise key points through durable inference steps |
 | [translate](./tasks/translate.md) | Translate a list of texts from one language to another |
 | [detect-language](./tasks/detect-language.md) | Identify the language of one or more text samples |
 | [entity-extraction map/reduce](./tasks/entity-extraction.md) | Extract and deterministically merge named entities through durable steps |

@@ -18,7 +18,8 @@ coordination and execution finalization.
 | `ingest-content` | `ingest()` | `tasks/ingest/ingest.py` | intfloat/multilingual-e5-small |
 | `search` | `search_snippets()` | `tasks/search/search.py` | intfloat/multilingual-e5-small |
 | `ask` | `ask_question()` | `tasks/ask/ask.py` | Mistral-7B + multilingual-e5 embeddings |
-| `key-point` | `key_points()` | `tasks/key_points/key_points.py` | Mistral-7B (with heuristic fallback) |
+| `key-point-map` | `key_point_map()` | `tasks/key_points/key_points.py` | Local GGUF LLM |
+| `key-point-reduce` | `key_point_reduce()` | `tasks/key_points/key_points.py` | Local GGUF LLM |
 | `keywords-map` | `keywords_map()` | `tasks/keywords/keywords.py` | Local GGUF LLM |
 | `keywords-reduce` | `keywords_reduce()` | `tasks/keywords/keywords.py` | Deterministic Python |
 | `embedding` | `create_embedding()` | `tasks/embedding/embedding.py` | intfloat/multilingual-e5-small |
@@ -333,9 +334,9 @@ See [RAG Pipeline](./rag-pipeline.md) for the full flow.
 
 ---
 
-## key-point
+## key-point-map / key-point-reduce
 
-Extracts up to 5 key points from text content.
+Executes one stage of the durable key-point workflow created by Backend.
 
 **Input:**
 
@@ -358,10 +359,16 @@ Extracts up to 5 key points from text content.
 }
 ```
 
-- HTML tags are stripped and entities are unescaped before running.
-- Uses the configured LLM to generate key points as complete sentences (3-10 words each).
-- If the LLM is unavailable or produces insufficient results, falls back to heuristic extraction from the original text (splitting by sentence boundaries and filtering by word count).
-- Returns up to 5 deduplicated key points.
+- `key-point-map` accepts one bounded `content` chunk and performs one
+  candidate-extraction inference.
+- Backend supplies the accepted map arrays to `key-point-reduce` as ordered
+  `partials`.
+- Reduce performs one refinement inference and returns at most 5 points by
+  default.
+- Backend owns HTML extraction, chunking, dependencies, retries and root
+  finalization.
+
+See [Key Points](./tasks/key-point.md) for both payloads and failure behavior.
 
 ---
 

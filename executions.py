@@ -51,6 +51,8 @@ MIGRATED_TASK_TYPES = (
     "entity-extraction-reduce",
     "keywords-map",
     "keywords-reduce",
+    "key-point-map",
+    "key-point-reduce",
     "distribution",
     "correlation",
     "correlation-matrix",

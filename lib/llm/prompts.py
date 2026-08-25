@@ -29,7 +29,8 @@ _PROMPT_PACKAGE_ROOTS = (
 _TASK_DIR_MAP = {
     "assistant-chat": "assistant_chat",
     "agent-chat": "assistant_chat",
-    "key-point": "key_points",
+    "key-point-map": "key_points",
+    "key-point-reduce": "key_points",
     "detect-language": "detect_language",
     "entity-extraction-map": "entities",
     "keywords-map": "keywords",

@@ -98,23 +98,25 @@ reduce payloads.
 
 ## Key Point Extraction
 
-**Execution type:** `key-point`
+**Step types:** `key-point-map`, `key-point-reduce`
 **File:** `tasks/key_points/key_points.py`
-**Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
+**Model:** GGUF LLM configured independently for map and reduce
 
-Extracts up to 5 concise key points from text content.
+Backend creates the durable fan-out/fan-in graph. Models executes exactly one
+inference for each bounded map and one final reduce inference.
 
 **Processing steps:**
 
-1. HTML tags are stripped and HTML entities are unescaped.
-2. A prompt is constructed asking the LLM for up to 5 key points (complete sentences, 3-10 words each) in the specified target language.
-3. If the LLM is available:
-   - Mistral-7B generates the response (max 1000 tokens).
-   - Output is split into candidate lines/sentences.
-4. If the LLM is unavailable or produces insufficient results:
-   - Falls back to heuristic extraction: splits the original text by sentence-ending punctuation.
-   - Filters sentences to those with 3-10 words.
-5. Results are deduplicated and capped at 5 items.
+1. Backend extracts and splits the document into chunks of at most 1500 words.
+2. Each `key-point-map` step produces bounded candidate sentences in the
+   requested language.
+3. Backend waits for every required map and materializes the candidate arrays
+   in dependency order.
+4. `key-point-reduce` removes exact duplicates and performs one refinement
+   inference to select the final points.
+
+Models does not chunk, filter relevance, call embeddings, recurse through
+refinement batches or return a heuristic success after a failed inference.
 
 ## Keyword Extraction
 
@@ -142,7 +144,7 @@ inference fails.
 
 | Task | LLM Available | LLM Unavailable |
 |------|---------------|-----------------|
-| `key-point` | Configured LLM generates key points, supplemented by heuristics if < 5 results | Pure heuristic: sentence splitting + word count filtering |
+| `key-point-map` / `key-point-reduce` | Configured LLM performs the step inference | Step fails explicitly |
 | `keywords-map` | Configured LLM generates keyword candidates | Step fails explicitly |
 | `ask` | Configured LLM generates answer from context | Task fails (no fallback) |
 

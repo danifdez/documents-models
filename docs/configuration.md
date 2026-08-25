@@ -130,6 +130,22 @@ Each task has its own entry as a top-level key:
     "capabilities": [],
     "max_items": 10,
     "max_words_per_item": 3
+  },
+  "key-point-map": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 1000,
+    "max_input_words": 1500
+  },
+  "key-point-reduce": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 800,
+    "max_items": 5
   }
 }
 ```

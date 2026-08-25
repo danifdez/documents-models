@@ -1,58 +1,47 @@
 ## Key Points
 
-The **key-point** task extracts the most important ideas from a piece of text as a short list of concise statements. It is useful for quickly understanding what a document is about without reading the full content.
+Key-point extraction is a durable inference map/reduce workflow coordinated by
+Backend. Models exposes `key-point-map` and `key-point-reduce`; it does not
+register a `key-point` root handler.
 
-### What it does
+### Map step
 
-The task uses a language model to identify and return the key takeaways from the provided text. Each key point is a short, clear statement (typically between 3 and 10 words). If the language model is unavailable, the task falls back to extracting the first sentence fragment from the text.
-
-### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `content` | string | Yes | The text to extract key points from |
-| `targetLanguage` | string | No | Language code for the output (e.g. `en`, `es`). Defaults to `en` |
-
-### Returns
+Each `key-point-map` assignment receives one bounded document chunk:
 
 ```json
 {
-  "key_points": [
-    "First important point",
-    "Second important point",
-    "Third important point"
-  ]
-}
-```
-
-On error:
-
-```json
-{
-  "error": "Error extracting key points: <reason>"
-}
-```
-
-### Example
-
-**Input:**
-
-```json
-{
-  "content": "Remote work has become increasingly common since 2020. Studies show that employees working from home report higher productivity and better work-life balance. However, companies face challenges in maintaining team cohesion and company culture. Hybrid models, combining remote and in-office days, are emerging as a popular compromise.",
+  "content": "Backend persists workflow state before dispatching work.",
   "targetLanguage": "en"
 }
 ```
 
-**Output:**
+The chunk must be non-empty and contain no more than `max_input_words` words
+(1500 by default). The handler performs one LLM inference and returns unique
+candidate sentences within the configured word bounds:
 
 ```json
 {
-  "key_points": [
-    "Remote work has grown since 2020",
-    "Higher productivity reported by remote workers",
-    "Challenges in team cohesion",
-    "Hybrid models gaining popularity"
+  "key_points": ["Backend persists workflow state before dispatch"]
+}
+```
+
+### Reduce step
+
+Backend waits for every required map result and materializes their ordered
+arrays into one `key-point-reduce` assignment:
+
+```json
+{
+  "targetLanguage": "en",
+  "partials": [
+    ["Backend persists workflow state before dispatch"],
+    ["Workers execute bounded assignments with leases"]
   ]
 }
 ```
+
+The reduce handler removes exact duplicates, validates sentence lengths and
+performs one LLM inference with `refine_prompt.md` to select at most
+`max_items` final points. Both handlers fail explicitly on invalid input,
+unavailable inference or empty output; there is no heuristic or embeddings
+fallback.
