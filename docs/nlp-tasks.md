@@ -118,30 +118,32 @@ Extracts up to 5 concise key points from text content.
 
 ## Keyword Extraction
 
-**Execution type:** `keywords`
+**Step types:** `keywords-map`, `keywords-reduce`
 **File:** `tasks/keywords/keywords.py`
-**Model:** GGUF LLM configured in `config/tasks.json` (default: Qwen3-8B), with heuristic fallback
+**Model:** GGUF LLM for map; deterministic Python for reduce
 
-Extracts up to 10 keywords or short topic phrases from text content.
+Backend creates the durable fan-out/fan-in graph. Models executes one bounded
+map assignment or the deterministic reduce assignment.
 
 **Processing steps:**
 
-1. HTML tags are stripped and HTML entities are unescaped.
-2. A prompt is constructed asking the LLM for up to 10 topics (1-3 words each), comma-separated, in the same language as the input.
-3. If the LLM is available:
-   - Tries chat completion first, then falls back to plain completion.
-   - Output is split by commas/newlines and cleaned of bullet markers.
-4. If the LLM is unavailable (the shared llama-server is not answering and could not be started):
-   - Falls back to heuristic extraction: takes the first 3 words of each sentence.
-5. Each keyword is truncated to a maximum of 3 words.
-6. Results are deduplicated and capped at 10 items.
+1. Backend extracts and splits the document into chunks of at most 1500 words.
+2. Each `keywords-map` step asks the LLM for candidates in the requested
+   language and returns a `keywords` array.
+3. Backend waits for every required map result and materializes the arrays in
+   dependency order.
+4. `keywords-reduce` counts each candidate once per chunk, ranks by frequency
+   and first appearance, truncates phrases and applies the final item limit.
+
+Models does not chunk, filter relevance or return a heuristic success when an
+inference fails.
 
 ## Fallback Behavior Summary
 
 | Task | LLM Available | LLM Unavailable |
 |------|---------------|-----------------|
 | `key-point` | Configured LLM generates key points, supplemented by heuristics if < 5 results | Pure heuristic: sentence splitting + word count filtering |
-| `keywords` | Configured LLM generates keywords via chat or completion API | Pure heuristic: first 3 words of each sentence |
+| `keywords-map` | Configured LLM generates keyword candidates | Step fails explicitly |
 | `ask` | Configured LLM generates answer from context | Task fails (no fallback) |
 
 ## Dataset Statistics

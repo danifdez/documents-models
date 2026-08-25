@@ -19,7 +19,8 @@ coordination and execution finalization.
 | `search` | `search_snippets()` | `tasks/search/search.py` | intfloat/multilingual-e5-small |
 | `ask` | `ask_question()` | `tasks/ask/ask.py` | Mistral-7B + multilingual-e5 embeddings |
 | `key-point` | `key_points()` | `tasks/key_points/key_points.py` | Mistral-7B (with heuristic fallback) |
-| `keywords` | `keywords()` | `tasks/keywords/keywords.py` | Mistral-7B (with heuristic fallback) |
+| `keywords-map` | `keywords_map()` | `tasks/keywords/keywords.py` | Local GGUF LLM |
+| `keywords-reduce` | `keywords_reduce()` | `tasks/keywords/keywords.py` | Deterministic Python |
 | `embedding` | `create_embedding()` | `tasks/embedding/embedding.py` | intfloat/multilingual-e5-small |
 
 ---
@@ -364,9 +365,9 @@ Extracts up to 5 key points from text content.
 
 ---
 
-## keywords
+## keywords-map / keywords-reduce
 
-Extracts up to 10 keywords or short topic phrases from text content.
+Executes one stage of the durable keywords workflow created by Backend.
 
 **Input:**
 
@@ -389,11 +390,16 @@ Extracts up to 10 keywords or short topic phrases from text content.
 }
 ```
 
-- HTML tags are stripped and entities are unescaped before running.
-- Uses the configured LLM (via chat completion or plain completion fallback) to generate comma-separated topics.
-- Each keyword is truncated to a maximum of 3 words.
-- If the LLM is unavailable (the shared llama-server is not answering and could not be started), falls back to heuristic extraction (first 3 words of each sentence).
-- Returns up to 10 deduplicated keywords.
+- `keywords-map` accepts one bounded `content` chunk and requires
+  `targetLanguage`.
+- Backend supplies the accepted map arrays to `keywords-reduce` as ordered
+  `partials`.
+- Reduce ranks by cross-chunk frequency and first appearance, limits every
+  candidate to 3 words by default and returns at most 10 values.
+- Backend owns HTML extraction, chunking, dependencies, retries and root
+  finalization.
+
+See [Keywords](./tasks/keywords.md) for both payloads and failure behavior.
 
 ---
 

@@ -32,6 +32,7 @@ _TASK_DIR_MAP = {
     "key-point": "key_points",
     "detect-language": "detect_language",
     "entity-extraction-map": "entities",
+    "keywords-map": "keywords",
     "date-extraction": "dates",
     "document-extraction": "extraction",
     "ingest-content": "ingest",

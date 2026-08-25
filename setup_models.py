@@ -75,7 +75,7 @@ def setup():
         steps.append(("whisper", model, download_whisper))
 
     # LLM (GGUF) — download from HuggingFace
-    llm_tasks = ["keywords", "key-point", "ask", "summarize"]
+    llm_tasks = ["keywords-map", "key-point", "ask", "summarize"]
     for task_name in llm_tasks:
         task = tasks.get(task_name, {})
         if task.get("enabled", False) and task.get("type") == "llm":

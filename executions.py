@@ -49,6 +49,8 @@ MIGRATED_TASK_TYPES = (
     "dataset.propose-columns",
     "entity-extraction-map",
     "entity-extraction-reduce",
+    "keywords-map",
+    "keywords-reduce",
     "distribution",
     "correlation",
     "correlation-matrix",

@@ -1,58 +1,27 @@
-"""Agentic keyword extraction.
+"""Self-contained steps for the durable keywords workflow."""
 
-Runs through the shared inline map-reduce helper (`lib.llm.map_reduce`):
-
-- The invocation cleans and filters the text before chunking it.
-- Each chunk produces raw candidates, and the reduce step merges them using
-  frequency followed by first appearance.
-
-Defends against pathological inputs (data URIs, long base64 blobs) and
-truncates per-chunk LLM input to a safe character budget so a degenerate
-chunk can't blow Phi's context window.
-"""
-
-import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import (
-    InlineListMapReduceSpec,
-    run_inline_list_map_reduce,
-)
-from lib.llm.prompts import get_prompt
-from lib.llm.text import truncate_for_llm
-from services.relevance import select_relevant_units
-from services.text import (
-    chunk_units,
-    extract_section_units,
-    html_to_markdown,
-    normalize_text,
-    strip_dense_blobs,
-)
 from common.execution_registry import execution_handler
-
-logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers (preserved from the previous one-shot version)
-# ─────────────────────────────────────────────────────────────────────────────
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.prompts import get_prompt
+from lib.llm.text import strip_dense_blobs
+from services.llm_service import get_llm_service
 
 
 def split_and_clean(generated: str) -> List[str]:
-    parts = re.split(r'[\n,]+', generated)
+    parts = re.split(r"[\n,]+", generated)
     cleaned = []
-    for p in parts:
-        it = re.sub(r'^\s*[-\d\.\)]+\s*', '', p).strip()
-        if it:
-            cleaned.append(it)
+    for part in parts:
+        item = re.sub(r"^\s*[-\d.\)]+\s*", "", part).strip()
+        if item:
+            cleaned.append(item)
     return cleaned
 
 
 def _truncate_words(item: str, max_words: int) -> str:
-    return ' '.join(item.split()[:max_words]).strip()
+    return " ".join(item.split()[:max_words]).strip()
 
 
 def _merge_candidates(
@@ -60,18 +29,17 @@ def _merge_candidates(
     max_items: int,
     max_words: int,
 ) -> List[str]:
-    """Merge per-chunk candidate lists, ranking by frequency across chunks then by first appearance."""
     counts: Dict[str, int] = {}
     first_form: Dict[str, str] = {}
     first_seen: Dict[str, int] = {}
     order = 0
-    for cands in candidate_lists:
+    for candidates in candidate_lists:
         chunk_seen = set()
-        for raw in cands:
+        for raw in candidates:
             item = _truncate_words(raw, max_words)
             if not item:
                 continue
-            key = item.lower()
+            key = item.casefold()
             if key in chunk_seen:
                 continue
             chunk_seen.add(key)
@@ -82,157 +50,76 @@ def _merge_candidates(
                 order += 1
             counts[key] += 1
 
-    ranked = sorted(counts.keys(), key=lambda k: (-counts[k], first_seen[k]))
-    return [first_form[k] for k in ranked[:max_items]]
+    ranked = sorted(counts, key=lambda key: (-counts[key], first_seen[key]))
+    return [first_form[key] for key in ranked[:max_items]]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Per-chunk LLM extraction (used by both leaf and child paths)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _extract_chunk_candidates(chunk: str, target_lang: str, cfg: Dict[str, Any]) -> List[str]:
-    if not chunk or not chunk.strip():
-        return []
-    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
-                            tokens_key="max_tokens", default_tokens=500)
-    try:
-        params = get_llm_params("keywords")
-        llm_service = get_llm_service(**params)
-    except Exception as e:
-        logger.warning("LLM service unavailable for keywords extraction: %s", e)
-        return []
-    if llm_service is None:
-        return []
-    prompt_template = get_prompt("keywords")
-    max_tokens = int(cfg.get("max_tokens", 500))
-    try:
-        prompt = prompt_template.format(target_lang=target_lang, text=safe)
-        generated = llm_service.ask(prompt, max_tokens=max_tokens, temperature=0.0)
-    except Exception as e:
-        logger.warning("keywords chunk extraction failed: %s", e)
-        return []
-    return split_and_clean(generated) if generated else []
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Cross-chunk merge (with fallback when LLM produced nothing)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _merge_pipeline(
-    per_chunk_lists: List[List[str]],
-    raw_content: str,
-    cfg: Dict[str, Any],
-) -> List[str]:
-    max_items = int(cfg.get("max_items", 10))
-    max_words = int(cfg.get("max_words_per_item", 3))
-
-    keywords_list = _merge_candidates(per_chunk_lists, max_items=max_items, max_words=max_words)
-
-    if not keywords_list and raw_content:
-        # Fallback: pull short sentences from the raw text.
-        full_text = normalize_text(str(raw_content))
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if s.strip()]
-        heuristic = [_truncate_words(s, max_words) for s in sentences]
-        seen = set()
-        for item in heuristic:
-            if not item:
-                continue
-            key = item.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            keywords_list.append(item)
-            if len(keywords_list) >= max_items:
-                break
-
-    return keywords_list
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Chunking helper
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _build_chunks(
+def _extract_candidates(
     content: str,
-    chunk_word_budget: int,
-    *,
-    units_filter=None,
+    target_language: str,
+    config: Dict[str, Any],
 ) -> List[str]:
-    cleaned = strip_dense_blobs(html_to_markdown(content or ""))
-    units = extract_section_units(cleaned)
-    if not units:
-        return []
-    if units_filter is not None:
-        units = units_filter(units) or units
-    return chunk_units(units, chunk_word_budget, joiner="\n\n")
+    safe_content = strip_dense_blobs(content).strip()
+    if not safe_content:
+        raise ValueError("keywords-map requires non-empty content")
+    max_input_words = int(config.get("max_input_words", 1500))
+    if len(safe_content.split()) > max_input_words:
+        raise ValueError("keywords-map content exceeds its word budget")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Map-reduce spec
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _target_lang(payload: Dict[str, Any]) -> str:
-    return (
-        payload.get("targetLanguage")
-        or payload.get("target_language")
-        or "auto"
+    prompt_template = get_prompt("keywords-map")
+    if not prompt_template:
+        raise RuntimeError("keywords-map prompt is unavailable")
+    generated = get_llm_service(**get_llm_params("keywords-map")).ask(
+        prompt_template.format(
+            target_lang=target_language,
+            text=safe_content,
+        ),
+        max_tokens=int(config.get("max_tokens", 500)),
+        temperature=0.0,
     )
+    candidates = split_and_clean(generated) if generated else []
+    if not candidates:
+        raise ValueError("keywords-map returned no candidates")
+    return candidates
 
 
-def _chunks(payload: Dict[str, Any], cfg: Dict[str, Any], is_child: bool) -> List[str]:
-    raw_content = payload.get("content", "") or ""
-    if not str(raw_content).strip():
-        return []
-    units_filter = None
-    if not is_child:
-        target_lang = _target_lang(payload)
-        units_filter = lambda us: select_relevant_units(
-            us, cfg, task_label="keyword extraction", target_lang=target_lang,
+@execution_handler("keywords-map")
+def keywords_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise ValueError("keywords-map content must be a string")
+    target_language = payload.get("targetLanguage")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise ValueError("keywords-map targetLanguage must be a string")
+    return {
+        "keywords": _extract_candidates(
+            content,
+            target_language,
+            get_task_config("keywords-map"),
         )
-    return _build_chunks(
-        raw_content, int(cfg.get("chunk_word_budget", 1500)), units_filter=units_filter
+    }
+
+
+@execution_handler("keywords-reduce")
+def keywords_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
+    partials = payload.get("partials")
+    if not isinstance(partials, list) or not partials:
+        raise ValueError("keywords-reduce requires partials")
+
+    candidate_lists: List[List[str]] = []
+    for partial in partials:
+        if not isinstance(partial, list) or not partial or any(
+            not isinstance(candidate, str) for candidate in partial
+        ):
+            raise ValueError("keywords-reduce partials must be string arrays")
+        candidate_lists.append(partial)
+
+    config = get_task_config("keywords-reduce")
+    keywords = _merge_candidates(
+        candidate_lists,
+        max_items=int(config.get("max_items", 10)),
+        max_words=int(config.get("max_words_per_item", 3)),
     )
-
-
-def _leaf(chunk: str, payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
-    return _extract_chunk_candidates(chunk, _target_lang(payload), cfg)
-
-
-def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -> List[str]:
-    per_chunk_lists: List[List[str]] = []
-    for kw in partials:
-        kw = kw or []
-        per_chunk_lists.append([str(x) for x in kw] if isinstance(kw, list) else [])
-    return _merge_pipeline(per_chunk_lists, payload.get("content", "") or "", cfg)
-
-
-_SPEC = InlineListMapReduceSpec(
-    leaf_fn=_leaf,
-    reduce_fn=_reduce,
-    chunks_fn=_chunks,
-    result_key="keywords",
-)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@execution_handler("keywords")
-def keywords(
-    payload: Dict[str, Any],
-    state: Optional[Dict[str, Any]] = None,
-    ctx=None,
-) -> Dict[str, Any]:
-    """Extract and merge keywords from every inline chunk."""
-    try:
-        cfg = get_task_config("keywords")
-        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
-    except Exception as e:
-        logger.exception("Error extracting keywords")
-        return {"error": f"Error extracting keywords: {e}"}
+    if not keywords:
+        raise ValueError("keywords-reduce received no candidates")
+    return {"keywords": keywords}

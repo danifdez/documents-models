@@ -116,12 +116,18 @@ Each task has its own entry as a top-level key:
 
 ```json
 {
-  "keywords": {
+  "keywords-map": {
     "enabled": true,
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 500,
+    "max_input_words": 1500
+  },
+  "keywords-reduce": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": [],
     "max_items": 10,
     "max_words_per_item": 3
   }

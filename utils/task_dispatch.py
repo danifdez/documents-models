@@ -13,6 +13,8 @@ TASK_MODULES = {
     "document-extraction": "tasks.extraction.extractor",
     "entity-extraction-map": "tasks.entities.entities",
     "entity-extraction-reduce": "tasks.entities.entities",
+    "keywords-map": "tasks.keywords.keywords",
+    "keywords-reduce": "tasks.keywords.keywords",
     "indexed-file-extraction": "tasks.extraction.extractor",
     "indexed-file-ingest": "tasks.indexed_file.indexed_file",
     "indexed-file-search": "tasks.indexed_file.indexed_file",

@@ -1,17 +1,18 @@
 {
-  "keywords": {
+  "keywords-map": {
     "enabled": true,
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 500,
+    "max_input_words": 1500
+  },
+  "keywords-reduce": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": [],
     "max_items": 10,
-    "max_words_per_item": 3,
-    "chunk_word_budget": 1500,
-    "chunk_max_retries": 2,
-    "relevance_filter_enabled": true,
-    "relevance_batch_size": 30,
-    "relevance_max_tokens": 300
+    "max_words_per_item": 3
   },
   "key-point": {
     "enabled": true,
