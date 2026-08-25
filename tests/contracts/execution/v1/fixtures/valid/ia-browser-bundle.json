@@ -19,7 +19,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "system"
@@ -41,7 +42,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:4bc09766153224d4099072c8defb805a656c230d288f22a386713c78e7ee24f1"
+      "contentHash": "sha256:d13a37511e0aa49da564e0e776cbcee493623a5fa55afe66699d230f4f6fcc55"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -55,7 +56,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -79,7 +81,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:93f2afbf953aa5689e7518ee4ae0f5feb7c91f4fe6aec8c04ac4ddcd9273560c"
+      "contentHash": "sha256:9bbc1c8e7c76ddf027791cab338bdbeda8710775a6befcfa2d308d49191bd408"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -93,7 +95,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "model"
@@ -119,7 +122,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:ae922edc480162f4a01d8cd58751b9fb71b7048c42906207a53d9f236448ccf0"
+      "contentHash": "sha256:d3c6fc67aba3c3e9b9e3876b592d1e2fda2c725f2bf42c66e04625ef0b8e01f3"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -133,7 +136,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "model"
@@ -168,7 +172,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:6fd8eceee63da8f00b0e5a4bbb141e48743ab33cf5187d46d25eee08d9602f3e"
+      "contentHash": "sha256:c140e846d8079667cb9f36d2a4bea57c8cafe33c11e7261b27e8c25c894abba4"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -182,7 +186,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -209,7 +214,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:f2db9fdb8b5ef8eca90a46dcb6d138cc959276819d03bd58f7ae1ed89463cf0b"
+      "contentHash": "sha256:a396e4acf530d7ab5bbad0ef36eaaf2e916f3dd13e92580d2a68b69e6b36c467"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -223,7 +228,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -259,7 +265,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:9e3a9634e59cc6dd128179ba7af8bd8f0e6de6daa4763c62047e61e45fee6452"
+      "contentHash": "sha256:fcf0fac39433189d88bf93e06d1edc4720e169b4b11346073b177914cf0038ba"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -273,7 +279,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -308,7 +315,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:24378699109873e0b3bbb9a653812c6cd33cec69a3711ffc877acabadf78d1bd"
+      "contentHash": "sha256:8561df5f98d13906e00554c957aa1b581b20d5622873081826967a4861e87154"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -322,7 +329,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -352,7 +360,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:ef2aa1993d05a5ccde09d19aa79ea9966310522c0b22816bf81934a2dc288017"
+      "contentHash": "sha256:c1719e6c34b5dceb653246547759c57e77d4cdf7907c156c55cec513ce40a003"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -366,7 +374,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "browser"
@@ -399,7 +408,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:4dcf5b64b766b4ebe60f9d1c828a7a84a5a8bb1898218159457a7c49254f0d8d"
+      "contentHash": "sha256:084c02febe932045adaab0af92e732e847f5802c06dd9a59856aea9f42d1198b"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -413,7 +422,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "model"
@@ -441,7 +451,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:c14bac3d82c251ff7a8f3fbd30f47df696a2d614006bed272b3d8c39c6ae531c"
+      "contentHash": "sha256:7cd04fe9a86da2277b51e888ebeda51f28edaefddfc2ccaf7eaf900ea5de3114"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -455,7 +465,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "model"
@@ -493,7 +504,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:d215315ee375cbd5d63a7c9166d9814941a8bc61c6a8921bb67a29e6ec695f04"
+      "contentHash": "sha256:0dd892244896fdecd0b158ae82eebb4e60a8fc155ffe147f1418597003dee10a"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -507,7 +518,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "model"
@@ -535,7 +547,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:5c973572e77a4755fb05a34f621339adcda313c55caf5888c334da6a51071193"
+      "contentHash": "sha256:1239acb58ea17da5f2f33b0eea457c6a61b233a612fa4db3286cab3171b6abee"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -549,7 +561,8 @@
       "producer": {
         "component": "ia-browser",
         "instanceId": "browser-fixture",
-        "version": "fixture"
+        "version": "fixture",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "actor": {
         "type": "system"
@@ -580,7 +593,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:a44b4a5ceae50d384ad65f65b9a5cfa5e35f8638fba60a37d2185a3f8a5ead99"
+      "contentHash": "sha256:6e6da2cab484c2ec3202c75ceee4c724a19b211abb23b44c9f54a63cd1c438ec"
     }
   ],
   "artifacts": [
@@ -633,7 +646,9 @@
       "fixture-model"
     ],
     "adapterFingerprints": [],
-    "runtimeFingerprint": "fixture-runtime",
+    "runtimeFingerprints": [
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
     "featureFlags": {}
   },
   "redactionProfile": "evaluation-default",
@@ -643,8 +658,8 @@
     "missing": []
   },
   "integrity": {
-    "eventsHash": "sha256:aa3387a121aaa59705a40a3b1861bf70d63fda077968eb4fdc744ccd18ae2306",
-    "schemaManifestHash": "sha256:daca8e6edd1aa3f072fe198bd039bace682d79b2ea2e3c71973787a446d0bd0c"
+    "eventsHash": "sha256:4be49fb433ef247e0150dd214a3fa1cc35b0349c73087c141ffcc650cd248057",
+    "schemaManifestHash": "sha256:c0a8ba6c16eac96501f021f38c7da5068703f6436b44cbafa3a8931ab730da33"
   },
   "policySummary": {
     "decision": "allow",
@@ -662,7 +677,7 @@
     }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:de47ed247b4b89f1359e6e72d4bcfff5554c76d770e4666754014c5348d624f9",
+  "manifestHash": "sha256:a2a4a27b17ad0ca8e93f27c9ea001faf1299cb60ac69698410c6e5bce66b7f41",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

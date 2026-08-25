@@ -9,6 +9,7 @@ from common.execution_registry import TASK_HANDLERS
 from lib.execution.protocol_client import ExecutionProtocolClient
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
+from lib.execution.runtime_identity import runtime_fingerprint
 from lib.llm.config import active_deployments
 from lib.llm.prompts import prompt_package_fingerprint
 import executions
@@ -100,6 +101,19 @@ class StepProtocolTest(unittest.TestCase):
             },
         )
         self.assertIsNone(result["error"])
+        self.assertEqual(result["runtimeFingerprint"], runtime_fingerprint())
+
+    def test_runtime_fingerprint_changes_with_the_dependency_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lock = root / "requirements.txt"
+            lock.write_text("package==1.0.0\n", encoding="utf-8")
+            first = runtime_fingerprint(root)
+            lock.write_text("package==2.0.0\n", encoding="utf-8")
+            second = runtime_fingerprint(root)
+
+        self.assertRegex(first, r"^sha256:[0-9a-f]{64}$")
+        self.assertNotEqual(first, second)
 
     def test_wraps_inference_output_in_canonical_outcome(self):
         task_type = "protocol-inference-test"

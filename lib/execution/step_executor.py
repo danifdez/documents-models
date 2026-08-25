@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.outcome import InferenceOutcome
+from lib.execution.runtime_identity import runtime_fingerprint
 from lib.llm.config import get_task_config
 from lib.llm.prompts import prompt_package_fingerprint
 from utils.task_dispatch import call_handler, ensure_task_handler
@@ -27,6 +28,7 @@ def execute_assignment(
         "operationId": assignment["operationId"],
         "attemptId": assignment["attemptId"],
         "stepKind": step_kind,
+        "runtimeFingerprint": runtime_fingerprint(),
         "artifactRefs": [],
     }
     if not isinstance(task_type, str) or not ensure_task_handler(task_type):

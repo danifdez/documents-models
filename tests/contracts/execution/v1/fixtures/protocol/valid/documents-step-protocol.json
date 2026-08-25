@@ -96,9 +96,10 @@
         "stepId": "step-001",
         "operationId": "operation-001",
         "attemptId": "attempt-001",
-        "stepKind": "inference",
-        "status": "succeeded",
-        "output": {
+      "stepKind": "inference",
+      "status": "succeeded",
+      "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output": {
           "kind": "inference",
           "outcome": {
             "kind": "final_text",

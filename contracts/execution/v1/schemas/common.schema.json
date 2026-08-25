@@ -157,7 +157,8 @@
           "enum": ["documents-backend", "documents-models", "ia-browser"]
         },
         "instanceId": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "runtimeFingerprint": { "$ref": "#/$defs/hash" }
       },
       "additionalProperties": true
     },
