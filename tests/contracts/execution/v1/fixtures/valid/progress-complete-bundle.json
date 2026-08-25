@@ -741,7 +741,9 @@
       "encoding": "identity",
       "bundlePath": "artifacts/documents-tool-result.txt",
       "createdByEventId": "doc_evt_007",
-      "inputSourceIds": [],
+      "inputSourceIds": [
+        "source_doc_tool"
+      ],
       "dataClassification": "workspace",
       "redaction": {
         "applied": false
@@ -793,7 +795,7 @@
     "workspaceId": "fixture-workspace"
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:780bd7b7e5ca72a7e4284199e03238f0b830737a80137728c8deb0e8b7a238b3",
+  "manifestHash": "sha256:6ff604e0269e0cee1d618c5b5821b3efb2638a014849260e283718a8ed42d2da",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

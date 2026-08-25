@@ -1,0 +1,11 @@
+{
+  "base": "../valid/ia-browser-bundle.json",
+  "mutations": [
+    {
+      "op": "remove",
+      "path": "/artifacts/0/inputSourceIds/0"
+    }
+  ],
+  "expectedFailure": "invariant"
+}
+

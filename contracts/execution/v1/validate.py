@@ -277,6 +277,7 @@ def validate_bundle_invariants(
     operation_starts = {}
     operation_finishes = set()
     event_types = set()
+    source_events = {}
 
     sequences = [event["sequence"] for event in events]
     expected_sequences = list(range(bundle["eventRange"]["firstSequence"], bundle["eventRange"]["lastSequence"] + 1))
@@ -330,7 +331,22 @@ def validate_bundle_invariants(
         if event["contentHash"] != expected_hash:
             raise ContractError(f"{event_id}: contentHash mismatch")
 
-        if event["eventType"] == "operation.started":
+        if event["eventType"] == "source.observed":
+            payload = event["payload"]
+            source_id = payload["sourceId"]
+            if event.get("sourceId") != source_id:
+                raise ContractError(f"{event_id}: source identity mismatch")
+            if source_id in source_events:
+                raise ContractError(f"duplicate sourceId: {source_id}")
+            source_events[source_id] = event
+            snapshot_id = payload.get("snapshotArtifactId")
+            if snapshot_id:
+                artifact = artifact_by_id.get(snapshot_id)
+                if not artifact or source_id not in artifact.get("inputSourceIds", []):
+                    raise ContractError(
+                        f"{event_id}: source snapshot lacks provenance link"
+                    )
+        elif event["eventType"] == "operation.started":
             key = (event["operationId"], event["attemptId"])
             if key in operation_starts:
                 raise ContractError(f"duplicate operation start: {key}")
@@ -345,6 +361,13 @@ def validate_bundle_invariants(
             if start["payload"]["operationKind"] != event["payload"]["operationKind"]:
                 raise ContractError(f"operation kind changed: {key}")
             operation_finishes.add(key)
+
+    for artifact in artifacts:
+        for source_id in artifact.get("inputSourceIds", []):
+            if source_id not in source_events:
+                raise ContractError(
+                    f"artifact input source is absent: {artifact['artifactId']}: {source_id}"
+                )
 
     required_types = {
         "execution.created",
