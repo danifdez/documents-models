@@ -19,7 +19,7 @@ These tasks work with unstructured text, documents, and natural language.
 | [key-point](./tasks/key-point.md) | Extract the main ideas from a text as a short list of concise statements |
 | [translate](./tasks/translate.md) | Translate a list of texts from one language to another |
 | [detect-language](./tasks/detect-language.md) | Identify the language of one or more text samples |
-| [entity-extraction](./tasks/entity-extraction.md) | Extract named entities (people, organizations, locations, etc.) from text |
+| [entity-extraction map/reduce](./tasks/entity-extraction.md) | Extract and deterministically merge named entities through durable steps |
 | [search](./tasks/search.md) | Perform semantic search over indexed project content |
 | [ingest-content](./tasks/ingest-content.md) | Index document content into the vector database for semantic search |
 | [document-extraction](./tasks/document-extraction.md) | Extract and parse text content from uploaded files (PDF, Word, HTML, audio, etc.) |

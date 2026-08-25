@@ -13,7 +13,8 @@ coordination and execution finalization.
 | `summarize-map` | `summarize_map()` | `tasks/summarize_map/summarize_map.py` | Local GGUF LLM |
 | `summarize-reduce` | `summarize_reduce()` | `tasks/summarize_reduce/summarize_reduce.py` | Local GGUF LLM |
 | `translate` | `translate()` | `tasks/translate/translate.py` | Helsinki-NLP/OPUS |
-| `entity-extraction` | `entities()` | `tasks/entities/entities.py` | Local Qwen LLM (GBNF-constrained JSON) |
+| `entity-extraction-map` | `entity_extraction_map()` | `tasks/entities/entities.py` | Local Qwen LLM |
+| `entity-extraction-reduce` | `entity_extraction_reduce()` | `tasks/entities/entities.py` | Deterministic Python |
 | `ingest-content` | `ingest()` | `tasks/ingest/ingest.py` | intfloat/multilingual-e5-small |
 | `search` | `search_snippets()` | `tasks/search/search.py` | intfloat/multilingual-e5-small |
 | `ask` | `ask_question()` | `tasks/ask/ask.py` | Mistral-7B + multilingual-e5 embeddings |
@@ -154,18 +155,15 @@ Translates a list of texts between language pairs.
 
 ---
 
-## entity-extraction
+## entity-extraction-map / entity-extraction-reduce
 
-Extracts named entities from text using the local Qwen LLM.
+Executes one stage of the durable entity-extraction workflow created by Backend.
 
 **Input:**
 
 ```json
 {
-  "texts": [
-    { "text": "John Doe works at Acme Corp in Madrid." },
-    "Plain string also accepted"
-  ]
+  "content": "John Doe works at Acme Corp in Madrid."
 }
 ```
 
@@ -181,11 +179,16 @@ Extracts named entities from text using the local Qwen LLM.
 }
 ```
 
-- Uses the local Qwen LLM (configured in `tasks.json`) with GBNF-constrained output to return well-formed JSON.
-- Multilingual: entities are extracted in the document's original language (no translation required).
-- Filters out numerical/temporal entity types: CARDINAL, DATE, MONEY, ORDINAL, PERCENT, QUANTITY, TIME.
-- Entities shorter than 2 characters are excluded.
-- Duplicates are removed while preserving order.
+- `entity-extraction-map` accepts exactly one bounded `content` chunk and uses
+  the local Qwen LLM.
+- Backend supplies the accepted map arrays to `entity-extraction-reduce` as
+  ordered `partials`.
+- Reduce validates labels and removes duplicate names case-insensitively while
+  preserving first appearance.
+- Backend owns chunking, dependencies, retries and root finalization.
+
+See [Entity Extraction](./tasks/entity-extraction.md) for both payloads and the
+recognized labels.
 
 ---
 

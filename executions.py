@@ -47,6 +47,8 @@ MIGRATED_TASK_TYPES = (
     "document-extraction",
     "dataset.extract-row",
     "dataset.propose-columns",
+    "entity-extraction-map",
+    "entity-extraction-reduce",
     "distribution",
     "correlation",
     "correlation-matrix",

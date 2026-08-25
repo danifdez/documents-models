@@ -99,19 +99,18 @@
     "chunk_size": 32,
     "max_words_per_item": 400
   },
-  "entity-extraction": {
+  "entity-extraction-map": {
     "enabled": true,
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
     "max_tokens": 2000,
-    "chunk_words": 600,
-    "chunk_overlap": 100,
-    "max_words_per_chunk": 700,
-    "chunk_max_retries": 2,
-    "relevance_filter_enabled": true,
-    "relevance_batch_size": 30,
-    "relevance_max_tokens": 300
+    "max_input_words": 1500
+  },
+  "entity-extraction-reduce": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
   },
   "date-extraction": {
     "enabled": true,

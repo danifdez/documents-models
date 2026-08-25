@@ -6,7 +6,8 @@ EMBEDDINGS = "embeddings"
 
 # Map task types to feature flag keys in config.features
 TASK_FEATURE_MAP = {
-    "entity-extraction": "relationships",
+    "entity-extraction-map": "relationships",
+    "entity-extraction-reduce": "relationships",
     "date-extraction": "timelines",
     "distribution": "datasets",
     "correlation": "datasets",

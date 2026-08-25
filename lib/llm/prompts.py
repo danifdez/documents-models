@@ -31,7 +31,7 @@ _TASK_DIR_MAP = {
     "agent-chat": "assistant_chat",
     "key-point": "key_points",
     "detect-language": "detect_language",
-    "entity-extraction": "entities",
+    "entity-extraction-map": "entities",
     "date-extraction": "dates",
     "document-extraction": "extraction",
     "ingest-content": "ingest",

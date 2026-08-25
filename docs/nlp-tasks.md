@@ -60,20 +60,22 @@ Translates a list of texts from a source language to a target language.
 
 ## Entity Extraction
 
-**Execution type:** `entity-extraction`
+**Step types:** `entity-extraction-map`, `entity-extraction-reduce`
 **File:** `tasks/entities/entities.py`
-**Model:** local Qwen LLM (GGUF) configured in `config/tasks.json`
+**Model:** local Qwen LLM for map; deterministic Python for reduce
 
-Extracts named entities (persons, organizations, locations, etc.) from text using the local Qwen LLM. Output is constrained with a GBNF grammar so the model returns well-formed JSON. The extraction is multilingual — entities are returned in the document's original language, with no translation required.
+Backend creates the durable fan-out/fan-in graph. Models executes one bounded
+map assignment or the deterministic reduce assignment; it does not coordinate
+chunks or register a root handler.
 
 **Processing steps:**
 
-1. Input texts are normalized — both strings and `{text}` dicts are accepted.
-2. The Qwen LLM is prompted to list named entities, with GBNF-constrained JSON output.
-3. Entities are filtered:
-   - Excluded types: CARDINAL, DATE, MONEY, ORDINAL, PERCENT, QUANTITY, TIME
-   - Minimum length: 2 characters
-4. Duplicates are removed while preserving discovery order.
+1. Backend splits extracted document text into chunks of at most 1500 words.
+2. Each `entity-extraction-map` step receives one `content` string and returns
+   an `entities` array.
+3. Backend waits for all maps and materializes their arrays in dependency order.
+4. `entity-extraction-reduce` validates the arrays and deduplicates names
+   case-insensitively while preserving first appearance.
 
 **Recognized entity types** (after filtering):
 
@@ -90,6 +92,9 @@ Extracts named entities (persons, organizations, locations, etc.) from text usin
 | WORK_OF_ART | Titles of books, songs, etc. |
 | LAW | Named documents made into laws |
 | LANGUAGE | Any named language |
+
+See [Entity Extraction](./tasks/entity-extraction.md) for the canonical map and
+reduce payloads.
 
 ## Key Point Extraction
 

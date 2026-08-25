@@ -61,17 +61,6 @@ rel  ::= "{" ws "\"subject\"" ws ":" ws sstring "," ws "\"predicate\"" ws ":" ws
     + _BOUNDED_STRING + _JSON_COMMON
 )
 
-# entity-extraction: array of {word, entity} where entity is one of the
-# standardized NER labels the backend knows how to map.
-ENTITIES_GBNF = (
-    r"""
-root  ::= "[" ws ( ent ( "," ws ent ){0,127} )? "]"
-ent   ::= "{" ws "\"word\"" ws ":" ws sstring "," ws "\"entity\"" ws ":" ws label ws "}" ws
-label ::= "\"PERSON\"" | "\"ORG\"" | "\"GPE\"" | "\"LOC\"" | "\"NORP\"" | "\"EVENT\"" | "\"FAC\"" | "\"PRODUCT\"" | "\"WORK_OF_ART\"" | "\"LANGUAGE\"" | "\"LAW\""
-"""
-    + _BOUNDED_STRING + _JSON_COMMON
-)
-
 # date-extraction LLM fallback: either a resolved date or an unresolved marker.
 DATE_RESOLUTION_GBNF = (
     r"""
