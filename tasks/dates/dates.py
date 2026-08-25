@@ -29,7 +29,10 @@ import dateparser
 
 from lib.llm.config import get_llm_params, get_task_config
 from lib.llm.grammars import DATE_RESOLUTION_GBNF, STRING_ARRAY_GBNF
-from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
+from lib.llm.map_reduce import (
+    InlineListMapReduceSpec,
+    run_inline_list_map_reduce,
+)
 from lib.llm.prompts import get_prompt
 from services.llm_service import get_llm_service
 from services.relevance import select_relevant_units
@@ -671,15 +674,11 @@ def _leaf_payload_extras(
     return [{"_chunk_offset": off} for off in chunk_offsets]
 
 
-_SPEC = MapReduceSpec(
+_SPEC = InlineListMapReduceSpec(
     leaf_fn=_leaf,
     reduce_fn=_reduce,
-    chunk_field="text",
-    recursive_merge=False,
-    result_key="dates",
-    empty_value=[],
-    list_results=True,
     chunks_fn=_chunks,
+    result_key="dates",
     leaf_payload_extras_fn=_leaf_payload_extras,
 )
 
@@ -708,7 +707,7 @@ def extract_dates(
         # dodge any patch a test harness applies to this module to override
         # the task config (chunk_word_budget & friends).
         cfg = get_task_config("date-extraction")
-        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
+        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("date-extraction failed")
         return {"error": f"date-extraction failed: {e}"}

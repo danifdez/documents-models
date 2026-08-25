@@ -18,7 +18,10 @@ import numpy as np
 
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
+from lib.llm.map_reduce import (
+    InlineListMapReduceSpec,
+    run_inline_list_map_reduce,
+)
 from lib.llm.prompts import get_prompt
 from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
@@ -351,15 +354,11 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     )
 
 
-_SPEC = MapReduceSpec(
+_SPEC = InlineListMapReduceSpec(
     leaf_fn=_leaf,
     reduce_fn=_reduce,
-    chunk_field="content",
-    recursive_merge=False,
-    result_key="key_points",
-    empty_value=[],
-    list_results=True,
     chunks_fn=_chunks,
+    result_key="key_points",
 )
 
 
@@ -373,7 +372,7 @@ def key_points(payload: Dict[str, Any], state: Optional[Dict[str, Any]] = None, 
     """Extract and merge key points from every inline chunk."""
     try:
         cfg = get_task_config("key-point")
-        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
+        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("Error extracting key points")
         return {"error": f"Error extracting key points: {e}"}

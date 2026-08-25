@@ -19,7 +19,10 @@ import re
 from typing import Any, Dict, List, Optional
 
 from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
+from lib.llm.map_reduce import (
+    InlineListMapReduceSpec,
+    run_inline_list_map_reduce,
+)
 from lib.llm.prompts import get_prompt
 from lib.llm.text import build_chunks, strip_dense_blobs, truncate_for_llm
 from services.llm_service import get_llm_service
@@ -135,15 +138,11 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     return _dedupe(merged)
 
 
-_SPEC = MapReduceSpec(
+_SPEC = InlineListMapReduceSpec(
     leaf_fn=_leaf,
     reduce_fn=_reduce,
-    chunk_field="text",
-    recursive_merge=False,
-    result_key="entities",
-    empty_value=[],
-    list_results=True,
     chunks_fn=_chunks,
+    result_key="entities",
 )
 
 
@@ -163,7 +162,7 @@ def entities(
     """
     try:
         cfg = get_task_config("entity-extraction")
-        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
+        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("entity-extraction failed")
         return {"error": f"entity-extraction failed: {e}"}

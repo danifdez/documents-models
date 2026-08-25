@@ -3,18 +3,17 @@
 Mirror of `documents-dev/models/services/relevance.py`. Since `cfg` is the
 task's own config, the functions only receive `cfg`.
 
-Two independent filters, each registered as its own unit-filter entity (see
-`lib.llm.unit_filters`) so a task turns them on by naming them, not with a flag:
+Two independent filters are available for callers to compose as needed:
 
-1. `heuristic_relevance` (name `relevance`): regex against each unit's heading
+1. `heuristic_relevance`: regex against each unit's heading
    drops sections that look auxiliary (References, Bibliography, Appendix,
    Acknowledgements, Glossary, Index, Copyright, …). Deterministic and free.
 
-2. `llm_relevance` (name `relevance_llm`): one call per `relevance_batch_size`
+2. `llm_relevance`: one call per `relevance_batch_size`
    units receives a compact `[idx] heading | preview` listing and returns
    `{"keep": [idx, ...]}`. The model only chooses what to discard; it can't add
-   or paraphrase. Compose it after `relevance` (`["relevance", "relevance_llm"]`)
-   to run the free regex first and the LLM only on survivors.
+   or paraphrase. It can run after `heuristic_relevance` so the LLM only sees
+   survivors of the free regex pass.
 
 Fail-open throughout: any parse error, empty result, or LLM unavailability keeps
 the input. Neither filter ever returns an empty list for a non-empty input.

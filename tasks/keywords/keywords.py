@@ -17,7 +17,10 @@ from typing import Any, Dict, List, Optional
 
 from services.llm_service import get_llm_service
 from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.map_reduce import MapReduceSpec, run_map_reduce
+from lib.llm.map_reduce import (
+    InlineListMapReduceSpec,
+    run_inline_list_map_reduce,
+)
 from lib.llm.prompts import get_prompt
 from lib.llm.text import truncate_for_llm
 from services.relevance import select_relevant_units
@@ -207,15 +210,11 @@ def _reduce(partials: List[Any], payload: Dict[str, Any], cfg: Dict[str, Any]) -
     return _merge_pipeline(per_chunk_lists, payload.get("content", "") or "", cfg)
 
 
-_SPEC = MapReduceSpec(
+_SPEC = InlineListMapReduceSpec(
     leaf_fn=_leaf,
     reduce_fn=_reduce,
-    chunk_field="content",
-    recursive_merge=False,
-    result_key="keywords",
-    empty_value=[],
-    list_results=True,
     chunks_fn=_chunks,
+    result_key="keywords",
 )
 
 
@@ -233,7 +232,7 @@ def keywords(
     """Extract and merge keywords from every inline chunk."""
     try:
         cfg = get_task_config("keywords")
-        return run_map_reduce(payload, state, ctx, spec=_SPEC, cfg=cfg)
+        return run_inline_list_map_reduce(payload, spec=_SPEC, cfg=cfg)
     except Exception as e:
         logger.exception("Error extracting keywords")
         return {"error": f"Error extracting keywords: {e}"}
