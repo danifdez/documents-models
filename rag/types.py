@@ -21,6 +21,8 @@ class RAGContext:
     limit: int = 5
     max_tokens: int = 1000
     score_threshold: Optional[float] = 0.35
+    candidates: list = field(default_factory=list)
+    provided_context: str = ""
 
     # Retriever output
     chunks: List[RetrievedChunk] = field(default_factory=list)

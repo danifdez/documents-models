@@ -196,7 +196,8 @@ recognized labels.
 
 ## ingest-content
 
-Ingests HTML content into the workspace RAG vector table (`rag_chunks` in PostgreSQL/pgvector) for RAG. Always deletes existing vectors for the source before upserting, keeping data in sync on re-ingestion.
+Converts supplied HTML content into deterministic vector points. Backend
+validates the result and atomically replaces the source rows in pgvector.
 
 **Input:**
 
@@ -205,7 +206,7 @@ Ingests HTML content into the workspace RAG vector table (`rag_chunks` in Postgr
   "content": "<p>Document HTML content...</p>",
   "sourceType": "resource",
   "resourceId": 42,
-  "projectId": "uuid-of-project"
+  "projectId": 7
 }
 ```
 
@@ -213,7 +214,7 @@ The `sourceType` field controls how `source_id` is built:
 
 | `sourceType` | Required field | `source_id` stored |
 |---|---|---|
-| `resource` (default) | `resourceId` | `"42"` |
+| `resource` (default) | `resourceId` | `"resource_42"` |
 | `doc` | `docId` | `"doc_42"` |
 | `knowledge` | `knowledgeEntryId` | `"knowledge_42"` |
 
@@ -221,41 +222,18 @@ The `sourceType` field controls how `source_id` is built:
 
 ```json
 {
-  "success": true
+  "sourceId": "resource_42",
+  "chunks": 1,
+  "points": [{ "id": "resource_42:1", "embedding": [], "payload": {} }]
 }
 ```
 
 - Cleans HTML and extracts text from block elements.
 - Splits text into semantic chunks (target: `RAG_CHUNK_TARGET_WORDS` words, max: `RAG_CHUNK_MAX_WORDS`, overlap: `RAG_CHUNK_OVERLAP_WORDS`).
 - Encodes each chunk with intfloat/multilingual-e5-small (L2-normalized).
-- Stores embeddings in `rag_chunks` with metadata: `text`, `source_id`, `source_type`, `project_id`, `part_number`, `total_chunks`.
+- Returns embeddings and metadata without opening a datastore.
 
 See [RAG Pipeline](./rag-pipeline.md) for details.
-
----
-
-## delete-vectors
-
-Deletes all vectors belonging to a given source from `rag_chunks`.
-
-**Input:**
-
-```json
-{
-  "sourceId": "42"
-}
-```
-
-**Output:**
-
-```json
-{
-  "success": true
-}
-```
-
-- Removes all rows from `rag_chunks` where `source_id` matches the given value.
-- Does not require any capability (any worker can handle it).
 
 ---
 
@@ -269,12 +247,13 @@ Performs semantic search over ingested content.
 {
   "query": "climate change impact",
   "limit": 5,
-  "projectId": "uuid-of-project",
+  "candidates": [],
   "score_threshold": 0.35
 }
 ```
 
-`projectId` filters results to a specific project. `score_threshold` overrides the global `RAG_SCORE_THRESHOLD` for this request.
+Backend applies project scope before freezing `vector_candidates`.
+`score_threshold` overrides the global RAG threshold for this request.
 
 **Output:**
 
@@ -296,7 +275,7 @@ Performs semantic search over ingested content.
 ```
 
 - Encodes the query with the same embedding model used for ingestion.
-- Performs cosine similarity search in `rag_chunks` (pgvector).
+- Calculates cosine similarity only over the frozen candidate snapshot.
 - Returns up to `limit` results sorted by relevance score.
 
 ---
@@ -483,7 +462,7 @@ Generates a vector embedding for a single text input.
 
 ## dataset-stats
 
-Computes descriptive statistics for a dataset stored in the `datasets` / `dataset_records` tables.
+Computes descriptive statistics for the dataset snapshot supplied in the assignment.
 
 **Input:**
 
@@ -511,6 +490,6 @@ Computes descriptive statistics for a dataset stored in the `datasets` / `datase
 }
 ```
 
-- Reads schema and records directly from PostgreSQL.
+- Reads schema and records from the assignment's dataset artifact.
 - Builds a pandas DataFrame and computes per-field statistics (numeric: mean/std/min/max/percentiles; string: unique count and most-frequent value; boolean: true/false counts).
 - Does not require any capability (any worker can handle it).

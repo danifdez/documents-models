@@ -38,6 +38,7 @@ ask_yn() {
 mkdir -p config/tasks
 
 # ── Configure config.json ──
+ENABLE_EMBEDDINGS=true
 if [ -f "config/config.json" ]; then
   ok "config/config.json already exists (skipping)"
 else
@@ -53,27 +54,11 @@ else
   printf "${DIM}  Press Enter to accept the default value shown in brackets.${NC}\n"
   echo ""
 
-  # ── Database ──
-  printf "${BOLD}  Database${NC}\n"
-  ask "PostgreSQL host" "localhost";       PG_HOST="$REPLY"
-  ask "PostgreSQL port" "5432";            PG_PORT="$REPLY"
-  ask "PostgreSQL database" "documents";   PG_DB="$REPLY"
-  ask "PostgreSQL user" "postgres";        PG_USER="$REPLY"
-  ask "PostgreSQL password" "example";     PG_PASS="$REPLY"
-  echo ""
-
   # ── Embeddings / RAG ──
-  # Vectors live in PostgreSQL (pgvector tables created by the backend
-  # migrations); there is no separate vector service to configure.
-  ENABLE_EMBEDDINGS=true
   if ! ask_yn "Enable RAG/embeddings?" "yes"; then
     ENABLE_EMBEDDINGS=false
     warn "Embeddings disabled — embedding-dependent tasks will be disabled"
   fi
-  echo ""
-
-  # ── Storage ──
-  ask "Documents storage directory" "../documents"; STORAGE="$REPLY"
   echo ""
 
   # ── Apply configuration using Python ──
@@ -85,15 +70,7 @@ import json
 with open('config/config.json', 'r') as f:
     cfg = json.load(f)
 
-cfg['database']['host'] = '$PG_HOST'
-cfg['database']['port'] = int('$PG_PORT')
-cfg['database']['name'] = '$PG_DB'
-cfg['database']['user'] = '$PG_USER'
-cfg['database']['password'] = '$PG_PASS'
-
-cfg.setdefault('storage', {})['documents_dir'] = '$STORAGE'
-
-# Embeddings (pgvector) gate
+# Embedding capability gate
 if $( [ "$ENABLE_EMBEDDINGS" = true ] && echo 'False' || echo 'True' ):
     cfg['worker']['disable_embeddings'] = True
 
@@ -163,7 +140,11 @@ import json
 with open('config/tasks.json', 'r') as f:
     tasks = json.load(f)
 
-for task_name in ['search', 'ask', 'ingest-content', 'embedding']:
+for task_name in [
+    'search', 'ask', 'ingest-content', 'embedding',
+    'memory-ingest', 'memory-search',
+    'indexed-file-ingest', 'indexed-file-search',
+]:
     if task_name in tasks:
         tasks[task_name]['enabled'] = False
 

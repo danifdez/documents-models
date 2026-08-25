@@ -10,6 +10,8 @@ class ContextBuilder:
     def run(self, ctx: RAGContext) -> RAGContext:
         source = ctx.ranked_chunks if ctx.ranked_chunks else ctx.chunks
         parts = [c.text for c in source if c.text]
+        if ctx.provided_context.strip():
+            parts.append(ctx.provided_context.strip())
 
         # Append graph context if available
         if ctx.graph_context:

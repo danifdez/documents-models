@@ -1,25 +1,4 @@
 {
-  "database": {
-    "host": "localhost",
-    "port": 5432,
-    "name": "documents",
-    "user": "postgres",
-    "password": "example"
-  },
-  "vectors": {
-    "rag_table": "rag_chunks",
-    "folder_table": "indexed_file_chunks",
-    "memory_table": "memory_vectors"
-  },
-  "graph": {
-    "enabled": true,
-    "name": "documents",
-    "neighborhood_depth": 2,
-    "neighborhood_limit": 50
-  },
-  "storage": {
-    "documents_dir": "../documents"
-  },
   "llm_defaults": {
     "model_dir": "models",
     "n_ctx": 32768,

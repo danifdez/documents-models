@@ -72,11 +72,6 @@
     "type": "embedding",
     "capabilities": ["embeddings"]
   },
-  "memory-delete-vectors": {
-    "enabled": true,
-    "type": "embedding",
-    "capabilities": ["embeddings"]
-  },
   "summarize-map": {
     "enabled": true,
     "type": "llm",
@@ -138,10 +133,20 @@
     "type": "pipeline",
     "capabilities": ["embeddings"]
   },
-  "delete-vectors": {
+  "indexed-file-extraction": {
     "enabled": true,
     "type": "utility",
     "capabilities": []
+  },
+  "indexed-file-ingest": {
+    "enabled": true,
+    "type": "embedding",
+    "capabilities": ["embeddings"]
+  },
+  "indexed-file-search": {
+    "enabled": true,
+    "type": "embedding",
+    "capabilities": ["embeddings"]
   },
   "detect-language": {
     "enabled": true,

@@ -1,6 +1,8 @@
 ## Ask
 
-The **ask** task answers a natural language question by searching through the documents and knowledge stored in the project using a Retrieval-Augmented Generation (RAG) pipeline. It finds the most relevant content from the vector database and uses a language model to compose a coherent answer.
+The **ask** task answers a natural language question from a bounded candidate
+snapshot prepared by Backend. It ranks that snapshot and uses a language model
+to compose a grounded response without accessing a vector database.
 
 ### What it does
 
@@ -11,7 +13,8 @@ Given a question, this task retrieves relevant text snippets from the project's 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `question` | string | Yes | The question to answer |
-| `projectId` | number | No | Limits the search to a specific project's content |
+| `candidates` | array | direct harness only | Vector candidates; production supplies the equivalent artifact |
+| `graphContext` | array | no | Backend-resolved, project-scoped relationship triples |
 
 ### Returns
 
@@ -36,7 +39,8 @@ If no relevant content is found:
 ```json
 {
   "question": "What were the main conclusions of the 2023 annual report?",
-  "projectId": 5
+  "candidates": [],
+  "graphContext": []
 }
 ```
 

@@ -50,7 +50,11 @@ cd models
 chmod +x install && ./install
 ```
 
-The script creates `config/tasks.json` from defaults, prompts for task-domain database and storage settings, sets up the venv, and installs CPU/GPU dependencies (if CUDA is detected). After it finishes you can activate the virtualenv and start the worker through the root `manage` command or with the standalone environment shown above.
+The script creates the local configuration from defaults, asks whether embedding
+capabilities should be enabled, sets up the venv, and installs CPU/GPU
+dependencies when CUDA is detected. After it finishes you can activate the
+virtualenv and start the worker through the root `manage` command or with the
+standalone environment shown above.
 
 ## Running the service
 

@@ -37,7 +37,6 @@ _TASK_DIR_MAP = {
     "date-extraction-map": "dates",
     "document-extraction": "extraction",
     "ingest-content": "ingest",
-    "delete-vectors": "ingest",
     "correlation-matrix": "correlation_matrix",
     "group-by": "group_by",
     "time-series": "time_series",

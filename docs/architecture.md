@@ -32,7 +32,7 @@ utils/task_dispatch.py                conventional task module loading
 common/execution_registry.py          @execution_handler registry
 tasks/<task>/<task>.py                self-contained task handlers
 config/tasks.json                     task configuration
-database/                             task-domain data access only
+common/vector_contract.py             frozen vector candidate validation/ranking
 ```
 
 ## Task dispatch
@@ -55,10 +55,9 @@ that becomes the value of the `StepResult` output.
 
 ## Data access boundary
 
-Task implementations may read or write their own domain stores when the step
-contract authorizes that effect, such as pgvector data or the entity graph.
-They must not write `executions`, `execution_steps`, attempts, receipts, or
-events. Those tables are owned exclusively by Backend.
+Task implementations do not open application datastores. Backend supplies
+scope-checked payloads and artifacts; Models returns calculated data and
+Backend applies every relational, vector or graph effect during finalization.
 
 ## Failure and recovery
 

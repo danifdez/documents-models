@@ -154,11 +154,11 @@ inference fails.
 **File:** `tasks/dataset_stats/stats.py`
 **Library:** pandas, scipy
 
-Computes descriptive statistics for a dataset and its records stored in the PostgreSQL `datasets` and `dataset_records` tables.
+Computes descriptive statistics for the dataset snapshot supplied by Backend.
 
 **Processing steps:**
 
-1. Schema and records are fetched directly from PostgreSQL.
+1. Schema and records are decoded from the assignment artifact.
 2. Records are assembled into a pandas DataFrame with type coercion based on the schema field types.
 3. Optional filters are applied (operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`).
 4. Per-field statistics are computed:

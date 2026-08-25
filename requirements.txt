@@ -7,11 +7,9 @@ langdetect==1.0.9
 transformers==4.57.6
 protobuf==7.35.1
 sentencepiece==0.2.2
-pgvector==0.5.0
 torch==2.12.1
 sentence-transformers==5.6.1
 tiktoken==0.13.0
-psycopg[binary]==3.3.4
 dateparser==1.4.1
 mutagen==1.48.1
 odfpy==1.4.1

@@ -2,7 +2,7 @@
 
 Configuration is split into two JSON files inside `config/`:
 
-- **`config/config.json`** — General settings (database, vector tables, storage, LLM defaults, RAG, worker)
+- **`config/config.json`** — General settings (LLM defaults, RAG, worker)
 - **`config/tasks.json`** — Per-task configuration (models, capabilities, parameters, enabled/disabled)
 
 Both are auto-created from `common/config.default.json` and `common/tasks.default.json` during installation. Edit them directly to change any setting.
@@ -11,43 +11,10 @@ Per-task overrides can also be placed in `config/tasks/<task-name>/`.
 
 ## config.json
 
-### Database
-
-```json
-"database": {
-  "host": "localhost",
-  "port": 5432,
-  "name": "documents",
-  "user": "postgres",
-  "password": "example"
-}
-```
-
-This connection is only for task-domain stores such as datasets, pgvector and
-the entity graph. Execution scheduling, attempts, leases and results use the
-authenticated Backend protocol and have no table setting in Models.
-
-### Vectors
-
-Embeddings are stored in PostgreSQL (pgvector) — there is no separate vector service. This block only configures the table names used by the worker; the extension and the tables are created by the backend migration `CreateVectorTables`.
-
-```json
-"vectors": {
-  "rag_chunks": "rag_chunks",
-  "indexed_file_chunks": "indexed_file_chunks",
-  "memory_vectors": "memory_vectors"
-}
-```
-
-To disable all RAG/embedding features set `worker.disable_embeddings` to `true` (see [Worker](#worker)); this automatically disables tasks that require embeddings.
-
-### Storage
-
-```json
-"storage": {
-  "documents_dir": "../documents"
-}
-```
+Models has no database or vector-table configuration. Backend owns PostgreSQL,
+pgvector and Apache AGE and supplies bounded snapshots through assignments.
+To disable embedding work set `worker.disable_embeddings` to `true` (see
+[Worker](#worker)); this disables tasks that require embeddings.
 
 ### LLM Defaults
 
@@ -192,6 +159,8 @@ Create `config/tasks/<task-type>/config.json` with parameter overrides. These ar
 
 ## Installation
 
-Run `./install` to create `config/config.json` and `config/tasks.json` interactively. The script prompts for task-domain database, embedding and storage settings.
+Run `./install` to create `config/config.json` and `config/tasks.json`
+interactively. The only capability prompt controls embedding-dependent tasks;
+Models has no database or application-storage settings.
 
 See [creating-tasks.md](creating-tasks.md) for how to add new tasks.

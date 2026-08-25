@@ -1,31 +1,25 @@
-from services.embedding_service import get_embedding_service
-from database.rag import get_rag
+from common.vector_contract import rank_vector_candidates
 from rag.types import RAGContext, RetrievedChunk
+from services.embedding_service import get_embedding_service
 
 
 class Retriever:
-    """Vector search module. Encodes the query and retrieves similar chunks from pgvector."""
+    """Ranks the vector candidates frozen into the assignment."""
 
     def run(self, ctx: RAGContext) -> RAGContext:
-        embedding_service = get_embedding_service()
-        db = get_rag()
-
-        query_embedding = embedding_service.encode_query(ctx.query)
-
-        points = db.query_points(
+        query_embedding = get_embedding_service().encode_query(ctx.query).tolist()
+        points = rank_vector_candidates(
             query_embedding,
-            limit=ctx.limit,
-            with_payload=True,
-            project_id=ctx.project_id,
-            score_threshold=ctx.score_threshold,
+            ctx.candidates,
+            ctx.limit,
+            ctx.score_threshold,
         )
-
         ctx.chunks = [
             RetrievedChunk(
-                text=p.payload.get("text", "") if hasattr(p, "payload") else "",
-                score=getattr(p, "score", 0.0),
-                metadata=p.payload if hasattr(p, "payload") else {},
+                text=str(point["payload"].get("text") or ""),
+                score=point["score"],
+                metadata=point["payload"],
             )
-            for p in points
+            for point in points
         ]
         return ctx

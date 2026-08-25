@@ -21,7 +21,7 @@ These tasks work with unstructured text, documents, and natural language.
 | [detect-language](./tasks/detect-language.md) | Identify the language of one or more text samples |
 | [entity-extraction map/reduce](./tasks/entity-extraction.md) | Extract and deterministically merge named entities through durable steps |
 | [search](./tasks/search.md) | Perform semantic search over indexed project content |
-| [ingest-content](./tasks/ingest-content.md) | Index document content into the vector database for semantic search |
+| [ingest-content](./tasks/ingest-content.md) | Chunk and embed document content for Backend persistence |
 | [document-extraction](./tasks/document-extraction.md) | Extract and parse text content from uploaded files (PDF, Word, HTML, audio, etc.) |
 | [transcribe](./tasks/transcribe.md) | Transcribe speech from audio and video files using faster-whisper |
 

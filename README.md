@@ -28,9 +28,9 @@ compatible steps.
 
 ### Semantic search and RAG
 
-- **Ingestion** — Chunks document content and stores vector embeddings in PostgreSQL (pgvector) for later retrieval.
+- **Ingestion** — Chunks document content and returns vector embeddings for Backend-owned persistence.
 - **Semantic search** — Finds the most relevant document fragments for a given query using cosine similarity.
-- **Question answering (RAG)** — Retrieves relevant context and generates grounded answers using Mistral-7B.
+- **Question answering (RAG)** — Ranks the supplied context and generates grounded answers using the configured GGUF model.
 
 ### Infrastructure
 
@@ -45,7 +45,7 @@ compatible steps.
 
 | Capability | Model |
 |------------|-------|
-| Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) — one shared service for all vector tables |
+| Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) |
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
 | NER | Local Qwen LLM (multilingual, GBNF-constrained JSON), model configured in `tasks.json` |
@@ -61,7 +61,7 @@ of the base GGUF. Adapter files are placed manually. See [docs/configuration.md]
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL with the `vector` (pgvector) extension (shared with the backend) — also stores embeddings; the tables are created by a backend migration
+- Access to Documents Backend's authenticated worker protocol
 - Docker (optional, recommended)
 
 GPU acceleration (CUDA 12.6) is supported but not required. CPU-only workers handle all tasks except

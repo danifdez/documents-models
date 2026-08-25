@@ -1,21 +1,22 @@
-## Search
+# Search
 
-The **search** task performs a semantic search over the content indexed in the vector database. It finds the most relevant text snippets for a given query, optionally scoped to a specific project.
+The `search` step embeds a query and ranks the bounded candidate snapshot that
+Backend attached to the assignment. It never reads pgvector or widens the
+authorized project scope.
 
-### What it does
+## Inputs
 
-The query text is converted into a vector and compared against all stored document chunks. The most relevant results are returned, each with a relevance score and metadata about where the text came from. Results are optionally re-ranked for improved quality.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | yes | Natural-language query |
+| `limit` | integer | yes | Maximum result count |
+| `score_threshold` | number | no | Minimum cosine score |
+| `vector_candidates` | artifact | yes | JSON object containing at most 5,000 384-dimensional candidates |
 
-### Parameters
+Backend resolves `projectId` while building the candidate artifact; Models does
+not use it as an authorization control.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | Yes | The search query in natural language |
-| `limit` | number | Yes | Maximum number of results to return |
-| `projectId` | number | No | Limits the search to a specific project's content |
-| `score_threshold` | number | No | Minimum relevance score for a result to be included (0 to 1) |
-
-### Returns
+## Result
 
 ```json
 {
@@ -24,9 +25,9 @@ The query text is converted into a vector and compared against all stored docume
       "text": "The relevant text snippet...",
       "score": 0.87,
       "metadata": {
-        "source_id": "42",
+        "source_id": "resource_42",
         "source_type": "resource",
-        "project_id": "5",
+        "project_id": 5,
         "part_number": 2,
         "total_chunks": 8
       }
@@ -35,37 +36,6 @@ The query text is converted into a vector and compared against all stored docume
 }
 ```
 
-Results are ordered by relevance score (highest first).
-
-### Example
-
-**Input:**
-
-```json
-{
-  "query": "sustainable energy policies in Europe",
-  "limit": 3,
-  "projectId": 12,
-  "score_threshold": 0.4
-}
-```
-
-**Output:**
-
-```json
-{
-  "results": [
-    {
-      "text": "The European Green Deal aims to make Europe climate-neutral by 2050...",
-      "score": 0.91,
-      "metadata": {
-        "source_id": "87",
-        "source_type": "resource",
-        "project_id": "12",
-        "part_number": 1,
-        "total_chunks": 5
-      }
-    }
-  ]
-}
-```
+Results are sorted deterministically by descending cosine similarity and then
+candidate ID. The assignment fails if its artifact is missing, malformed,
+oversized, or contains embeddings with a dimension other than 384.

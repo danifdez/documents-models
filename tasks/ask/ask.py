@@ -3,6 +3,7 @@ from common.execution_registry import execution_handler
 from rag.pipeline import create_ask_pipeline
 from rag.types import RAGContext
 from lib.llm.config import get_rag_config, get_task_config
+from common.vector_contract import load_vector_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,9 @@ def ask_question(payload) -> dict:
         limit=task.get("rag_default_limit", rag.get("default_limit", 5)),
         max_tokens=task.get("rag_max_tokens", rag.get("max_tokens", 1000)),
         score_threshold=task.get("rag_score_threshold", rag.get("score_threshold", 0.35)),
+        candidates=load_vector_candidates(payload),
+        graph_context=payload.get("graphContext") or [],
+        provided_context=str(payload.get("context") or ""),
     )
 
     pipeline = create_ask_pipeline()
