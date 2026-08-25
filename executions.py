@@ -45,6 +45,7 @@ MIGRATED_TASK_TYPES = (
     "agent-chat",
     "detect-language",
     "document-extraction",
+    "dataset.extract-row",
     "dataset.propose-columns",
     "distribution",
     "correlation",

@@ -35,6 +35,7 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
         self.assertIn("agent-chat", executions.CAPABILITIES)
         self.assertIn("document-extraction", executions.CAPABILITIES)
+        self.assertIn("dataset.extract-row", executions.CAPABILITIES)
         self.assertIn("dataset.propose-columns", executions.CAPABILITIES)
         self.assertIn("distribution", executions.CAPABILITIES)
         self.assertIn("query", executions.CAPABILITIES)

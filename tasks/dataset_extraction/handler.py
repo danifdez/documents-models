@@ -2,7 +2,7 @@
 
 Execution type: `dataset.extract-row`.
 
-Payload (set by backend `DatasetExtractionService` in T04):
+Payload (set by backend `DatasetExtractionService`):
     {
       "datasetId":         int,
       "recordId":          int,
@@ -16,11 +16,10 @@ Payload (set by backend `DatasetExtractionService` in T04):
       "model":             str | None            # optional model override
     }
 
-Result (consumed by backend execution processor in T04):
+Result (consumed by backend `DatasetExtractionProcessor`):
     {
-      "data":         dict[str, Any] | None,         # fieldKey -> value (or null)
-      "cellMetadata": dict[str, CellAnchor] | None,  # fieldKey -> anchor; omitted when value is null
-      "error":        str | None,                    # set when extraction failed
+      "data":         dict[str, Any],                # fieldKey -> value (or null)
+      "cellMetadata": dict[str, CellAnchor],         # fieldKey -> anchor; omitted when value is null
       "model":        str,                           # model used (echoed back for persistence)
       "promptVersion": str
     }
@@ -152,20 +151,13 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     model_override: Optional[str] = payload.get("model")
 
     if not document_text.strip():
-        return {
-            "data": None,
-            "cellMetadata": None,
-            "error": "Resource has no extracted content",
-            "model": model_override or cfg.get("model") or "",
-            "promptVersion": PROMPT_VERSION,
-        }
+        raise ValueError("Resource has no extracted content")
 
     fields = _filter_fields(schema, columns_to_extract)
     if not fields:
         return {
             "data": {},
             "cellMetadata": {},
-            "error": None,
             "model": model_override or cfg.get("model") or "",
             "promptVersion": PROMPT_VERSION,
         }
@@ -173,13 +165,7 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     model_name = model_override or cfg.get(
         "model") or get_llm_defaults().get("model")
     if not model_name:
-        return {
-            "data": None,
-            "cellMetadata": None,
-            "error": "No model configured for dataset-extraction",
-            "model": "",
-            "promptVersion": PROMPT_VERSION,
-        }
+        raise RuntimeError("No model configured for dataset extraction")
 
     max_tokens = int(cfg.get("max_tokens", 2048))
     temperature = float(cfg.get("temperature", 0.1))
@@ -212,9 +198,8 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
             seed=seed,
         )
         parsed = parse_json(raw, default=None)
-    except Exception as exc:  # noqa: BLE001 — surface as execution failure, not crash
+    except Exception:  # noqa: BLE001
         logger.exception("dataset.extract-row: LLM generation failed")
-        raw = f"<llm error: {exc}>"
         parsed = None
 
     if not isinstance(parsed, dict):
@@ -229,27 +214,14 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
                 seed=seed,
             )
             parsed = parse_json(raw_retry, default=None)
-            if not isinstance(parsed, dict):
-                logger.error(
-                    "dataset.extract-row: retry without grammar also failed. raw=%r",
-                    (raw_retry or "")[:200],
-                )
-                return {
-                    "data": None,
-                    "cellMetadata": None,
-                    "error": "LLM returned invalid JSON after retry",
-                    "model": model_name,
-                    "promptVersion": PROMPT_VERSION,
-                }
         except Exception as exc:  # noqa: BLE001
             logger.exception("dataset.extract-row: retry failed")
-            return {
-                "data": None,
-                "cellMetadata": None,
-                "error": f"LLM retry failed: {exc}",
-                "model": model_name,
-                "promptVersion": PROMPT_VERSION,
-            }
+            raise RuntimeError(f"LLM retry failed: {exc}") from exc
+        if not isinstance(parsed, dict):
+            logger.error(
+                "dataset.extract-row: retry without grammar returned invalid JSON"
+            )
+            raise RuntimeError("LLM returned invalid JSON after retry")
 
     built = _build_result(fields, parsed, resource_id, model_name)
     logger.debug(
@@ -262,7 +234,6 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "data": built["data"],
         "cellMetadata": built["cellMetadata"],
-        "error": None,
         "model": model_name,
         "promptVersion": PROMPT_VERSION,
     }
