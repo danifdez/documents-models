@@ -42,9 +42,7 @@ _TASK_DIR_MAP = {
     "group-by": "group_by",
     "time-series": "time_series",
     "pivot-table": "pivot_table",
-    "relationship-extraction": "relationship_extraction",
-    "relationship-query": "relationship_query",
-    "relationship-modify": "relationship_modify",
+    "relationship-extraction-map": "relationship_extraction",
 }
 
 

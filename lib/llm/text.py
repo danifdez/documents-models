@@ -81,7 +81,7 @@ def normalize_text(text: str) -> str:
 def html_to_markdown(content: str) -> str:
     """Convert HTML to Markdown, preserving headings, lists, links, code, emphasis.
 
-    Used by LLM tasks (summarize, keywords, key-point, relationship-extraction)
+    Used by LLM tasks (summarize, keywords, key-point, relationship extraction)
     so the model receives structured Markdown rather than tag-stripped plain text.
     Inputs that don't look like HTML are returned unchanged.
     """

@@ -1,299 +1,213 @@
-"""Extract and persist relationships from chunked text in one Models step."""
+"""Self-contained steps for the durable relationship-extraction workflow."""
 
 import json
-import logging
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
-from lib.llm.grammars import RELATIONSHIPS_GBNF
-from services.llm_service import get_llm_service
-from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.prompts import get_prompt
-from lib.llm.text import truncate_for_llm
-from services.relevance import select_relevant_units
-from services.text import (
-    extract_section_units,
-    html_to_markdown,
-    semantic_chunk_text,
-    strip_dense_blobs,
-)
 from common.execution_registry import execution_handler
-
-logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers (preserved from the previous one-shot version)
-# ─────────────────────────────────────────────────────────────────────────────
+from lib.llm.config import get_llm_params, get_task_config
+from lib.llm.grammars import RELATIONSHIPS_GBNF
+from lib.llm.prompts import get_prompt
+from lib.llm.text import strip_dense_blobs
+from services.llm_service import get_llm_service
 
 
-def _parse_json_array(text: str) -> list:
-    """Extract a JSON array from LLM output, handling markdown fences."""
-    text = re.sub(r'^```(?:json)?\s*', '', text.strip())
-    text = re.sub(r'\s*```$', '', text.strip())
-
-    match = re.search(r'\[.*\]', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    return []
-
-
-def _validate_relationships(relationships: list, entity_names: Set[str]) -> list:
-    """Filter relationships to only those referencing known entities."""
-    valid = []
-    for rel in relationships:
-        if not isinstance(rel, dict):
-            continue
-        subject = rel.get("subject", "")
-        obj = rel.get("object", "")
-        predicate = rel.get("predicate", "")
-        if not subject or not obj or not predicate:
-            continue
-        if subject not in entity_names or obj not in entity_names:
-            continue
-        if subject == obj:
-            continue
-        valid.append({
-            "subject": subject,
-            "predicate": str(predicate).lower().replace(" ", "_"),
-            "object": obj,
-            "confidence": float(rel.get("confidence", 0.5)),
-            "context": str(rel.get("context", ""))[:500],
-        })
-    return valid
-
-
-def _deduplicate(relationships: list) -> list:
-    """Remove duplicate relationships keeping the highest confidence."""
-    best: Dict[tuple, dict] = {}
-    for rel in relationships:
-        key = (rel["subject"], rel["predicate"], rel["object"])
-        if key not in best or rel["confidence"] > best[key]["confidence"]:
-            best[key] = rel
-    return list(best.values())
-
-
-def _extract_from_chunk(chunk: str, entities_str: str, prompt_template: str,
-                         llm_service, max_tokens: int) -> str:
-    """Run LLM on a single chunk and return the raw response text.
-
-    Output is grammar-constrained to a JSON array of triples and sampled at
-    temperature 0: extraction should be deterministic and always parseable.
-    """
-    prompt = prompt_template.format(entities=entities_str, text=chunk)
-    try:
-        return llm_service.chat(
-            [{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            grammar=RELATIONSHIPS_GBNF,
-            temperature=0.0,
+def _entity_names(entities: Any) -> Set[str]:
+    if not isinstance(entities, list) or len(entities) < 2:
+        raise ValueError(
+            "relationship-extraction-map requires at least two entities"
         )
-    except Exception:
-        return llm_service.generate(
-            prompt,
-            max_tokens=max_tokens,
-            grammar=RELATIONSHIPS_GBNF,
-            temperature=0.0,
+    names: Set[str] = set()
+    for entity in entities:
+        if not isinstance(entity, dict):
+            raise ValueError("relationship-extraction-map entities must be objects")
+        name = entity.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("relationship-extraction-map entity names are required")
+        names.add(name.strip())
+    if len(names) < 2:
+        raise ValueError(
+            "relationship-extraction-map requires two distinct entity names"
         )
+    return names
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Graph persistence (called only from merge phase)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _persist_to_graph(
-    relationships: List[Dict[str, Any]],
-    entity_map: Dict[str, Dict[str, Any]],
-    resource_id,
-    project_id,
-) -> Optional[str]:
-    """Write entities and relationships to the graph. Returns an error string on
-    failure, None on success or no-op."""
-    if not relationships:
-        return None
+def _parse_response(response: str) -> List[Dict[str, Any]]:
     try:
-        from database.graph_db import get_graph
-    except ImportError:
-        logger.info("Graph backend unavailable; returning extracted relationships without persistence")
-        return None
-    graph = get_graph()
-    if not graph:
-        return None
-    try:
-        seen_entities = set()
-        for rel in relationships:
-            for name in (rel["subject"], rel["object"]):
-                if name in seen_entities:
-                    continue
-                seen_entities.add(name)
-                e = entity_map.get(name)
-                if not e:
-                    continue
-                graph.upsert_entity(
-                    entity_id=e["id"],
-                    name=e["name"],
-                    entity_type=e.get("type", "UNKNOWN"),
-                    project_id=int(project_id) if project_id else None,
-                    resource_id=int(resource_id) if resource_id else None,
-                )
-
-        for rel in relationships:
-            subject = entity_map.get(rel["subject"])
-            obj = entity_map.get(rel["object"])
-            if not subject or not obj:
-                continue
-            graph.upsert_relationship(
-                subject_id=subject["id"],
-                predicate=rel["predicate"],
-                object_id=obj["id"],
-                resource_id=int(resource_id) if resource_id else 0,
-                project_id=int(project_id) if project_id else None,
-                confidence=rel["confidence"],
-                context=rel.get("context", ""),
-            )
-
-        logger.info(
-            "Stored %d relationships for resource %s in the graph",
-            len(relationships), resource_id,
-        )
-        return None
-    except Exception as e:
-        logger.error("Failed to store relationships in the graph: %s", e)
-        return f"Graph storage failed: {e}"
+        parsed = json.loads(response)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError(
+            "relationship-extraction-map returned invalid JSON"
+        ) from error
+    if not isinstance(parsed, list):
+        raise ValueError("relationship-extraction-map result must be an array")
+    return parsed
 
 
-def _final_result(relationships: List[Dict[str, Any]], resource_id, error: Optional[str] = None) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
-        "relationships": [
-            {
-                "subject": r["subject"],
-                "predicate": r["predicate"],
-                "object": r["object"],
-                "confidence": r["confidence"],
-            }
-            for r in relationships
-        ],
-        "resourceId": resource_id,
-    }
-    if error:
-        out["error"] = error
-    return out
+def _normalize_predicate(value: str) -> str:
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", value.casefold())).strip(
+        "_"
+    )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phases
-# ─────────────────────────────────────────────────────────────────────────────
+def _context(content: str, subject: str, obj: str) -> str:
+    spans = []
+    for name in (subject, obj):
+        position = content.casefold().find(name.casefold())
+        if position >= 0:
+            spans.append((position, position + len(name)))
+    if not spans:
+        return ""
+    first = min(start for start, _ in spans)
+    last = max(end for _, end in spans)
+    boundaries = ".!?\n"
+    left = max(content.rfind(marker, 0, first) for marker in boundaries)
+    right_candidates = [
+        position
+        for marker in boundaries
+        if (position := content.find(marker, last)) >= 0
+    ]
+    start = left + 1 if left >= 0 else max(0, first - 150)
+    end = min(right_candidates) + 1 if right_candidates else min(
+        len(content), last + 150
+    )
+    return content[start:end].strip()[:500]
 
 
-def _run_chunk_llm(
-    chunk: str,
-    entities_str: str,
+def _validated_relationships(
+    entries: List[Dict[str, Any]],
     entity_names: Set[str],
-    prompt_template: str,
-    cfg: Dict[str, Any],
+    content: str,
 ) -> List[Dict[str, Any]]:
-    """Single LLM call against one chunk, validated against entity_names."""
-    if not chunk or not chunk.strip():
-        return []
-    safe = truncate_for_llm(strip_dense_blobs(chunk), cfg,
-                            tokens_key="max_tokens", default_tokens=2000)
-    try:
-        params = get_llm_params("relationship-extraction")
-        llm_service = get_llm_service(**params)
-    except Exception as e:
-        logger.error("LLM error: %s", e)
-        return []
-    if llm_service is None:
-        return []
-    max_tokens = int(cfg.get("max_tokens", 2000))
-    try:
-        generated = _extract_from_chunk(safe, entities_str, prompt_template, llm_service, max_tokens)
-    except Exception as e:
-        logger.warning("relationship-extraction chunk LLM failed: %s", e)
-        return []
-    raw = _parse_json_array(generated or "")
-    return _validate_relationships(raw, entity_names)
+    relationships = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        subject = entry.get("subject")
+        obj = entry.get("object")
+        predicate_value = entry.get("predicate")
+        if (
+            not isinstance(subject, str)
+            or not isinstance(obj, str)
+            or not isinstance(predicate_value, str)
+            or subject not in entity_names
+            or obj not in entity_names
+            or subject == obj
+        ):
+            continue
+        predicate = _normalize_predicate(predicate_value)
+        if not predicate:
+            continue
+        relationships.append(
+            {
+                "subject": subject,
+                "predicate": predicate,
+                "object": obj,
+                "confidence": 0.5,
+                "context": _context(content, subject, obj),
+            }
+        )
+    return relationships
 
 
-def _extract(payload: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
-    text = payload.get("text", "")
-    entities = payload.get("entities", [])
-    resource_id = payload.get("resource_id") or payload.get("resourceId")
-    project_id = payload.get("project_id") or payload.get("projectId")
+def _validate_partial(entry: Any) -> Dict[str, Any]:
+    if not isinstance(entry, dict):
+        raise ValueError("relationship-extraction-reduce received an invalid entry")
+    subject = entry.get("subject")
+    predicate = entry.get("predicate")
+    obj = entry.get("object")
+    confidence = entry.get("confidence")
+    context = entry.get("context", "")
+    if (
+        not isinstance(subject, str)
+        or not subject.strip()
+        or not isinstance(predicate, str)
+        or not predicate.strip()
+        or not isinstance(obj, str)
+        or not obj.strip()
+        or subject == obj
+        or not isinstance(confidence, (int, float))
+        or isinstance(confidence, bool)
+        or not 0 <= float(confidence) <= 1
+        or not isinstance(context, str)
+    ):
+        raise ValueError("relationship-extraction-reduce received an invalid entry")
+    return {
+        "subject": subject.strip(),
+        "predicate": predicate.strip(),
+        "object": obj.strip(),
+        "confidence": float(confidence),
+        "context": context[:500],
+    }
 
-    if not text or not entities:
-        return _final_result([], resource_id)
 
-    entity_names = {e["name"] for e in entities}
-    entity_map = {e["name"]: e for e in entities}
-    entities_str = "\n".join(
-        f"- {e['name']} ({e.get('type', 'UNKNOWN')})" for e in entities
-    )
-    prompt_template = get_prompt("relationship-extraction")
+@execution_handler("relationship-extraction-map")
+def relationship_extraction_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise ValueError("relationship-extraction-map content must be a string")
+    safe_content = strip_dense_blobs(content).strip()
+    if not safe_content:
+        raise ValueError("relationship-extraction-map requires non-empty content")
+    config = get_task_config("relationship-extraction-map")
+    if len(safe_content.split()) > int(config.get("max_input_words", 1500)):
+        raise ValueError("relationship-extraction-map content exceeds its word budget")
+    entities = payload.get("entities")
+    entity_names = _entity_names(entities)
+    if len(entities) > int(config.get("max_entities", 200)):
+        raise ValueError("relationship-extraction-map has too many entities")
+    if sum(len(name.split()) for name in entity_names) > int(
+        config.get("max_entity_words", 500)
+    ):
+        raise ValueError("relationship-extraction-map entities exceed their budget")
+    prompt_template = get_prompt("relationship-extraction-map")
     if not prompt_template:
-        return _final_result([], resource_id, error="Prompt template not found")
-
-    units = extract_section_units(strip_dense_blobs(html_to_markdown(str(text))))
-    if not units:
-        return _final_result([], resource_id)
-
-    if cfg.get("relevance_filter_enabled", True):
-        units = select_relevant_units(
-            units, cfg, task_label="relationship extraction",
-        ) or units
-
-    chunk_words = int(cfg.get("chunk_words", 600))
-    chunk_overlap = int(cfg.get("chunk_overlap", 100))
-    max_words_per_chunk = int(cfg.get("max_words_per_chunk", chunk_words + 100))
-    chunks = semantic_chunk_text(
-        units,
-        target_words=chunk_words,
-        max_words=max_words_per_chunk,
-        overlap_words=chunk_overlap,
+        raise RuntimeError("relationship-extraction-map prompt is unavailable")
+    entity_block = "\n".join(
+        f"- {entity['name']} ({entity.get('type', 'UNKNOWN')})"
+        for entity in entities
     )
-    if not chunks:
-        return _final_result([], resource_id)
-
-    logger.info(
-        "Processing %d chunk(s) for relationship extraction (%d entities)",
-        len(chunks), len(entities),
+    response = get_llm_service(
+        **get_llm_params("relationship-extraction-map")
+    ).chat(
+        [
+            {
+                "role": "user",
+                "content": prompt_template.format(
+                    entities=entity_block,
+                    text=safe_content,
+                ),
+            }
+        ],
+        max_tokens=int(config.get("max_tokens", 2000)),
+        grammar=RELATIONSHIPS_GBNF,
+        temperature=0.0,
     )
-
-    all_rels: List[Dict[str, Any]] = []
-    for chunk in chunks:
-        all_rels.extend(
-            _run_chunk_llm(
-                chunk, entities_str, entity_names, prompt_template, cfg
-            )
+    return {
+        "relationships": _validated_relationships(
+            _parse_response(response),
+            entity_names,
+            safe_content,
         )
-
-    deduped = _deduplicate(all_rels)
-    err = _persist_to_graph(deduped, entity_map, resource_id, project_id)
-    return _final_result(deduped, resource_id, error=err)
+    }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@execution_handler("relationship-extraction")
-def extract_relationships(
-    payload: Dict[str, Any],
-    state: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    try:
-        cfg = get_task_config("relationship-extraction")
-        return _extract(payload, cfg)
-    except Exception as e:
-        logger.exception("relationship-extraction failed")
-        resource_id = (
-            (state or {}).get("resource_id")
-            or payload.get("resource_id")
-            or payload.get("resourceId")
-        )
-        return _final_result([], resource_id, error=f"relationship-extraction failed: {e}")
+@execution_handler("relationship-extraction-reduce")
+def relationship_extraction_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
+    partials = payload.get("partials")
+    if not isinstance(partials, list) or not partials:
+        raise ValueError("relationship-extraction-reduce requires partials")
+    best: Dict[tuple, Dict[str, Any]] = {}
+    order: List[tuple] = []
+    for partial in partials:
+        if not isinstance(partial, list):
+            raise ValueError("relationship-extraction-reduce partials must be arrays")
+        for raw_entry in partial:
+            entry = _validate_partial(raw_entry)
+            key = (entry["subject"], entry["predicate"], entry["object"])
+            if key not in best:
+                order.append(key)
+                best[key] = entry
+            elif entry["confidence"] > best[key]["confidence"]:
+                best[key] = entry
+    return {"relationships": [best[key] for key in order]}

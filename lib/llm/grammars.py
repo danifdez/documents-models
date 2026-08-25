@@ -52,7 +52,7 @@ root ::= "[" ws ( sstring ( "," ws sstring ){0,63} )? "]"
     + _BOUNDED_STRING + _JSON_COMMON
 )
 
-# relationship-extraction: array of {subject, predicate, object} triples.
+# relationship-extraction-map: array of {subject, predicate, object} triples.
 RELATIONSHIPS_GBNF = (
     r"""
 root ::= "[" ws ( rel ( "," ws rel ){0,127} )? "]"

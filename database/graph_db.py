@@ -36,18 +36,11 @@ def _agval(v: Any) -> Any:
 
 
 class GraphDB:
-    """Entity/relationship graph backed by Apache AGE (openCypher over PostgreSQL).
-
-    Drop-in replacement for the former Neo4j driver: same public method surface,
-    so the relationship tasks and the RAG GraphRetriever need no logic changes.
-    The graph shares the application's PostgreSQL instance — no separate service.
-    """
+    """Read-only Apache AGE client used by GraphRAG retrieval."""
 
     def __init__(self):
         logger.info("Connecting to graph (Apache AGE) graph=%s db=%s", GRAPH_NAME, POSTGRES_DB)
         self.conn = self._connect()
-        self._ensure_graph()
-        self._ensure_indexes()
 
     def _connect(self):
         conn = psycopg.connect(
@@ -62,44 +55,9 @@ class GraphDB:
         # AGE must be loaded and its catalog put on the search_path per session
         # before any cypher() call.
         with conn.cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS age")
             cur.execute("LOAD 'age'")
             cur.execute('SET search_path = ag_catalog, "$user", public')
         return conn
-
-    def _ensure_graph(self):
-        """Create the graph if it doesn't exist yet (idempotent)."""
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    "SELECT count(*) FROM ag_catalog.ag_graph WHERE name = %s",
-                    (GRAPH_NAME,),
-                )
-                exists = cur.fetchone()[0]
-                if not exists:
-                    cur.execute("SELECT create_graph(%s)", (GRAPH_NAME,))
-                    logger.info("Created AGE graph '%s'", GRAPH_NAME)
-        except Exception as e:
-            logger.error("Error ensuring AGE graph: %s", e)
-            raise
-
-    def _ensure_indexes(self):
-        """Index the entity_id property on the vertex table for MERGE lookups.
-
-        AGE has no Neo4j-style CREATE CONSTRAINT; uniqueness is enforced via MERGE
-        (as before). A btree on the property column keeps lookups fast.
-        """
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    f'CREATE INDEX IF NOT EXISTS entity_entity_id_idx '
-                    f'ON {GRAPH_NAME}."Entity" '
-                    f"USING btree (ag_catalog.agtype_access_operator(properties, '\"entity_id\"'::agtype))"
-                )
-            logger.info("AGE indexes ensured")
-        except Exception as e:
-            # Non-fatal: the graph works without the index, just slower.
-            logger.warning("Could not ensure AGE indexes: %s", e)
 
     def close(self):
         self.conn.close()
@@ -119,46 +77,6 @@ class GraphDB:
         with self.conn.cursor() as cur:
             cur.execute(sql, (json.dumps(params or {}),))
             return cur.fetchall()
-
-    def _exec(self, body: str, params: Optional[Dict[str, Any]]) -> None:
-        """Run a write Cypher statement that returns nothing.
-
-        AGE still requires a column definition list, so we RETURN a dummy value.
-        """
-        sql = f"SELECT * FROM cypher('{GRAPH_NAME}', $$ {body} RETURN 1 $$, %s) AS (ok agtype)"
-        with self.conn.cursor() as cur:
-            cur.execute(sql, (json.dumps(params or {}),))
-
-    # ── writes ───────────────────────────────────────────────────────────────
-
-    def upsert_entity(self, entity_id: int, name: str, entity_type: str,
-                      project_id: Optional[int] = None, resource_id: Optional[int] = None):
-        """Create or update an entity node."""
-        self._exec(
-            "MERGE (e:Entity {entity_id: $entity_id}) "
-            "SET e.name = $name, e.entity_type = $entity_type, "
-            "e.project_id = $project_id, e.resource_id = $resource_id",
-            {
-                "entity_id": entity_id, "name": name, "entity_type": entity_type,
-                "project_id": project_id, "resource_id": resource_id,
-            },
-        )
-
-    def upsert_relationship(self, subject_id: int, predicate: str, object_id: int,
-                            resource_id: int, project_id: Optional[int] = None,
-                            confidence: float = 1.0, context: str = ""):
-        """Create or update a relationship between two entity nodes."""
-        self._exec(
-            "MATCH (s:Entity {entity_id: $subject_id}) "
-            "MATCH (o:Entity {entity_id: $object_id}) "
-            "MERGE (s)-[r:REL {predicate: $predicate, resource_id: $resource_id}]->(o) "
-            "SET r.project_id = $project_id, r.confidence = $confidence, r.context = $context",
-            {
-                "subject_id": subject_id, "object_id": object_id,
-                "predicate": predicate, "resource_id": resource_id,
-                "project_id": project_id, "confidence": confidence, "context": context,
-            },
-        )
 
     # ── reads (1-hop inventory views) ─────────────────────────────────────────
 
@@ -229,12 +147,13 @@ class GraphDB:
         hops = max(1, min(hops, 5))  # clamp: deep traversals can blow up the subgraph
         limit = int(GRAPH_NEIGHBORHOOD_LIMIT)
 
-        project_filter = (
-            "AND seed.project_id = $project_id " if project_id is not None else ""
+        relationship_pattern = (
+            f":REL*1..{hops} {{project_id: $project_id}}"
+            if project_id is not None else f":REL*1..{hops}"
         )
         body = (
-            f"MATCH p = (seed:Entity)-[:REL*1..{hops}]-(other:Entity) "
-            f"WHERE seed.name IN $names {project_filter}"
+            f"MATCH p = (seed:Entity)-[{relationship_pattern}]-(other:Entity) "
+            "WHERE seed.name IN $names "
             "UNWIND relationships(p) AS r "
             "WITH startNode(r) AS s, r, endNode(r) AS o "
             "RETURN DISTINCT s.name AS source, r.predicate AS predicate, "
@@ -264,51 +183,6 @@ class GraphDB:
                 limit, hops,
             )
         return results
-
-    # ── targeted mutations ────────────────────────────────────────────────────
-
-    def create_relationship(self, subject_id: int, predicate: str, object_id: int,
-                            resource_id: int, project_id: Optional[int] = None):
-        """Create a new relationship between two existing entities."""
-        self.upsert_relationship(subject_id, predicate, object_id, resource_id,
-                                 project_id=project_id)
-
-    def update_relationship(self, subject_id: int, old_predicate: str, object_id: int,
-                            new_predicate: str, resource_id: int):
-        """Update the predicate of an existing relationship."""
-        self._exec(
-            "MATCH (s:Entity {entity_id: $subject_id})"
-            "-[r:REL {predicate: $old_predicate, resource_id: $resource_id}]->"
-            "(o:Entity {entity_id: $object_id}) "
-            "SET r.predicate = $new_predicate",
-            {
-                "subject_id": subject_id, "object_id": object_id,
-                "old_predicate": old_predicate, "new_predicate": new_predicate,
-                "resource_id": resource_id,
-            },
-        )
-
-    def delete_relationship(self, subject_id: int, predicate: str, object_id: int,
-                            resource_id: int):
-        """Delete a specific relationship."""
-        self._exec(
-            "MATCH (s:Entity {entity_id: $subject_id})"
-            "-[r:REL {predicate: $predicate, resource_id: $resource_id}]->"
-            "(o:Entity {entity_id: $object_id}) "
-            "DELETE r",
-            {
-                "subject_id": subject_id, "object_id": object_id,
-                "predicate": predicate, "resource_id": resource_id,
-            },
-        )
-
-    def delete_by_resource(self, resource_id: int):
-        """Delete all relationships associated with a resource."""
-        self._exec(
-            "MATCH ()-[r:REL {resource_id: $resource_id}]->() DELETE r",
-            {"resource_id": resource_id},
-        )
-        logger.info("Deleted all relationships for resource %s", resource_id)
 
     # ── result shaping ─────────────────────────────────────────────────────────
 

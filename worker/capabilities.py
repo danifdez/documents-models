@@ -22,9 +22,8 @@ TASK_FEATURE_MAP = {
     "chart": "datasets",
     "dataset.extract-row": "datasets",
     "dataset.propose-columns": "datasets",
-    "relationship-extraction": "relationships",
-    "relationship-query": "relationships",
-    "relationship-modify": "relationships",
+    "relationship-extraction-map": "relationships",
+    "relationship-extraction-reduce": "relationships",
 }
 
 

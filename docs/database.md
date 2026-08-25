@@ -29,7 +29,7 @@ logic:
 - `dataset.py` reads dataset schemas and records.
 - `memory.py` reads assistant memory rows.
 - `rag.py` manages pgvector-backed task data.
-- `graph_db.py` manages the Apache AGE entity graph.
+- `graph_db.py` reads the Backend-owned Apache AGE graph for GraphRAG.
 
 Connections use the configured `POSTGRES_*` values and should be scoped with a
 context manager or closed explicitly. Adding a domain query does not authorize
