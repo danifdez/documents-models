@@ -8,6 +8,7 @@ from typing import Any, Dict
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.outcome import InferenceOutcome
 from lib.llm.config import get_task_config
+from lib.llm.prompts import prompt_package_fingerprint
 from utils.task_dispatch import call_handler, ensure_task_handler
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ def _inference_metadata(
     config = get_task_config(task_type)
     inference = {
         "effectiveModel": str(config.get("model") or "unreported"),
+        "effectivePromptPackages": [prompt_package_fingerprint()],
         "finishReason": finish_reason,
         "inferenceMs": max(0, int((time.monotonic() - started_at) * 1000)),
         "cacheOutcome": "unknown",

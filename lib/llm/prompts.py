@@ -6,8 +6,11 @@ For each prompt, config/tasks/<name>/prompt.md takes priority.
 If not present there, falls back to tasks/<task-dir>/prompt.md.
 """
 
-import os
+import hashlib
 import logging
+import os
+import stat
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,11 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_DIR = os.path.abspath(os.path.join(_BASE_DIR, '..', '..'))
 _CONFIG_TASKS_DIR = os.path.join(_PROJECT_DIR, 'config', 'tasks')
 _TASKS_DIR = os.path.join(_PROJECT_DIR, 'tasks')
+_PROMPT_PACKAGE_ROOTS = (
+    'tasks',
+    'config/tasks',
+    'lib/llm/prompt_templates',
+)
 
 _TASK_DIR_MAP = {
     "assistant-chat": "assistant_chat",
@@ -85,3 +93,32 @@ def load_prompt(base_dir: str, filename: str) -> str:
     except OSError:
         logger.warning("Prompt file not found: %s", path)
         return ''
+
+
+def prompt_package_fingerprint() -> str:
+    """SHA-256 of every managed prompt resource in the current product tree."""
+    root = Path(_PROJECT_DIR)
+    files = []
+    for relative_root in _PROMPT_PACKAGE_ROOTS:
+        package_root = root / relative_root
+        if not package_root.is_dir() or package_root.is_symlink():
+            continue
+        files.extend(
+            path for path in package_root.rglob('*')
+            if path.is_file()
+            and not path.is_symlink()
+            and (path.suffix == '.md' or path.name.endswith('.schema.json'))
+        )
+    digest = hashlib.sha256()
+    for path in sorted(set(files)):
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f'prompt package contains a non-regular file: {path}')
+        digest.update(path.relative_to(root).as_posix().encode('utf-8'))
+        digest.update(b'\0')
+        logical_mode = 0o755 if metadata.st_mode & 0o111 else 0o644
+        digest.update(f'{logical_mode:04o}'.encode('ascii'))
+        digest.update(b'\0')
+        digest.update(path.read_bytes())
+        digest.update(b'\0')
+    return digest.hexdigest()

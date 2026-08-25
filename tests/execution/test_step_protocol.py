@@ -10,6 +10,7 @@ from lib.execution.protocol_client import ExecutionProtocolClient
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
 from lib.llm.config import active_deployments
+from lib.llm.prompts import prompt_package_fingerprint
 import executions
 
 
@@ -137,7 +138,31 @@ class StepProtocolTest(unittest.TestCase):
         )
         self.assertEqual(result["inference"]["effectiveModel"], "test-model")
         self.assertIsNone(result["inference"]["effectiveAdapter"])
+        self.assertEqual(
+            result["inference"]["effectivePromptPackages"],
+            [prompt_package_fingerprint()],
+        )
         self.assertEqual(result["usage"]["totalTokens"], None)
+
+    def test_fingerprints_managed_prompt_resources_deterministically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prompt = root / "tasks" / "summarize" / "prompt.md"
+            prompt.parent.mkdir(parents=True)
+            prompt.write_text("Summarize this.\n", encoding="utf-8")
+            prompt.chmod(0o644)
+            ignored = root / "tasks" / "summarize" / "notes.txt"
+            ignored.write_text("not a prompt", encoding="utf-8")
+            expected = hashlib.sha256(
+                b"tasks/summarize/prompt.md\0"
+                b"0644\0"
+                b"Summarize this.\n\0"
+            ).hexdigest()
+
+            with patch("lib.llm.prompts._PROJECT_DIR", directory):
+                actual = prompt_package_fingerprint()
+
+        self.assertEqual(actual, expected)
 
     def test_reports_the_deployed_adapter_without_exposing_its_path(self):
         task_type = "protocol-adapter-test"
@@ -209,6 +234,10 @@ class StepProtocolTest(unittest.TestCase):
             metadata = _inference_metadata("summarize", 0, "completed")
 
         self.assertNotIn("effectiveAdapter", metadata["inference"])
+        self.assertEqual(
+            metadata["inference"]["effectivePromptPackages"],
+            [prompt_package_fingerprint()],
+        )
 
     def test_preserves_an_explicit_canonical_inference_outcome(self):
         task_type = "protocol-chat-test"
