@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -6,8 +7,9 @@ from unittest.mock import patch
 
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.protocol_client import ExecutionProtocolClient
-from lib.execution.step_executor import execute_assignment
+from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
+from lib.llm.config import active_deployments
 import executions
 
 
@@ -134,7 +136,79 @@ class StepProtocolTest(unittest.TestCase):
             },
         )
         self.assertEqual(result["inference"]["effectiveModel"], "test-model")
+        self.assertIsNone(result["inference"]["effectiveAdapter"])
         self.assertEqual(result["usage"]["totalTokens"], None)
+
+    def test_reports_the_deployed_adapter_without_exposing_its_path(self):
+        task_type = "protocol-adapter-test"
+        TASK_HANDLERS[task_type] = lambda _payload: {"response": "summary"}
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca704",
+            "stepKind": "inference",
+            "work": {"taskType": task_type, "payload": {}},
+        }
+        identity = {
+            "available": True,
+            "scale": 0.75,
+            "sha256": "a" * 64,
+        }
+        expected = "sha256:" + hashlib.sha256(
+            json.dumps(
+                identity,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        try:
+            with patch(
+                "lib.execution.step_executor.ensure_task_handler",
+                return_value=True,
+            ), patch(
+                "lib.execution.step_executor.get_task_config",
+                return_value={
+                    "model": "test-model",
+                    "lora_path": "/private/adapter.gguf",
+                    "lora_scale": 0.75,
+                    "_deployment_sha256": "a" * 64,
+                },
+            ):
+                result = execute_assignment(assignment)
+        finally:
+            TASK_HANDLERS.pop(task_type, None)
+
+        self.assertEqual(result["inference"]["effectiveAdapter"], expected)
+        self.assertNotIn("/private/adapter.gguf", json.dumps(result))
+
+    def test_preserves_the_verified_deployment_checksum_in_registry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "deployments.json"
+            path.write_text(json.dumps({"tasks": {"summarize": {
+                "enabled": True,
+                "path": "/models/adapter.gguf",
+                "scale": 0.5,
+                "sha256": "b" * 64,
+            }}}), encoding="utf-8")
+            with patch.dict(
+                "os.environ", {"MODELS_DEPLOYMENTS_PATH": str(path)}
+            ):
+                deployments = active_deployments()
+
+        self.assertEqual(deployments["summarize"]["sha256"], "b" * 64)
+
+    def test_does_not_claim_an_identity_for_an_unverified_adapter(self):
+        with patch(
+            "lib.execution.step_executor.get_task_config",
+            return_value={
+                "model": "test-model",
+                "lora_path": "/private/unverified.gguf",
+            },
+        ):
+            metadata = _inference_metadata("summarize", 0, "completed")
+
+        self.assertNotIn("effectiveAdapter", metadata["inference"])
 
     def test_preserves_an_explicit_canonical_inference_outcome(self):
         task_type = "protocol-chat-test"

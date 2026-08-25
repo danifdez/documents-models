@@ -1,4 +1,7 @@
+import hashlib
+import json
 import logging
+import re
 import time
 from typing import Any, Dict
 
@@ -120,18 +123,43 @@ def _inference_metadata(
     finish_reason: str,
 ) -> Dict[str, Any]:
     config = get_task_config(task_type)
+    inference = {
+        "effectiveModel": str(config.get("model") or "unreported"),
+        "finishReason": finish_reason,
+        "inferenceMs": max(0, int((time.monotonic() - started_at) * 1000)),
+        "cacheOutcome": "unknown",
+        "warnings": ["token_usage_unavailable"],
+    }
+    if config.get("lora_path"):
+        adapter = _adapter_fingerprint(config)
+        if adapter:
+            inference["effectiveAdapter"] = adapter
+    else:
+        inference["effectiveAdapter"] = None
     return {
         "usage": {
             "promptTokens": None,
             "completionTokens": None,
             "totalTokens": None,
         },
-        "inference": {
-            "effectiveModel": str(config.get("model") or "unreported"),
-            "effectiveAdapter": None,
-            "finishReason": finish_reason,
-            "inferenceMs": max(0, int((time.monotonic() - started_at) * 1000)),
-            "cacheOutcome": "unknown",
-            "warnings": ["token_usage_unavailable"],
-        },
+        "inference": inference,
     }
+
+
+def _adapter_fingerprint(config: Dict[str, Any]) -> str | None:
+    sha256 = str(config.get("_deployment_sha256") or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        return None
+    try:
+        scale = float(config.get("lora_scale", 1.0))
+    except (TypeError, ValueError):
+        return None
+    identity = {"available": True, "scale": scale, "sha256": sha256}
+    encoded = json.dumps(
+        identity,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()

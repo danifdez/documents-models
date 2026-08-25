@@ -11,6 +11,7 @@ Per-task overrides can be placed in config/tasks/<task-name>/config.json.
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 
@@ -40,7 +41,8 @@ _CONFIG_FILE = os.environ.get('MODELS_CONFIG_PATH') or os.path.join(_CONFIG_DIR,
 _TASKS_FILE = os.environ.get('MODELS_TASKS_PATH') or os.path.join(_CONFIG_DIR, 'tasks.json')
 
 # Fine-tuned adapters deployed per task: {"tasks": {"<task>": {"enabled": true,
-# "path": "…/adapter.gguf", "scale": 1.0}}}. Whoever trains the adapter writes
+# "path": "…/adapter.gguf", "sha256": "…", "scale": 1.0}}}. Whoever trains
+# the adapter writes
 # this file; here it only decides which task gets which LoRA.
 _DEPLOYMENTS_FILE = os.path.join(_CONFIG_DIR, 'deployments.json')
 
@@ -154,7 +156,7 @@ def get_worker_config() -> dict:
 
 
 def active_deployments() -> dict:
-    """Deployed adapters, as `{task_name: {"path": str, "scale": float}}`.
+    """Deployed adapters keyed by task, including a verified sha256 when present.
 
     Read on every call rather than cached: deploying an adapter is an
     interactive action, and a long-lived worker has to pick it up on the next
@@ -182,7 +184,11 @@ def active_deployments() -> dict:
             scale = float(entry.get('scale', 1.0))
         except (TypeError, ValueError):
             scale = 1.0
-        out[name] = {'path': path, 'scale': scale}
+        deployment = {'path': path, 'scale': scale}
+        sha256 = str(entry.get('sha256') or '').lower()
+        if re.fullmatch(r'[0-9a-f]{64}', sha256):
+            deployment['sha256'] = sha256
+        out[name] = deployment
     return out
 
 
@@ -208,6 +214,8 @@ def get_task_config(task_name: str) -> dict:
     if deployment:
         base['lora_path'] = deployment['path']
         base['lora_scale'] = deployment['scale']
+        if deployment.get('sha256'):
+            base['_deployment_sha256'] = deployment['sha256']
 
     return base
 

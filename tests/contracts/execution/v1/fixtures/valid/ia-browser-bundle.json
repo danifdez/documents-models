@@ -623,11 +623,16 @@
   ],
   "environment": {
     "browserRevision": "fixture",
-    "promptPackages": [],
+    "promptPackages": [
+      "fixture-prompt"
+    ],
     "toolVersions": [
       "cef:fixture"
     ],
-    "modelFingerprint": "fixture-model",
+    "modelFingerprints": [
+      "fixture-model"
+    ],
+    "adapterFingerprints": [],
     "runtimeFingerprint": "fixture-runtime",
     "featureFlags": {}
   },
@@ -639,7 +644,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:aa3387a121aaa59705a40a3b1861bf70d63fda077968eb4fdc744ccd18ae2306",
-    "schemaManifestHash": "sha256:5d239ecf66f5050ca0d32cceb6d0145c91df3ff482136e1b362e2d30e53248a2"
+    "schemaManifestHash": "sha256:0007007bac96b563561558c10ea50a64417824fcbbb6f48ce625972138219257"
   },
   "policySummary": {
     "decision": "allow",
@@ -657,7 +662,7 @@
     }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:b90ca7547b1be082aff1494ab440ead565233573ff4bfd58c01efed83f84bb97",
+  "manifestHash": "sha256:0d8353a461577735932c815b8f3b89c33c3ed34d23fa5221ad95cd5ea62bcba7",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

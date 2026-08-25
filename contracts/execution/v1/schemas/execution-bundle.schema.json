@@ -47,13 +47,17 @@
     },
     "environment": {
       "type": "object",
-      "required": ["featureFlags"],
+      "required": [
+        "promptPackages", "toolVersions", "modelFingerprints",
+        "adapterFingerprints", "runtimeFingerprint", "featureFlags"
+      ],
       "properties": {
         "documentsRevision": { "type": "string" },
         "browserRevision": { "type": "string" },
-        "promptPackages": { "type": "array", "items": { "type": "string" } },
-        "toolVersions": { "type": "array", "items": { "type": "string" } },
-        "modelFingerprint": { "type": ["string", "null"] },
+        "promptPackages": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "toolVersions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "modelFingerprints": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "adapterFingerprints": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "runtimeFingerprint": { "type": ["string", "null"] },
         "featureFlags": { "type": "object", "additionalProperties": { "type": "boolean" } }
       },

@@ -771,11 +771,16 @@
   ],
   "environment": {
     "documentsRevision": "fixture",
-    "promptPackages": [],
+    "promptPackages": [
+      "fixture-prompt"
+    ],
     "toolVersions": [
       "search_workspace:fixture"
     ],
-    "modelFingerprint": "fixture-model",
+    "modelFingerprints": [
+      "fixture-model"
+    ],
+    "adapterFingerprints": [],
     "runtimeFingerprint": "fixture-runtime",
     "featureFlags": {}
   },
@@ -787,7 +792,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:a5d0fe8c5b9a80b543b87ab8fb628007805f612e9f469de6eabc8d4b61dc5ecf",
-    "schemaManifestHash": "sha256:5d239ecf66f5050ca0d32cceb6d0145c91df3ff482136e1b362e2d30e53248a2"
+    "schemaManifestHash": "sha256:0007007bac96b563561558c10ea50a64417824fcbbb6f48ce625972138219257"
   },
   "policySummary": {
     "decision": "allow",
@@ -806,7 +811,7 @@
     }
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:c39b83ff5da5e2281f62f017b43a654b0e3f9b1ffb6ccdd425d1c01cc22c3507",
+  "manifestHash": "sha256:ef157d34ffd43558c0f7f5f32c631c75a5d216b370d95e8ff54b195c1cfb94af",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }
