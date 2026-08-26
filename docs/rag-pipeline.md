@@ -61,7 +61,7 @@ for a source and chunk position. Models does not delete or upsert rows.
 
 ## Retrieval
 
-`search`, `ask`, `memory-search` and `indexed-file-search` require a bounded
+`search`, `ask` and `indexed-file-search` require a bounded
 candidate snapshot. In production it arrives as the `vector_candidates`
 artifact; direct harness cases may declare the same `candidates` array in the
 payload.

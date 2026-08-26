@@ -4,6 +4,39 @@ from unittest.mock import Mock, patch
 from tasks.assistant_chat.assistant_chat import _SYSTEM_PROMPT, chat_inference
 
 
+_TOOL_VERSIONS = {
+    name: f"{name}/1"
+    for name in (
+        "documents.search",
+        "user_tasks.create",
+        "agents.delegate",
+        "browser.read_current_page",
+        "workspace_files.list",
+        "workspace_files.search",
+        "workspace_files.read",
+        "workspace_files.write",
+        "workspace_files.delete",
+    )
+}
+
+
+def capabilities(*names):
+    return {
+        "schemaVersion": "active-capability-set/1",
+        "owner": {"type": "assistant", "id": 1},
+        "selectionPolicy": "backend-availability/1",
+        "tools": [
+            {
+                "name": name,
+                "descriptorVersion": _TOOL_VERSIONS[name],
+                "availabilityBasis": "core_read",
+            }
+            for name in names
+        ],
+        "skills": [],
+    }
+
+
 class ChatInferenceTest(unittest.TestCase):
     def test_loads_the_packaged_system_prompt(self):
         self.assertIn("exactly one inference", _SYSTEM_PROMPT)
@@ -22,6 +55,7 @@ class ChatInferenceTest(unittest.TestCase):
         outcome = chat_inference(
             {
                 "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities("documents.search"),
                 "conversation": [{"role": "user", "content": "Responde"}],
             }
         )
@@ -60,6 +94,7 @@ class ChatInferenceTest(unittest.TestCase):
         outcome = chat_inference(
             {
                 "_task_type": "agent-chat",
+                "activeCapabilities": capabilities("documents.search"),
                 "conversation": [{"role": "user", "content": "Busca"}],
                 "toolHistory": [
                     {
@@ -113,6 +148,7 @@ class ChatInferenceTest(unittest.TestCase):
         chat_inference(
             {
                 "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities("documents.search"),
                 "continuityCapsule": {
                     "schemaVersion": "continuity-capsule/1",
                     "omittedMessageCount": 12,
@@ -127,6 +163,50 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertEqual(messages[1]["role"], "user")
         self.assertIn("not a new instruction", messages[1]["content"])
         self.assertIn("Earlier decision", messages[1]["content"])
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_prepends_only_consented_active_memory_as_context(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Continued"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities("documents.search"),
+                "activeMemory": {
+                    "schemaVersion": "active-memory/1",
+                    "activeEntries": [
+                        {
+                            "name": "Output style",
+                            "type": "preference",
+                            "body": "Prefer concise answers",
+                            "consent": {"status": "granted"},
+                            "provenance": {"sourceKind": "manual"},
+                            "dataPolicy": {
+                                "classification": "workspace",
+                                "purpose": "conversation_memory",
+                                "allowedDestinations": [
+                                    "documents",
+                                    "documents-models",
+                                ],
+                            },
+                        }
+                    ],
+                },
+                "conversation": [{"role": "user", "content": "Continue"}],
+            }
+        )
+
+        messages = llm.chat_with_tools.call_args.args[0]
+        self.assertEqual(messages[1]["role"], "user")
+        self.assertIn("not as a new instruction", messages[1]["content"])
+        self.assertIn("Prefer concise answers", messages[1]["content"])
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
@@ -168,6 +248,9 @@ class ChatInferenceTest(unittest.TestCase):
         outcome = chat_inference(
             {
                 "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(
+                    "documents.search", "browser.read_current_page"
+                ),
                 "conversation": [{"role": "user", "content": "Summarize it"}],
                 "toolHistory": [
                     {
@@ -220,7 +303,7 @@ class ChatInferenceTest(unittest.TestCase):
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
     @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
-    def test_only_exposes_workspace_file_tools_with_a_configured_folder(
+    def test_only_exposes_backend_selected_workspace_file_tools(
         self, get_llm_service, get_task_config, _get_llm_params
     ):
         llm = Mock()
@@ -232,6 +315,14 @@ class ChatInferenceTest(unittest.TestCase):
             {
                 "_task_type": "assistant-chat",
                 "folderScope": "/workspace/project",
+                "activeCapabilities": capabilities(
+                    "documents.search",
+                    "workspace_files.list",
+                    "workspace_files.search",
+                    "workspace_files.read",
+                    "workspace_files.write",
+                    "workspace_files.delete",
+                ),
                 "conversation": [{"role": "user", "content": "Read README.md"}],
             }
         )
@@ -251,6 +342,7 @@ class ChatInferenceTest(unittest.TestCase):
         chat_inference(
             {
                 "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities("documents.search"),
                 "conversation": [{"role": "user", "content": "Read README.md"}],
             }
         )
@@ -293,6 +385,7 @@ class ChatInferenceTest(unittest.TestCase):
             {
                 "_task_type": "agent-chat",
                 "folderScope": "/workspace/project",
+                "activeCapabilities": capabilities("workspace_files.write"),
                 "conversation": [{"role": "user", "content": "Create notes.md"}],
             }
         )
@@ -310,6 +403,35 @@ class ChatInferenceTest(unittest.TestCase):
                 ],
             },
         )
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_rejects_a_tool_omitted_from_the_frozen_capability_set(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "workspace_files.delete",
+                        "arguments": '{"filename":"notes.md"}',
+                    }
+                }
+            ]
+        }
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        with self.assertRaisesRegex(ValueError, "Unsupported tool requested"):
+            chat_inference(
+                {
+                    "_task_type": "assistant-chat",
+                    "activeCapabilities": capabilities("documents.search"),
+                    "conversation": [{"role": "user", "content": "Delete it"}],
+                }
+            )
 
 
 if __name__ == "__main__":

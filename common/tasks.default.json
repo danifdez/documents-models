@@ -62,16 +62,6 @@
     "model": "intfloat/multilingual-e5-small",
     "capabilities": ["embeddings"]
   },
-  "memory-ingest": {
-    "enabled": true,
-    "type": "embedding",
-    "capabilities": ["embeddings"]
-  },
-  "memory-search": {
-    "enabled": true,
-    "type": "embedding",
-    "capabilities": ["embeddings"]
-  },
   "summarize-map": {
     "enabled": true,
     "type": "llm",

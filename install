@@ -142,7 +142,6 @@ with open('config/tasks.json', 'r') as f:
 
 for task_name in [
     'search', 'ask', 'ingest-content', 'embedding',
-    'memory-ingest', 'memory-search',
     'indexed-file-ingest', 'indexed-file-search',
 ]:
     if task_name in tasks:

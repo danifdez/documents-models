@@ -21,8 +21,6 @@ TASK_MODULES = {
     "ingest-content": "tasks.ingest.ingest",
     "key-point-map": "tasks.key_points.key_points",
     "key-point-reduce": "tasks.key_points.key_points",
-    "memory-ingest": "tasks.memory.memory",
-    "memory-search": "tasks.memory.memory",
     "assistant-chat": "tasks.assistant_chat.assistant_chat",
     "agent-chat": "tasks.assistant_chat.assistant_chat",
     "dataset.extract-row": "tasks.dataset_extraction.handler",

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/active-capability-set.schema.json",
+  "title": "Backend-selected turn capabilities v1",
+  "type": "object",
+  "required": ["schemaVersion", "owner", "selectionPolicy", "tools", "skills"],
+  "properties": {
+    "schemaVersion": { "const": "active-capability-set/1" },
+    "owner": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "enum": ["assistant", "agent"] },
+        "id": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "selectionPolicy": { "const": "backend-availability/1" },
+    "tools": {
+      "type": "array",
+      "maxItems": 9,
+      "items": { "$ref": "#/$defs/tool" }
+    },
+    "skills": {
+      "type": "array",
+      "maxItems": 0
+    }
+  },
+  "$defs": {
+    "tool": {
+      "type": "object",
+      "required": ["name", "descriptorVersion", "availabilityBasis"],
+      "properties": {
+        "name": {
+          "enum": [
+            "documents.search",
+            "user_tasks.create",
+            "agents.delegate",
+            "browser.read_current_page",
+            "workspace_files.list",
+            "workspace_files.search",
+            "workspace_files.read",
+            "workspace_files.write",
+            "workspace_files.delete"
+          ]
+        },
+        "descriptorVersion": {
+          "enum": [
+            "documents.search/1",
+            "user_tasks.create/1",
+            "agents.delegate/1",
+            "browser.read_current_page/1",
+            "workspace_files.list/1",
+            "workspace_files.search/1",
+            "workspace_files.read/1",
+            "workspace_files.write/1",
+            "workspace_files.delete/1"
+          ]
+        },
+        "availabilityBasis": {
+          "enum": [
+            "core_read",
+            "core_confirmed_effect",
+            "bounded_delegation",
+            "configured_folder",
+            "paired_browser"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

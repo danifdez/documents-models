@@ -34,7 +34,7 @@
         "stable": { "type": "object", "additionalProperties": true },
         "contextual": {
           "type": "object",
-          "required": ["conversation", "continuityCapsule"],
+          "required": ["conversation", "continuityCapsule", "activeMemory", "activeCapabilities"],
           "properties": {
             "conversation": {
               "type": "array",
@@ -44,6 +44,18 @@
             "continuityCapsule": {
               "oneOf": [
                 { "$ref": "#/$defs/continuityCapsule" },
+                { "type": "null" }
+              ]
+            },
+            "activeMemory": {
+              "oneOf": [
+                { "$ref": "active-memory.schema.json" },
+                { "type": "null" }
+              ]
+            },
+            "activeCapabilities": {
+              "oneOf": [
+                { "$ref": "active-capability-set.schema.json" },
                 { "type": "null" }
               ]
             }

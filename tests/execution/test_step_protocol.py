@@ -62,7 +62,6 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("transcribe", executions.CAPABILITIES)
         self.assertIn("translate", executions.CAPABILITIES)
         self.assertIn("ingest-content", executions.CAPABILITIES)
-        self.assertIn("memory-ingest", executions.CAPABILITIES)
         self.assertIn("indexed-file-ingest", executions.CAPABILITIES)
         self.assertIn("relationship-extraction-reduce", executions.CAPABILITIES)
 

@@ -7,25 +7,11 @@ from common.vector_contract import load_vector_candidates, rank_vector_candidate
 from common.vector_contract import vector_points_output
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.step_executor import execute_assignment
-from tasks.memory.memory import search_memory
 from utils.task_dispatch import ensure_task_handler
 
 
 def embedding(first: float, second: float = 0.0):
     return [first, second, *([0.0] * 382)]
-
-
-class ArrayResult:
-    def __init__(self, values):
-        self.values = values
-
-    def tolist(self):
-        return self.values
-
-
-class EmbeddingService:
-    def encode_query(self, _query):
-        return ArrayResult(embedding(1.0))
 
 
 class VectorContractTest(unittest.TestCase):
@@ -52,34 +38,6 @@ class VectorContractTest(unittest.TestCase):
         ranked = rank_vector_candidates(embedding(1.0), candidates, 2)
         self.assertEqual([item["id"] for item in ranked], ["high", "low"])
         self.assertAlmostEqual(ranked[0]["score"], 1.0)
-
-    @patch("tasks.memory.memory.get_embedding_service")
-    def test_memory_search_uses_only_frozen_candidates(self, service):
-        service.return_value = EmbeddingService()
-        candidates = [
-            {
-                "id": "7",
-                "embedding": embedding(1.0),
-                "payload": {
-                    "memory_id": 7,
-                    "name": "Editor",
-                    "type": "fact",
-                },
-            }
-        ]
-        result = search_memory(
-            {
-                "query": "preferred editor",
-                "limit": 2,
-                "_input_artifacts": {
-                    "vector_candidates": json.dumps(
-                        {"candidates": candidates}
-                    ).encode("utf-8")
-                },
-            }
-        )
-        self.assertEqual(result["results"][0]["memoryId"], 7)
-        self.assertEqual(result["results"][0]["name"], "Editor")
 
     def test_rejects_missing_candidates_artifact(self):
         with self.assertRaisesRegex(ValueError, "artifact is required"):

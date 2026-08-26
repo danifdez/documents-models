@@ -59,8 +59,6 @@ SUPPORTED_TASK_TYPES = (
     "keywords-reduce",
     "key-point-map",
     "key-point-reduce",
-    "memory-ingest",
-    "memory-search",
     "distribution",
     "correlation",
     "correlation-matrix",
