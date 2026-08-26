@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/confirmation.schema.json",
+  "title": "Durable execution confirmation v1",
+  "type": "object",
+  "required": [
+    "schemaVersion", "confirmationId", "executionId", "operationId",
+    "toolCallId", "planHash", "toolName", "reason", "prompt", "scope",
+    "resources", "effects", "status", "expiresAt", "decidedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "confirmation/1" },
+    "confirmationId": { "$ref": "common.schema.json#/$defs/id" },
+    "executionId": { "$ref": "common.schema.json#/$defs/id" },
+    "operationId": { "$ref": "common.schema.json#/$defs/id" },
+    "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+    "planHash": { "$ref": "common.schema.json#/$defs/hash" },
+    "toolName": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "prompt": { "type": "string", "minLength": 1 },
+    "scope": { "enum": ["once", "execution"] },
+    "resources": { "$ref": "tool-plan.schema.json#/properties/resources" },
+    "effects": { "$ref": "tool-plan.schema.json#/properties/effects" },
+    "status": { "enum": ["pending", "approved", "denied", "expired"] },
+    "expiresAt": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "decidedAt": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

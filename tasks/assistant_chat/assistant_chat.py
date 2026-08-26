@@ -25,6 +25,22 @@ _DOCUMENT_SEARCH_TOOL = {
         },
     },
 }
+_USER_TASK_CREATE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "user_tasks.create",
+        "description": "Propose creating a local user task. The user must confirm it.",
+        "parameters": {
+            "type": "object",
+            "required": ["title"],
+            "properties": {
+                "title": {"type": "string", "minLength": 1, "maxLength": 200},
+                "description": {"type": "string", "maxLength": 4000},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -112,7 +128,7 @@ def _outcome(message: Dict[str, Any], max_tool_calls: int) -> Dict[str, Any]:
         for raw in tool_calls[:max_tool_calls]:
             function = raw.get("function") if isinstance(raw, dict) else None
             name = function.get("name") if isinstance(function, dict) else None
-            if name != "documents.search":
+            if name not in {"documents.search", "user_tasks.create"}:
                 raise ValueError(f"Unsupported tool requested: {name}")
             calls.append(
                 {
@@ -138,7 +154,7 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
     llm = get_llm_service(**get_llm_params(task_type))
     message = llm.chat_with_tools(
         _conversation(payload),
-        [_DOCUMENT_SEARCH_TOOL],
+        [_DOCUMENT_SEARCH_TOOL, _USER_TASK_CREATE_TOOL],
         max_tokens=int(config.get("max_tokens", 1200)),
         tool_choice="auto",
         inference_name=task_type,

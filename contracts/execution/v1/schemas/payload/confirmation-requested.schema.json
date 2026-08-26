@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/confirmation-requested.schema.json",
+  "title": "confirmation.requested payload v1",
+  "$ref": "../confirmation.schema.json"
+}

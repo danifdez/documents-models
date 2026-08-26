@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/confirmation-decided.schema.json",
+  "title": "confirmation.decided payload v1",
+  "type": "object",
+  "required": ["confirmationId", "planHash", "decision"],
+  "properties": {
+    "confirmationId": { "$ref": "../common.schema.json#/$defs/id" },
+    "planHash": { "$ref": "../common.schema.json#/$defs/hash" },
+    "decision": { "enum": ["approved", "denied", "expired"] }
+  },
+  "additionalProperties": false
+}

@@ -22,7 +22,7 @@
     "sequence": { "type": "integer", "minimum": 1 },
     "producerSequence": { "type": "integer", "minimum": 1 },
     "eventType": {
-      "enum": ["execution.created", "execution.state_changed", "operation.started", "operation.finished", "message.recorded", "source.observed", "progress.reported"]
+      "enum": ["execution.created", "execution.state_changed", "operation.started", "operation.finished", "message.recorded", "source.observed", "progress.reported", "confirmation.requested", "confirmation.decided"]
     },
     "producer": { "$ref": "common.schema.json#/$defs/producer" },
     "actor": { "$ref": "common.schema.json#/$defs/actor" },
@@ -42,7 +42,8 @@
     "payloadSchema": {
       "enum": [
         "execution.created/1", "execution.state_changed/1", "operation.started/1",
-        "operation.finished/1", "message.recorded/1", "source.observed/1", "progress.reported/1"
+        "operation.finished/1", "message.recorded/1", "source.observed/1", "progress.reported/1",
+        "confirmation.requested/1", "confirmation.decided/1"
       ]
     },
     "payload": { "type": "object" },
@@ -88,6 +89,30 @@
     {
       "if": { "properties": { "payloadSchema": { "const": "progress.reported/1" } }, "required": ["payloadSchema"] },
       "then": { "properties": { "eventType": { "const": "progress.reported" }, "payload": { "$ref": "payload/progress-reported.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "confirmation.requested/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["operationId", "toolCallId"],
+        "properties": {
+          "eventType": { "const": "confirmation.requested" },
+          "operationId": { "$ref": "common.schema.json#/$defs/id" },
+          "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+          "payload": { "$ref": "payload/confirmation-requested.schema.json" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "confirmation.decided/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["operationId", "toolCallId"],
+        "properties": {
+          "eventType": { "const": "confirmation.decided" },
+          "operationId": { "$ref": "common.schema.json#/$defs/id" },
+          "toolCallId": { "$ref": "common.schema.json#/$defs/id" },
+          "payload": { "$ref": "payload/confirmation-decided.schema.json" }
+        }
+      }
     },
     {
       "if": {
