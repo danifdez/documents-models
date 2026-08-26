@@ -44,6 +44,81 @@ class WorkerRuntimeTest(unittest.TestCase):
         )
         client.download_artifact.assert_not_called()
 
+    def test_stops_downloading_artifacts_when_cancellation_is_observed(self):
+        cancellation = threading.Event()
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        client.download_artifact.side_effect = lambda *_args: (
+            cancellation.set() or b"first"
+        )
+        outbox = Mock(spec=ResultOutbox)
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+            "inputArtifactRefs": [
+                {"role": "first", "artifactId": "artifact-1"},
+                {"role": "second", "artifactId": "artifact-2"},
+            ],
+        }
+
+        run_assignment(client, outbox, assignment, cancellation)
+
+        client.download_artifact.assert_called_once_with(
+            FIRST_ATTEMPT_ID, "artifact-1"
+        )
+        self.assertEqual(outbox.store.call_args.args[0]["status"], "cancelled")
+
+    def test_confirms_cancellation_after_an_artifact_download_is_rejected(self):
+        client = Mock()
+        client.read_control.side_effect = [
+            {"cancelled": False},
+            {"cancelled": True},
+        ]
+        client.download_artifact.side_effect = ProtocolTransportError(
+            "artifact_not_authorized"
+        )
+        outbox = Mock(spec=ResultOutbox)
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+            "inputArtifactRefs": [
+                {"role": "source", "artifactId": "artifact-1"}
+            ],
+        }
+
+        run_assignment(client, outbox, assignment, threading.Event())
+
+        self.assertEqual(outbox.store.call_args.args[0]["status"], "cancelled")
+
+    def test_preserves_an_active_artifact_download_failure_for_retry(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        client.download_artifact.side_effect = ProtocolTransportError(
+            "offline"
+        )
+        outbox = Mock(spec=ResultOutbox)
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+            "inputArtifactRefs": [
+                {"role": "source", "artifactId": "artifact-1"}
+            ],
+        }
+
+        with self.assertRaisesRegex(ProtocolTransportError, "offline"):
+            run_assignment(client, outbox, assignment, threading.Event())
+
+        outbox.store.assert_not_called()
+
     def test_runs_two_assignments_in_independent_slots(self):
         both_running = threading.Event()
         release = threading.Event()

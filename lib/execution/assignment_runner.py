@@ -28,12 +28,23 @@ def run_assignment(
         outbox.store(_cancelled_result(assignment))
         return
 
-    artifacts = {
-        ref["role"]: client.download_artifact(
-            attempt_id, ref["artifactId"]
-        )
-        for ref in assignment.get("inputArtifactRefs", [])
-    }
+    artifacts = {}
+    for ref in assignment.get("inputArtifactRefs", []):
+        if cancellation.is_set():
+            outbox.store(_cancelled_result(assignment))
+            return
+        try:
+            artifacts[ref["role"]] = client.download_artifact(
+                attempt_id, ref["artifactId"]
+            )
+        except ProtocolTransportError:
+            if cancellation.is_set() or client.read_control(attempt_id).get(
+                "cancelled"
+            ):
+                cancellation.set()
+                outbox.store(_cancelled_result(assignment))
+                return
+            raise
     if cancellation.is_set():
         outbox.store(_cancelled_result(assignment))
         return
