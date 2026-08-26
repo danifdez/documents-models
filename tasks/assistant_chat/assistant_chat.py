@@ -192,6 +192,44 @@ _BROWSER_CLICK_TOOL = {
         },
     },
 }
+_BROWSER_TYPE_TEXT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "browser.type_text",
+        "description": (
+            "Propose typing short single-line text into an exact visible field "
+            "from the most recent paired IA Browser page read, without submitting. "
+            "Do not use for passwords, payment data, authentication tokens, or secrets."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": [
+                "expectedCurrentUrl",
+                "elementIndex",
+                "expectedLabel",
+                "expectedCurrentValue",
+                "expectedCurrentValueTruncated",
+                "text",
+            ],
+            "properties": {
+                "expectedCurrentUrl": {"type": "string", "format": "uri"},
+                "elementIndex": {"type": "integer", "minimum": 1, "maximum": 60},
+                "expectedLabel": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                },
+                "expectedCurrentValue": {"type": "string", "maxLength": 60},
+                "expectedCurrentValueTruncated": {
+                    "type": "boolean",
+                    "enum": [False],
+                },
+                "text": {"type": "string", "minLength": 1, "maxLength": 60},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 _WORKSPACE_FILE_READ_TOOL = {
     "type": "function",
     "function": {
@@ -303,6 +341,7 @@ _TOOL_DEFINITIONS = {
     "browser.navigate": ("browser.navigate/1", _BROWSER_NAVIGATE_TOOL),
     "browser.go_back": ("browser.go_back/1", _BROWSER_GO_BACK_TOOL),
     "browser.click": ("browser.click/1", _BROWSER_CLICK_TOOL),
+    "browser.type_text": ("browser.type_text/1", _BROWSER_TYPE_TEXT_TOOL),
     "workspace_files.list": (
         "workspace_files.list/1",
         _WORKSPACE_FILE_LIST_TOOL,
@@ -559,6 +598,7 @@ def _tool_result_content(
             kind = interaction.get("kind")
             label = interaction.get("label")
             value = interaction.get("value")
+            value_truncated = interaction.get("valueTruncated")
             if (
                 not isinstance(index, int)
                 or index < 1
@@ -568,8 +608,13 @@ def _tool_result_content(
             ):
                 continue
             line = f"[{index}] {kind} — {label[:120]}"
-            if kind == "field" and isinstance(value, str) and value:
-                line += f" (current value: {value[:60]})"
+            if kind == "field":
+                if not isinstance(value, str) or not isinstance(value_truncated, bool):
+                    continue
+                if value_truncated:
+                    line += " (current value exceeds the safe edit limit)"
+                else:
+                    line += f" (current value: {value[:60] or 'empty'})"
             controls.append(line)
         if controls:
             message += (
