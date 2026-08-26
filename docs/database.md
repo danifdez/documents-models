@@ -1,29 +1,23 @@
-# Data access
+# Data and privacy
 
-Models has no PostgreSQL credentials and no application-domain database
-adapter. Backend is the sole owner of relational data, pgvector tables,
-Apache AGE and execution state.
+The AI processing service does not have direct access to the Documents database, semantic index, or relationship graph.
 
-Every handler receives all required data through its step assignment:
+## What processing receives
 
-- small structured inputs live in `work.payload`;
-- larger snapshots use attempt-scoped input artifacts;
-- Models returns small calculated values inline and large calculated bodies as
-  attempt-scoped output artifacts. Backend validates both before persisting any
-  resulting domain effect during finalization.
+For each action, Documents supplies only the information needed to calculate that result, such as:
 
-Vector retrieval uses the `vector_candidates` artifact. It contains the
-bounded, scope-checked candidate snapshot selected by Backend. Models embeds
-the query and ranks those candidates locally without opening a datastore.
+- a bounded section of text;
+- an uploaded file for extraction or transcription;
+- a project-scoped dataset snapshot;
+- a limited set of search candidates already selected from the current project;
+- relevant project relationships for a question.
 
-Input file bodies follow the same rule. Backend returns artifact references in
-the assignment, Models downloads each body through the attempt-scoped artifact
-endpoint, and the executor exposes them by role:
+Large inputs are transferred specifically for the active processing attempt. Missing or malformed required material causes the action to fail instead of falling back to another data source.
 
-```python
-payload["_input_artifacts"]["document"]
-payload["_input_artifacts"]["vector_candidates"]
-```
+## What processing returns
 
-A missing or malformed required artifact fails the step. Handlers must not
-fall back to a filesystem path, database query or productive service.
+The service returns calculated values such as extracted text, summaries, translations, entities, rankings, embeddings, transcripts, or statistics. Documents validates those results and is solely responsible for saving changes to project data.
+
+## Search scope
+
+Semantic search and question answering cannot widen the supplied candidate set. The processing service ranks only the project-scoped candidates provided by Documents, so it cannot discover content from another project through direct data access.

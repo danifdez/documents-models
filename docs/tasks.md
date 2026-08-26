@@ -1,45 +1,35 @@
-## Tasks
+# Processing features
 
-This section documents all available tasks in the models service. Each task is a execution handler that receives a payload and returns a result.
+## Text, documents, and search
 
-Tasks are grouped into two categories: **NLP tasks** for running natural language content, and **Dataset tasks** for analyzing structured data.
+| Feature | Purpose |
+|---|---|
+| [Ask](./tasks/ask.md) | Answer a question from indexed project content. |
+| [Summarize](./tasks/summarize.md) | Create a concise summary in a requested language. |
+| [Language detection](./tasks/detect-language.md) | Identify the language of text. |
+| [Translation](./tasks/translate.md) | Translate text between supported language pairs. |
+| [Entity extraction](./tasks/entity-extraction.md) | Find named people, organizations, places, and other entities. |
+| [Key points](./tasks/key-point.md) | Produce a short refined list of main points. |
+| [Keywords](./tasks/keywords.md) | Rank concise concepts found across a document. |
+| [Document extraction](./tasks/document-extraction.md) | Convert supported files into readable content and metadata. |
+| [Transcription](./tasks/transcribe.md) | Convert speech in supported audio or video into text. |
+| [Content indexing](./tasks/ingest-content.md) | Prepare content for semantic retrieval. |
+| [Search](./tasks/search.md) | Rank relevant project passages by meaning. |
+| [Embedding](./tasks/embedding.md) | Create an internal semantic representation of text. |
 
----
+## Structured dataset analysis
 
-### NLP Tasks
+| Feature | Purpose |
+|---|---|
+| [Summary](./tasks/summary.md) | Review descriptive statistics for all fields. |
+| [Query](./tasks/query.md) | Filter, select, join, group, and aggregate data. |
+| [Chart](./tasks/chart.md) | Prepare bar, line, pie, or scatter chart data. |
+| [Distribution](./tasks/distribution.md) | Understand how values are spread or repeated. |
+| [Group by](./tasks/group-by.md) | Compare an aggregate across categories. |
+| [Correlation](./tasks/correlation.md) | Measure the relationship between two numeric fields. |
+| [Correlation matrix](./tasks/correlation-matrix.md) | Compare every selected pair of numeric fields. |
+| [Pivot table](./tasks/pivot-table.md) | Cross-tabulate two categorical fields. |
+| [Time series](./tasks/time-series.md) | Follow a numeric value over regular time periods. |
+| [Outliers](./tasks/outliers.md) | Identify values outside the typical range. |
 
-These tasks work with unstructured text, documents, and natural language.
-
-| Task | Description |
-|------|-------------|
-| [ask](./tasks/ask.md) | Answer a natural language question using indexed project content (RAG) |
-| [summarize](./tasks/summarize.md) | Generate a summary of a document or text, with cross-lingual support |
-| [embedding](./tasks/embedding.md) | Convert text into a numerical vector for semantic search and comparison |
-| [keywords map/reduce](./tasks/keywords.md) | Extract and deterministically rank keyword candidates through durable steps |
-| [key-point map/reduce](./tasks/key-point.md) | Extract and refine concise key points through durable inference steps |
-| [translate](./tasks/translate.md) | Translate a list of texts from one language to another |
-| [detect-language](./tasks/detect-language.md) | Identify the language of one or more text samples |
-| [entity-extraction map/reduce](./tasks/entity-extraction.md) | Extract and deterministically merge named entities through durable steps |
-| [search](./tasks/search.md) | Perform semantic search over indexed project content |
-| [ingest-content](./tasks/ingest-content.md) | Chunk and embed document content for Backend persistence |
-| [document-extraction](./tasks/document-extraction.md) | Extract and parse text content from uploaded files (PDF, Word, HTML, audio, etc.) |
-| [transcribe](./tasks/transcribe.md) | Transcribe speech from audio and video files using faster-whisper |
-
----
-
-### Dataset Tasks
-
-These tasks analyze structured data stored in datasets.
-
-| Task | Description |
-|------|-------------|
-| [summary](./tasks/summary.md) | Quick statistical overview of all fields in a dataset |
-| [query](./tasks/query.md) | Custom query with filtering, grouping, and aggregation across one or more datasets |
-| [chart](./tasks/chart.md) | Generate chart data (bar, line, pie, scatter) from a dataset field |
-| [distribution](./tasks/distribution.md) | Analyze how values of a single field are distributed (histogram or frequency) |
-| [group-by](./tasks/group-by.md) | Aggregate a numeric field grouped by a categorical field |
-| [correlation](./tasks/correlation.md) | Measure the statistical relationship between two numeric fields |
-| [correlation-matrix](./tasks/correlation-matrix.md) | Compute correlations between all numeric fields as a heatmap matrix |
-| [pivot-table](./tasks/pivot-table.md) | Cross-tabulation of two categorical fields with optional numeric aggregation |
-| [time-series](./tasks/time-series.md) | Track how a numeric value changes over time, grouped by month, quarter, or year |
-| [outliers](./tasks/outliers.md) | Detect unusual values in a numeric field using the IQR method |
+Feature availability depends on the installation, processing capacity, and user permissions.

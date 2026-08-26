@@ -69,16 +69,16 @@ those that explicitly need a GPU.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md)
-- [Architecture](docs/architecture.md)
-- [Configuration](docs/configuration.md)
-- [Tasks](docs/tasks.md)
-- [Execution types](docs/execution-types.md)
-- [NLP tasks](docs/nlp-tasks.md)
-- [RAG pipeline](docs/rag-pipeline.md)
+- [Getting started with AI features](docs/getting-started.md)
+- [How AI processing works](docs/architecture.md)
+- [AI feature options](docs/configuration.md)
+- [Processing features](docs/tasks.md)
+- [Available processing capabilities](docs/execution-types.md)
+- [Text and language features](docs/nlp-tasks.md)
+- [Semantic search and grounded answers](docs/rag-pipeline.md)
 - [Document extraction](docs/document-extraction.md)
-- [Data storage](docs/database.md)
-- [Creating tasks](docs/creating-tasks.md)
+- [Data and privacy](docs/database.md)
+- [Availability of AI capabilities](docs/creating-tasks.md)
 
 ## License
 

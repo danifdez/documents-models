@@ -1,171 +1,37 @@
-# Configuration
+# AI feature options
 
-Configuration is split into two JSON files inside `config/`:
+The administrator of a Documents installation controls which processing capabilities are available and how much local computer capacity they may use. These are installation-level choices; normal users start the corresponding actions from the desktop application.
 
-- **`config/config.json`** — General settings (LLM defaults, RAG, worker)
-- **`config/tasks.json`** — Per-task configuration (models, capabilities, parameters, enabled/disabled)
+## Enabled capabilities
 
-Both are auto-created from `common/config.default.json` and `common/tasks.default.json` during installation. Edit them directly to change any setting.
+Capabilities can be enabled or disabled individually. Disabling language-model processing removes actions that depend on text generation, while disabling embeddings removes semantic indexing, semantic search, and related question-answering work.
 
-Per-task overrides can also be placed in `config/tasks/<task-name>/`.
+The rest of Documents remains usable when optional AI capabilities are disabled.
 
-## config.json
+## Processing capacity
 
-Models has no database or vector-table configuration. Backend owns PostgreSQL,
-pgvector and Apache AGE and supplies bounded snapshots through assignments.
-To disable embedding work set `worker.disable_embeddings` to `true` (see
-[Worker](#worker)); this disables tasks that require embeddings.
+The service runs a limited number of assignments at the same time. The default is two. Increasing this can process more work concurrently, but also uses more processor and memory resources. Documents will leave additional work queued until a slot becomes available.
 
-### LLM Defaults
+## Language-model options
 
-Shared parameters for all LLM-based tasks. Individual tasks can override any of these.
+Text-generation actions can use a locally installed model and can have separate limits for input size, output length, and the number of returned items. Administrators can also provide task-specific prompts or approved model adaptations.
 
-```json
-"llm_defaults": {
-  "model_dir": "models",
-  "n_ctx": 32768,
-  "n_threads": 4,
-  "n_batch": 64,
-  "n_gpu_layers": 0
-}
-```
+Changing these choices can affect speed, memory use, language coverage, and output quality, but does not change how users start the action or where the result appears.
 
-> **Note:** Set `n_gpu_layers` to `-1` to offload all layers to GPU when one is available.
+## Semantic search options
 
-### RAG
+Administrators can choose:
 
-```json
-"rag": {
-  "default_limit": 5,
-  "max_tokens": 1000,
-  "score_threshold": 0.35,
-  "chunk_target_words": 150,
-  "chunk_max_words": 250,
-  "chunk_overlap_words": 30
-}
-```
+- the default number of matching passages;
+- the minimum relevance score;
+- the maximum answer length;
+- the target and maximum size of indexed passages;
+- how much neighboring passages overlap.
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `default_limit` | `5` | Number of chunks retrieved for the `ask` task |
-| `max_tokens` | `1000` | Maximum tokens in LLM responses for RAG |
-| `score_threshold` | `0.35` | Minimum cosine similarity to include a chunk |
-| `chunk_target_words` | `150` | Target chunk size in words |
-| `chunk_max_words` | `250` | Maximum words before a chunk is split |
-| `chunk_overlap_words` | `30` | Overlap words between consecutive chunks |
+The current defaults retrieve five passages, require a relevance score of 0.35, use a bounded answer length, target 150 words per passage, cap passages at 250 words, and overlap them by 30 words.
 
-### Worker
+## Model downloads
 
-```json
-"worker": {
-  "id": "",
-  "name": "",
-  "heartbeat_interval": 15,
-  "maximum_concurrency": 2,
-  "disable_llm": false,
-  "disable_embeddings": false
-}
-```
+Most supporting models are downloaded on first use or during installation. Translation uses a separate model for each language pair. If a required model is unavailable, the affected action fails explicitly rather than silently returning a substitute result.
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `id` | auto UUID (persisted to `.worker_id`) | Stable worker identity across restarts |
-| `name` | `worker-{id[:8]}` | Human-readable name for logs |
-| `heartbeat_interval` | `15` | Seconds between heartbeat updates |
-| `maximum_concurrency` | `2` | Independent assignment slots, from 1 to 64 |
-| `disable_llm` | `false` | Disable all LLM capabilities on this worker |
-| `disable_embeddings` | `false` | Disable all embedding capabilities on this worker |
-
-Backend owns priority, fairness, deadlines and retry scheduling. Models does
-not expose queue or background-window configuration. Models instantiates and
-advertises exactly `maximum_concurrency`; every slot has independent execution,
-lease maintenance and durable result state. Keep this aligned with available
-CPU/GPU memory and the parallel slots exposed by the inference server.
-
-## tasks.json
-
-Each task has its own entry as a top-level key:
-
-```json
-{
-  "keywords-map": {
-    "enabled": true,
-    "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
-    "capabilities": ["llm"],
-    "max_tokens": 500,
-    "max_input_words": 1500
-  },
-  "keywords-reduce": {
-    "enabled": true,
-    "type": "utility",
-    "capabilities": [],
-    "max_items": 10,
-    "max_words_per_item": 3
-  },
-  "key-point-map": {
-    "enabled": true,
-    "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
-    "capabilities": ["llm"],
-    "max_tokens": 1000,
-    "max_input_words": 1500
-  },
-  "key-point-reduce": {
-    "enabled": true,
-    "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
-    "capabilities": ["llm"],
-    "max_tokens": 800,
-    "max_items": 5
-  }
-}
-```
-
-Common fields for all tasks:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `enabled` | yes | `true`/`false` — whether this task is active |
-| `type` | yes | Model type: `llm`, `sentence-transformer`, `seq2seq`, `translation`, `rag`, `pipeline`, `utility` |
-| `capabilities` | yes | Required worker capabilities (`["llm"]`, `["embeddings"]`, `["llm", "embeddings"]`, or `[]`) |
-| `model` | no | Model name or path |
-
-Optional fields for `type: "llm"` tasks (applied on top of the base GGUF model):
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `lora_model` | — | Filename of a LoRA adapter `.gguf` inside `model_dir`. Place the file manually. |
-| `lora_path` | — | Absolute path to the LoRA adapter. Overrides `lora_model` when set. |
-| `lora_scale` | `1.0` | Blend scale for the LoRA adapter. |
-
-Each `(model, lora_path, lora_scale)` combination is cached as a separate Llama instance, so different tasks can use different base+adapter pairs without collision.
-
-Additional task-specific parameters vary by task (see `common/tasks.default.json` for the full default configuration).
-
-## Per-task Overrides
-
-You can override task behavior without editing `config/tasks.json`:
-
-### Prompt Override
-
-Create `config/tasks/<task-type>/prompt.md` with your custom prompt. This takes priority over the default prompt in `tasks/<task-dir>/prompt.md`.
-
-### Config Override
-
-Create `config/tasks/<task-type>/config.json` with parameter overrides. These are merged on top of the task's entry in `tasks.json`:
-
-```json
-{
-  "max_tokens": 2000,
-  "max_items": 20
-}
-```
-
-## Installation
-
-Run `./install` to create `config/config.json` and `config/tasks.json`
-interactively. The only capability prompt controls embedding-dependent tasks;
-Models has no database or application-storage settings.
-
-See [creating-tasks.md](creating-tasks.md) for how to add new tasks.
+Standalone installations can choose a CPU or compatible NVIDIA GPU package from the desktop application's Local Server settings.

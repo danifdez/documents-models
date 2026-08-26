@@ -1,99 +1,21 @@
-## Correlation
+# Correlation between two fields
 
-The **correlation** task measures the statistical relationship between two numeric fields in a dataset. It calculates Pearson correlation along with a regression line, and returns data suitable for rendering as a scatter plot.
+This analysis measures the linear relationship between two numeric dataset fields using Pearson correlation.
 
-### What it does
+## Requirements
 
-Given two numeric fields, the task computes how strongly they are related. A correlation close to 1 or -1 means the two fields move together closely; a value near 0 means little or no relationship. The result includes the scatter plot data points and a linear regression line.
+Choose two numeric fields with at least three valid paired data points.
 
-### Parameters
+## Result
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `datasetId` | number | Yes | ID of the dataset to analyze |
-| `params` | object | Yes | Analysis configuration (see below) |
+Documents prepares a scatter plot and a linear regression line. The accompanying statistics include:
 
-**`params` object:**
+- the Pearson correlation from -1 to 1;
+- the significance value;
+- the proportion of variation described by the fitted line;
+- the number of valid pairs;
+- the slope and intercept of the line.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `field1` | string | Key of the first numeric field |
-| `field2` | string | Key of the second numeric field |
+A value close to 1 or -1 indicates a strong linear relationship, while a value near 0 indicates little linear relationship. The result does not prove that one field causes the other.
 
-### Returns
-
-```json
-{
-  "chartType": "scatter",
-  "field1": "age",
-  "field1Name": "Age",
-  "field2": "income",
-  "field2Name": "Income",
-  "chartData": {
-    "points": [{ "x": 25, "y": 35000 }, { "x": 40, "y": 62000 }],
-    "regression": { "slope": 1800.5, "intercept": 10200.0, "xRange": [20, 65] }
-  },
-  "stats": {
-    "correlation": 0.78,
-    "pValue": 0.0001,
-    "rSquared": 0.61,
-    "n": 350,
-    "slope": 1800.5,
-    "intercept": 10200.0
-  },
-  "operation": "correlation",
-  "datasetId": 1
-}
-```
-
-**Key stats:**
-
-- `correlation`: Pearson R coefficient (-1 to 1)
-- `rSquared`: How much of the variance in one field is explained by the other
-- `pValue`: Statistical significance (lower is more significant)
-
-At minimum 3 data points are required. On error:
-
-```json
-{
-  "error": "Not enough data points (minimum 3)"
-}
-```
-
-### Example
-
-**Input:**
-
-```json
-{
-  "datasetId": 4,
-  "params": {
-    "field1": "study_hours",
-    "field2": "exam_score"
-  }
-}
-```
-
-**Output:**
-
-```json
-{
-  "chartType": "scatter",
-  "field1": "study_hours",
-  "field1Name": "Study Hours",
-  "field2": "exam_score",
-  "field2Name": "Exam Score",
-  "chartData": {
-    "points": [{ "x": 2, "y": 55 }, { "x": 5, "y": 78 }, { "x": 8, "y": 91 }],
-    "regression": { "slope": 5.2, "intercept": 44.6, "xRange": [1, 10] }
-  },
-  "stats": {
-    "correlation": 0.93,
-    "pValue": 0.0000021,
-    "rSquared": 0.86,
-    "n": 120
-  },
-  "operation": "correlation",
-  "datasetId": 4
-}
-```
+If fewer than three valid pairs remain, the analysis fails instead of calculating an unreliable result.

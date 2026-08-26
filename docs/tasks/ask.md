@@ -1,53 +1,19 @@
-## Ask
+# Ask a question
 
-The **ask** task answers a natural language question from a bounded candidate
-snapshot prepared by Backend. It ranks that snapshot and uses a language model
-to compose a grounded response without accessing a vector database.
+Ask answers a natural-language question from content already indexed in the current project.
 
-### What it does
+## What happens
 
-Given a question, this task retrieves relevant text snippets from the project's indexed content and then generates a natural language response based on those snippets. If no relevant information is found, it returns a message indicating so.
+Documents selects a bounded, project-scoped set of candidate passages. The processing service ranks those passages by meaning, removes duplicates, adds any relevant project relationships supplied by Documents, and generates one grounded answer.
 
-### Parameters
+The processing service cannot search another project, the application database, or the web.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `question` | string | Yes | The question to answer |
-| `candidates` | array | direct harness only | Vector candidates; production supplies the equivalent artifact |
-| `graphContext` | array | no | Backend-resolved, project-scoped relationship triples |
+## Result
 
-### Returns
+The result is a natural-language response in the language of the question. If the selected content does not contain relevant information, the response states that no relevant information was found.
 
-```json
-{
-  "response": "The answer to your question based on the indexed content."
-}
-```
+There is no heuristic fallback when the language model is unavailable; the action fails explicitly.
 
-If no relevant content is found:
+## Good use
 
-```json
-{
-  "response": "No relevant information was found to answer this question."
-}
-```
-
-### Example
-
-**Input:**
-
-```json
-{
-  "question": "What were the main conclusions of the 2023 annual report?",
-  "candidates": [],
-  "graphContext": []
-}
-```
-
-**Output:**
-
-```json
-{
-  "response": "According to the 2023 annual report, the main conclusions were a 15% revenue growth driven by the new product line and an expansion into three new markets."
-}
-```
+Ask focused questions whose answer is likely to appear in the imported material, such as “What conclusions does the 2023 annual report reach?” Review important answers against their source documents.

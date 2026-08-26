@@ -1,52 +1,15 @@
-# Ingest Content
+# Prepare content for semantic search
 
-`ingest-content` is a self-contained embedding step. It cleans and chunks the
-supplied content, calculates 384-dimensional embeddings and returns vector
-points as `vector_points` output artifacts. Backend owns validation,
-replacement and persistence in pgvector.
+Content indexing makes a resource, editable document, or knowledge entry available to meaning-based search and grounded question answering.
 
-## Input
+## What happens
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `content` | string | yes | HTML or text to index |
-| `projectId` | number | no | Scope recorded in point metadata |
-| `sourceType` | string | no | `resource`, `doc` or `knowledge`; defaults to `resource` |
-| `resourceId` | number | conditional | Required for a resource |
-| `docId` | number | conditional | Required for a doc |
-| `knowledgeEntryId` | number | conditional | Required for a knowledge entry |
+Documents cleans the supplied text, divides it into overlapping passages, and creates a semantic representation for each passage. Every passage keeps its source, position, and total passage count.
 
-## Output
+The default passage target is 150 words, with a maximum of 250 words and a 30-word overlap.
 
-```json
-{
-  "sourceId": "resource_42",
-  "chunks": 1,
-  "pointCount": 1
-}
-```
+## Result
 
-The result references one or more ordered `vector_points` artifacts. Each
-artifact contains at most 256 points:
+A successful action reports the indexed source and how many passages were prepared. Empty content produces zero passages and does not create search entries.
 
-```json
-{
-  "points": [
-    {
-      "id": "resource_42:1",
-      "embedding": [0.1],
-      "payload": {
-        "text": "...",
-        "source_id": "resource_42",
-        "source_type": "resource",
-        "part_number": 1,
-        "total_chunks": 1
-      }
-    }
-  ]
-}
-```
-
-The abbreviated vector above represents 384 finite values. Empty content
-returns `pointCount: 0` with no artifact. Cleanup is not a Models task: Backend
-deletes or replaces vectors directly as owner of the domain store.
+Documents validates and saves the new entries as one replacement of the source's previous semantic index. The processing service does not open or modify the search database itself.

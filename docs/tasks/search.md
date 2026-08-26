@@ -1,41 +1,19 @@
-# Search
+# Semantic search
 
-The `search` step embeds a query and ranks the bounded candidate snapshot that
-Backend attached to the assignment. It never reads pgvector or widens the
-authorized project scope.
+Semantic search finds project passages related to the meaning of a natural-language query, even when they do not use exactly the same words.
 
-## Inputs
+## Scope
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `query` | string | yes | Natural-language query |
-| `limit` | integer | yes | Maximum result count |
-| `score_threshold` | number | no | Minimum cosine score |
-| `vector_candidates` | artifact | yes | JSON object containing at most 5,000 384-dimensional candidates |
-
-Backend resolves `projectId` while building the candidate artifact; Models does
-not use it as an authorization control.
+Documents selects a bounded set of candidates from the current project before processing begins. The processing service ranks only those candidates and cannot widen the search to another project, the application database, or the web.
 
 ## Result
 
-```json
-{
-  "results": [
-    {
-      "text": "The relevant text snippet...",
-      "score": 0.87,
-      "metadata": {
-        "source_id": "resource_42",
-        "source_type": "resource",
-        "project_id": 5,
-        "part_number": 2,
-        "total_chunks": 8
-      }
-    }
-  ]
-}
-```
+Each result includes:
 
-Results are sorted deterministically by descending cosine similarity and then
-candidate ID. The assignment fails if its artifact is missing, malformed,
-oversized, or contains embeddings with a dimension other than 384.
+- the matching text passage;
+- a relevance score;
+- source information and its position within the indexed content.
+
+Results are ordered by descending similarity. Equal scores use a stable ordering, so the same query over the same candidates gives a consistent result order.
+
+The default limit is five results and the default minimum relevance score is 0.35. Malformed or oversized candidate data causes the action to fail rather than returning partial rankings.

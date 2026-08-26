@@ -1,80 +1,33 @@
-# RAG pipeline
+# Semantic search and grounded answers
 
-RAG is split at the Backend–Models authority boundary. Backend owns vector
-storage and scope; Models owns embedding, ranking and answer generation.
+Documents uses semantic retrieval to find passages by meaning rather than only by exact words. This supports both project search and question answering.
 
-```text
-ingest-content assignment
-  -> Models cleans, chunks and embeds
-  -> Models uploads deterministic vector_points artifacts
-  -> StepResult references the artifacts and returns their point count
-  -> Backend atomically replaces the source rows in pgvector
+## Preparing content
 
-search/ask request
-  -> Backend reads scope-checked vector candidates
-  -> Backend freezes them in a vector_candidates artifact
-  -> Models embeds the query and ranks only that snapshot
-  -> search returns ranked chunks
-  -> ask builds grounded context and performs one answer inference
-```
+When content is indexed, Documents:
 
-Models never connects to PostgreSQL or Apache AGE. For `ask`, Backend also
-resolves any mentioned graph entities and includes the project-scoped
-relationships in `graphContext` before granting the step.
+1. removes markup that does not contribute useful text;
+2. divides the content into overlapping passages;
+3. creates a semantic representation for each passage;
+4. stores the approved index entries with their source and position.
 
-## Ingestion
+The default passage target is 150 words, with a maximum of 250 words and a 30-word overlap. Empty content produces no index entries.
 
-`ingest-content` cleans HTML with `services/text.py`, splits it using the RAG
-chunk limits, and embeds every chunk with
-`intfloat/multilingual-e5-small`. Its output is:
+## Searching
 
-```json
-{
-  "sourceId": "resource_42",
-  "chunks": 1,
-  "pointCount": 1
-}
-```
+For a search, Documents first selects a bounded set of candidates from the current project. The processing service compares the query with only that snapshot, applies the relevance threshold, and orders matches by score. Ties are resolved consistently so repeated searches over the same snapshot remain stable.
 
-The `StepResult` references ordered `vector_points` artifacts containing:
+The default search returns up to five passages with a minimum relevance score of 0.35. A request can use a different result limit or threshold when the feature allows it.
 
-```json
-{
-  "points": [
-    {
-      "id": "resource_42:1",
-      "embedding": [0.1],
-      "payload": {
-        "text": "...",
-        "source_id": "resource_42",
-        "source_type": "resource",
-        "part_number": 1,
-        "total_chunks": 1
-      }
-    }
-  ]
-}
-```
+## Asking a question
 
-The real embedding has exactly 384 finite values. Point identities are stable
-for a source and chunk position. Models does not delete or upsert rows.
+Question answering uses the best-ranked passages as context. Duplicate passages are removed. Documents can also supply relationships between entities that were resolved inside the same project.
 
-## Retrieval
+The language model is instructed to answer in the language of the question and to rely on the supplied context. If no relevant content is found, Documents says that it could not find enough information rather than inventing project evidence.
 
-`search`, `ask` and `indexed-file-search` require a bounded
-candidate snapshot. In production it arrives as the `vector_candidates`
-artifact; direct harness cases may declare the same `candidates` array in the
-payload.
+## Scope and limitations
 
-Models validates every 384-dimensional vector, calculates cosine similarity,
-applies the requested threshold, and uses a deterministic score/id ordering.
-It cannot observe candidates outside the Backend-selected scope.
-
-`ask` then deduplicates ranked chunks, appends the supplied `graphContext`,
-builds the prompt and performs the configured LLM inference.
-
-## Configuration
-
-The `rag` block controls chunk sizes, default result limit, response budget and
-score threshold. Database hosts, vector table names and graph settings are not
-Models configuration; they belong exclusively to Backend.
+- Only content selected from the current project is considered.
+- The processing service cannot search the database, relationship graph, another project, or the web.
+- Semantic similarity identifies related meaning but does not prove that a passage is factually correct.
+- An answer is generated from retrieved context and should be checked against its source material for important decisions.

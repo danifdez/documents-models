@@ -1,83 +1,19 @@
-## Document Extraction
+# Extract document content
 
-The **document-extraction** task extracts the text content from an uploaded file and converts it into clean HTML. It supports a variety of file formats including PDFs, Word documents, plain text, emails, and media files.
+Extraction converts an uploaded file into clean content that Documents can display and use in later actions.
 
-### What it does
+## Supported content
 
-Given a file identified by its hash and extension, the task reads the file from storage, parses it using the appropriate processor, and returns the extracted content as HTML. For media files (audio and video), it extracts technical metadata (duration, bitrate, etc.). Speech-to-text transcription is handled separately by the [transcribe](./transcribe.md) task, which runs automatically after extraction.
+| Type | Extensions | Result |
+|---|---|---|
+| PDF | `.pdf` | Clean content, embedded images, and page count. OCR is not performed. |
+| Word | `.doc`, `.docx` | Clean content and page count when available. |
+| Web page | `.html`, `.htm` | Main content and available title, author, and publication date. |
+| Plain text | `.txt` | Non-empty paragraphs in order. |
+| Email | `.eml` | Message body and available subject, sender, and date; attachments are ignored. |
+| OpenDocument | `.odt` | Paragraphs, headings, and available document metadata. |
+| Audio and video | See [Document extraction](../document-extraction.md) | Duration and embedded metadata only. |
 
-### Parameters
+For media, speech-to-text is handled by the separate [Transcription](./transcribe.md) feature and can run automatically after extraction when available.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `hash` | string | Yes | The file's storage hash (used to locate the file on disk) |
-| `extension` | string | Yes | The file extension including the dot (e.g. `.pdf`, `.docx`) |
-
-**Supported extensions:**
-
-| Format | Extensions |
-|--------|-----------|
-| HTML | `.html`, `.htm` |
-| Word | `.doc`, `.docx` |
-| PDF | `.pdf` |
-| Plain text | `.txt` |
-| Email | `.eml` |
-| OpenDocument | `.odt` |
-| Audio | `.mp3`, `.wav`, `.ogg`, `.flac`, `.aac`, `.m4a`, `.wma`, `.opus`, `.aiff`, `.aif` |
-| Video | `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`, `.wmv` |
-
-### Returns
-
-```json
-{
-  "content": "<p>Extracted text content...</p>"
-}
-```
-
-For PDFs and Word documents, additional metadata may be included:
-
-```json
-{
-  "content": "<p>Extracted text...</p>",
-  "pages": 12
-}
-```
-
-For HTML files, metadata extracted from meta tags is included:
-
-```json
-{
-  "content": "<p>Extracted text...</p>",
-  "title": "Document Title",
-  "author": "Author Name",
-  "publication_date": "2024-01-15"
-}
-```
-
-On error:
-
-```json
-{
-  "error": "Unsupported file type: .xyz"
-}
-```
-
-### Example
-
-**Input:**
-
-```json
-{
-  "hash": "a1b2c3d4e5f6789abcdef1234567890a",
-  "extension": ".pdf"
-}
-```
-
-**Output:**
-
-```json
-{
-  "content": "<p>Introduction</p><p>This paper presents a new approach to...</p>",
-  "pages": 8
-}
-```
+Unsupported, missing, damaged, or unreadable files cause an explicit failure. See [Document extraction](../document-extraction.md) for the complete extension list and format-specific limitations.

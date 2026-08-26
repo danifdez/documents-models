@@ -1,163 +1,44 @@
-# Document Extraction
+# Document extraction
 
-The `document-extraction` execution type extracts text content from uploaded files and normalizes all formats to clean HTML. The extraction pipeline is implemented in `tasks/extraction/`.
+Document extraction turns uploaded files into clean content that Documents can display, search, and use in later actions.
 
-## Supported Formats
+## Supported formats
 
-| Format | Extensions | Library | Processor |
-|--------|-----------|---------|-----------|
-| PDF | `.pdf` | Docling (StandardPdfPipeline) | `processors/pdf_processor.py` |
-| Word | `.doc`, `.docx` | Docling | `processors/doc_processor.py` |
-| HTML | `.html`, `.htm` | Trafilatura + BeautifulSoup | `processors/html_processor.py` |
-| Plain Text | `.txt` | Built-in | `processors/txt_processor.py` || Email | `.eml` | Python `email` (stdlib) | `processors/eml_processor.py` |
-| OpenDocument | `.odt` | odfpy | `processors/odt_processor.py` |
-| Audio | `.mp3`, `.wav`, `.ogg`, `.flac`, `.aac`, `.m4a`, `.wma`, `.opus`, `.aiff`, `.aif` | mutagen | `processors/media_processor.py` |
-| Video | `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`, `.wmv` | mutagen | `processors/media_processor.py` |
-Unsupported extensions return an error.
+| Content | Extensions | Extracted result |
+|---|---|---|
+| PDF | `.pdf` | Text and layout converted to clean content, embedded images, and page count. OCR is not performed. |
+| Word | `.doc`, `.docx` | Text and layout converted to clean content, with page count when available. |
+| Web page | `.html`, `.htm` | Main content, title, author, and publication date when present. Links, images, and tables are preserved where possible. |
+| Plain text | `.txt` | Non-empty paragraphs in their original order. |
+| Email | `.eml` | HTML body when present, otherwise plain text; subject, sender, and send date. Attachments are ignored. |
+| OpenDocument text | `.odt` | Paragraphs, headings, title, author, and document date when present. |
+| Audio | `.mp3`, `.wav`, `.ogg`, `.flac`, `.aac`, `.m4a`, `.wma`, `.opus`, `.aiff`, `.aif` | Duration and embedded media metadata. No transcript is produced by extraction itself. |
+| Video | `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`, `.wmv` | Duration and embedded media metadata. No transcript is produced by extraction itself. |
 
-## File Storage Path
+Unsupported extensions cause the extraction action to fail explicitly.
 
-Documents are stored using a content-addressed scheme based on their SHA256 hash:
+## Cleaned content
 
-```
-{DOCUMENTS_STORAGE_DIR}/{hash[0:3]}/{hash[3:6]}/{hash}.{extension}
-```
+Extracted text is normalized into safe, consistent content. Scripts, embedded style definitions, element identifiers, and unnecessary formatting attributes are removed. Whitespace is normalized, empty paragraphs are removed, and useful structure such as paragraphs, headings, links, images, and tables is retained where the source format supports it.
 
-For example, a PDF with hash `a1b2c3d4e5...` is stored at:
+## Format-specific behavior
 
-```
-/app/documents_storage/a1b/2c3/a1b2c3d4e5.pdf
-```
+### PDF and Word
 
-The `DOCUMENTS_STORAGE_DIR` defaults to `/app/documents_storage` and can be overridden via environment variable.
+Text, layout, and available images are converted for display. PDF extraction does not use optical character recognition, so image-only scanned pages may not produce readable text.
 
-## Output Format
+### HTML
 
-All processors produce clean HTML with:
+Documents favors the main page content and reads common page metadata for title, author, and publication date. Nonstandard table markup is converted into normal tables where possible.
 
-- No inline `style` attributes
-- No `class` attributes
-- No `id` attributes
-- No `<script>` or `<style>` tags
-- Collapsed whitespace
-- Empty `<p>` tags removed
-- Unnecessary wrapper `<div>` elements unwrapped or converted to `<p>`
+### Email
 
-## Processor Details
+The HTML message body is preferred over the plain-text alternative. Attachments are not extracted as part of the email; import them separately if they should become resources.
 
-### PDF Processor
+### Audio and video
 
-Uses Docling's `DocumentConverter` with `StandardPdfPipeline`:
+Extraction creates a metadata summary, not a speech transcript. Transcription is a separate action and can run automatically after media extraction when that capability is available.
 
-- **OCR**: Disabled (`do_ocr = False`)
-- **Images**: Generated at 2x scale (`images_scale = 2.0`), embedded as base64 in the HTML output
-- **HTML export**: Uses `export_to_html(image_mode='embedded')`
-- **Post-running**: Strips attributes, unwraps unnecessary divs, converts leaf divs to `<p>` tags
+## Failures
 
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | Clean HTML string |
-| `pages` | Page count (from `result.document.pages`) |
-
-### DOC/DOCX Processor
-
-Uses the same Docling pipeline and post-running as PDF. Docling handles the format conversion internally.
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | Clean HTML string |
-| `pages` | Page count (if available) |
-
-### HTML Processor
-
-Uses Trafilatura for main content extraction, with BeautifulSoup for metadata and cleanup:
-
-1. **Content extraction**: Trafilatura extracts the main content with `favor_precision=True`, preserving formatting, links, images, and tables.
-2. **Metadata extraction**: BeautifulSoup parses the original HTML for:
-   - `title` from `<title>` tag
-   - `author` from meta tags (`author`, `:author`, `byl`, `dc.creator`)
-   - `publication_date` from meta tags (`:published_time`, `date`, `pubdate`, etc.)
-3. **Table conversion**: Custom `<row>`/`<cell>` table markup (from Trafilatura) is converted to standard `<table>`/`<tr>`/`<td>`/`<th>` HTML.
-4. **Cleanup**: Same attribute/div cleanup as other processors, plus removal of `<html>`/`<body>` wrapper tags.
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | Clean HTML string |
-| `title` | Page title |
-| `author` | Author name (from meta tags, or `null`) |
-| `publication_date` | Publication date (from meta tags, or `null`) |
-
-### Plain Text Processor
-
-Minimal running — reads the file and wraps each non-empty paragraph in `<p>` tags:
-
-```
-Line one text     →   <p>Line one text</p>
-                       (empty lines skipped)
-Line three text   →   <p>Line three text</p>
-```
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | HTML string with `<p>`-wrapped paragraphs |
-
-### EML Processor
-
-Uses Python's standard library `email` module:
-
-- Prefers the HTML body part when available; falls back to plain text converted to `<p>` tags.
-- Extracts metadata from email headers: `subject`, `from`, `to`, `date`.
-- Attachment parts are ignored.
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | HTML body or `<p>`-wrapped plain text |
-| `title` | Email subject |
-| `author` | Sender address (`From` header) |
-| `publication_date` | Parsed send date (ISO format, or `null`) |
-
-### ODT Processor
-
-Uses `odfpy` to parse OpenDocument Text files:
-
-- Paragraphs are mapped to `<p>` tags; heading styles (Heading 1–4) map to `<h1>`–`<h4>`.
-- Dublin Core metadata is extracted from the document's meta section.
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | Clean HTML string |
-| `title` | Document title (Dublin Core `dc:title`, or `null`) |
-| `author` | Document creator (Dublin Core `dc:creator`, or `null`) |
-| `publication_date` | Document date (Dublin Core `dc:date`, or `null`) |
-
-### Media Processor (Audio / Video)
-
-Uses `mutagen` to read container metadata — no transcription is performed.
-
-- Extracts embedded tags (title, artist, album, etc.) from the container.
-- Computes duration in human-readable format (`mm:ss` or `h:mm:ss`).
-- Returns an HTML summary card rather than transcript content.
-
-**Output fields:**
-
-| Field | Description |
-|-------|-------------|
-| `content` | HTML summary with title, duration, and available metadata fields |
-| `title` | Track/video title from tags, or filename |
-| `author` | Artist/composer from tags (or `null`) |
-
-## Error Handling
-
-If extraction fails for any format, the handler returns `{"error": "<message>"}` instead of the normal result. The extractor function (`extract()` in `extractor.py`) catches all exceptions and wraps them in an error response.
+If a file is unsupported, unavailable, damaged, or cannot be interpreted, Documents reports the extraction as failed and does not present an incomplete result as successful.

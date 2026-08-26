@@ -1,41 +1,7 @@
-## Embedding
+# Semantic representation
 
-The **embedding** task converts a piece of text into a numerical vector representation. These vectors capture the semantic meaning of the text and are used internally for similarity search, document indexing, and retrieval operations.
+Documents can convert text into a numerical representation of its meaning. Texts with similar meanings produce representations that are closer together, which supports semantic indexing, search, and retrieval.
 
-### What it does
+The default representation supports multilingual text. It is an internal processing result rather than content intended for users to read or edit.
 
-Given a text string, this task returns a fixed-size vector of floating point numbers. Texts with similar meaning produce vectors that are close to each other in vector space, which enables semantic search and comparison.
-
-### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `text` | string | Yes | The text to convert into an embedding vector |
-
-### Returns
-
-```json
-{
-  "results": [0.021, -0.045, 0.113, ...]
-}
-```
-
-The `results` field contains a list of floating point numbers representing the embedding vector. The vector length depends on the configured embedding model (typically 384 dimensions for `intfloat/multilingual-e5-small`).
-
-### Example
-
-**Input:**
-
-```json
-{
-  "text": "Climate change and its effects on global agriculture"
-}
-```
-
-**Output:**
-
-```json
-{
-  "results": [0.0213, -0.0451, 0.1132, 0.0874, -0.0329, "..."]
-}
-```
+Creating a representation does not search for documents, store project data, or generate an answer. Those actions are handled separately by Documents.

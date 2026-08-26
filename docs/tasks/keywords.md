@@ -1,49 +1,13 @@
-## Keywords
+# Extract keywords
 
-Keyword extraction is a durable map/reduce workflow coordinated by Backend.
-Models exposes `keywords-map` and `keywords-reduce`; it does not register a
-`keywords` root handler.
+Keyword extraction produces a ranked list of concise concepts in the requested language.
 
-### Map step
+## How it works
 
-Each `keywords-map` assignment receives one bounded chunk and its requested
-output language:
+Documents divides long content into sections of at most 1,500 words by default. Candidate phrases are extracted from each section, then compared without regard to capitalization.
 
-```json
-{
-  "content": "Machine learning uses labeled training data.",
-  "targetLanguage": "en"
-}
-```
+A candidate is counted at most once per section. Final ranking uses frequency across sections and then first appearance in the document.
 
-The chunk must be non-empty and contain no more than `max_input_words` words
-(1500 by default). The configured LLM returns comma- or newline-separated
-candidates, which the handler exposes as:
+By default, the result includes up to ten keywords or phrases, each limited to three words.
 
-```json
-{
-  "keywords": ["machine learning", "labeled training data"]
-}
-```
-
-An unavailable model, invalid input or empty generation fails the step. Models
-does not hide these failures behind a heuristic result.
-
-### Reduce step
-
-Backend waits for every required map result and materializes the ordered
-`keywords` arrays into a deterministic `keywords-reduce` assignment:
-
-```json
-{
-  "partials": [
-    ["durable workflows", "PostgreSQL"],
-    ["postgresql", "execution evidence"]
-  ]
-}
-```
-
-The reduce step counts a candidate at most once per chunk, compares candidates
-case-insensitively, ranks by frequency and then by first appearance, and
-returns the first `max_items` values. Each value is limited to
-`max_words_per_item` words; defaults are 10 values and 3 words.
+Invalid input, an unavailable language model, or empty generation causes the action to fail explicitly rather than returning heuristic keywords.
