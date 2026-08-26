@@ -34,6 +34,7 @@ _TOOL_VERSIONS = {
         "agents.delegate",
         "browser.navigate",
         "browser.go_back",
+        "browser.click",
         "browser.read_current_page",
         "workspace_files.list",
         "workspace_files.search",
@@ -536,6 +537,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "browser.read_current_page",
                     "browser.navigate",
                     "browser.go_back",
+                    "browser.click",
                 ),
                 "conversation": [
                     {
@@ -557,6 +559,21 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertEqual(
             tools["browser.go_back"]["parameters"]["required"],
             ["expectedCurrentUrl"],
+        )
+        self.assertEqual(
+            tools["browser.click"]["parameters"]["required"],
+            [
+                "expectedCurrentUrl",
+                "elementIndex",
+                "expectedKind",
+                "expectedLabel",
+            ],
+        )
+        self.assertEqual(
+            tools["browser.click"]["parameters"]["properties"]["expectedKind"][
+                "enum"
+            ],
+            ["link", "button"],
         )
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})

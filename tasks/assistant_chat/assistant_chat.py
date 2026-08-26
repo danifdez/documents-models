@@ -161,6 +161,37 @@ _BROWSER_GO_BACK_TOOL = {
         },
     },
 }
+_BROWSER_CLICK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "browser.click",
+        "description": (
+            "Propose clicking an exact visible link or button from the most "
+            "recent paired IA Browser page read. Backend requires user confirmation, "
+            "and the Browser revalidates the page and control before acting."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": [
+                "expectedCurrentUrl",
+                "elementIndex",
+                "expectedKind",
+                "expectedLabel",
+            ],
+            "properties": {
+                "expectedCurrentUrl": {"type": "string", "format": "uri"},
+                "elementIndex": {"type": "integer", "minimum": 1, "maximum": 60},
+                "expectedKind": {"type": "string", "enum": ["link", "button"]},
+                "expectedLabel": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 _WORKSPACE_FILE_READ_TOOL = {
     "type": "function",
     "function": {
@@ -271,6 +302,7 @@ _TOOL_DEFINITIONS = {
     ),
     "browser.navigate": ("browser.navigate/1", _BROWSER_NAVIGATE_TOOL),
     "browser.go_back": ("browser.go_back/1", _BROWSER_GO_BACK_TOOL),
+    "browser.click": ("browser.click/1", _BROWSER_CLICK_TOOL),
     "workspace_files.list": (
         "workspace_files.list/1",
         _WORKSPACE_FILE_LIST_TOOL,
