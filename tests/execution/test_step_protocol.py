@@ -13,6 +13,7 @@ from lib.execution.outcome import InferenceOutcome
 from lib.execution.runtime_identity import runtime_fingerprint
 from lib.llm.config import active_deployments
 from lib.llm.prompts import prompt_package_fingerprint
+from worker.capabilities import get_supported_task_types
 import executions
 
 
@@ -31,7 +32,13 @@ class _Response:
 
 
 class StepProtocolTest(unittest.TestCase):
-    def test_worker_advertises_migrated_inference_capabilities(self):
+    def test_declared_capabilities_match_the_task_catalog(self):
+        configured = set(
+            get_supported_task_types(["llm", "embeddings", "gpu"])
+        )
+        self.assertEqual(set(executions.SUPPORTED_TASK_TYPES), configured)
+
+    def test_worker_advertises_supported_step_capabilities(self):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
         self.assertIn("agent-chat", executions.CAPABILITIES)
         self.assertIn("document-extraction", executions.CAPABILITIES)
@@ -53,6 +60,10 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("query", executions.CAPABILITIES)
         self.assertIn("transcribe", executions.CAPABILITIES)
         self.assertIn("translate", executions.CAPABILITIES)
+        self.assertIn("ingest-content", executions.CAPABILITIES)
+        self.assertIn("memory-ingest", executions.CAPABILITIES)
+        self.assertIn("indexed-file-ingest", executions.CAPABILITIES)
+        self.assertIn("relationship-extraction-reduce", executions.CAPABILITIES)
 
     def test_worker_filters_tasks_by_effective_requirements(self):
         with patch(
@@ -79,6 +90,8 @@ class StepProtocolTest(unittest.TestCase):
                     "chart",
                     "transcribe",
                     "translate",
+                    "indexed-file-extraction",
+                    "relationship-extraction-reduce",
                 ],
             )
 
@@ -334,8 +347,13 @@ class StepProtocolTest(unittest.TestCase):
 
     def test_keeps_a_result_until_backend_acknowledges_it(self):
         result = {"attemptId": "attempt-1", "status": "succeeded"}
+        artifact = {"artifactId": "artifact-1"}
 
         class Client:
+            def upload_artifact(self, attempt_id, uploaded):
+                self.uploaded = (attempt_id, uploaded)
+                return {"code": "received"}
+
             def submit_result(self, submitted):
                 self.submitted = submitted
                 return {"code": "received"}
@@ -344,10 +362,11 @@ class StepProtocolTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch(
             "executions.worker_data_dir", return_value=directory
         ):
-            executions._store_pending(result)
+            executions._store_pending(result, [artifact])
             pending = Path(directory) / ".pending_step_result.json"
             self.assertTrue(pending.exists())
             executions._deliver_pending(client)
+            self.assertEqual(client.uploaded, ("attempt-1", artifact))
             self.assertEqual(client.submitted, result)
             self.assertFalse(pending.exists())
 

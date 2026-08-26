@@ -8,6 +8,7 @@ from typing import Any, Dict
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.code_identity import code_fingerprint
 from lib.execution.outcome import InferenceOutcome
+from lib.execution.output_artifact import HandlerOutput, prepare_output_artifacts
 from lib.execution.runtime_identity import runtime_fingerprint
 from lib.llm.config import get_task_config
 from lib.llm.prompts import prompt_package_fingerprint
@@ -17,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def execute_assignment(
-    assignment: Dict[str, Any], artifacts: Dict[str, bytes] | None = None
+    assignment: Dict[str, Any],
+    artifacts: Dict[str, bytes] | None = None,
+    output_artifacts: list[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     work = assignment.get("work") or {}
     task_type = work.get("taskType")
@@ -62,6 +65,17 @@ def execute_assignment(
         handler_payload["_task_type"] = task_type
         handler_payload["_input_artifacts"] = artifacts or {}
         value = call_handler(handler, handler_payload)
+        produced_artifacts = []
+        if isinstance(value, HandlerOutput):
+            produced_artifacts, artifact_refs = prepare_output_artifacts(
+                value.artifacts
+            )
+            value = value.value
+        else:
+            artifact_refs = []
+        if output_artifacts is not None:
+            output_artifacts.extend(produced_artifacts)
+        success_base = {**base, "artifactRefs": artifact_refs}
         if step_kind == "inference":
             outcome = (
                 value.value
@@ -73,7 +87,7 @@ def execute_assignment(
                 }
             )
             return {
-                **base,
+                **success_base,
                 "status": "succeeded",
                 "output": {
                     "kind": "inference",
@@ -89,7 +103,7 @@ def execute_assignment(
                 "error": None,
             }
         return {
-            **base,
+            **success_base,
             "status": "succeeded",
             "output": {"kind": step_kind, "value": value},
             "error": None,

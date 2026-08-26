@@ -1,7 +1,8 @@
 """Self-contained workspace vectorization step."""
 
 from common.execution_registry import execution_handler
-from common.vector_contract import vector_point
+from common.vector_contract import vector_point, vector_points_output
+from lib.execution.output_artifact import HandlerOutput
 from services.embedding_service import get_embedding_service
 from services.text import clean_html_text, semantic_chunk_text
 
@@ -18,14 +19,16 @@ def _source(payload: dict) -> tuple[str, str]:
 
 
 @execution_handler("ingest-content")
-def ingest(payload: dict) -> dict:
+def ingest(payload: dict) -> HandlerOutput:
     source_type, source_id = _source(payload)
     content = payload.get("content")
     if not isinstance(content, str):
         raise ValueError("ingest-content content must be a string")
     clean_content = clean_html_text(content)
     if not clean_content:
-        return {"sourceId": source_id, "points": [], "chunks": 0}
+        return vector_points_output(
+            {"sourceId": source_id, "chunks": 0}, []
+        )
 
     chunks = semantic_chunk_text(clean_content)
     embeddings = get_embedding_service().encode(
@@ -47,4 +50,6 @@ def ingest(payload: dict) -> dict:
                 },
             )
         )
-    return {"sourceId": source_id, "points": points, "chunks": len(points)}
+    return vector_points_output(
+        {"sourceId": source_id, "chunks": len(points)}, points
+    )

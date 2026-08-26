@@ -8,8 +8,9 @@ Every handler receives all required data through its step assignment:
 
 - small structured inputs live in `work.payload`;
 - larger snapshots use attempt-scoped input artifacts;
-- Models returns calculated values only, and Backend validates and persists
-  any resulting domain effect during finalization.
+- Models returns small calculated values inline and large calculated bodies as
+  attempt-scoped output artifacts. Backend validates both before persisting any
+  resulting domain effect during finalization.
 
 Vector retrieval uses the `vector_candidates` artifact. It contains the
 bounded, scope-checked candidate snapshot selected by Backend. Models embeds

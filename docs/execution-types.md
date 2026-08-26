@@ -197,7 +197,8 @@ recognized labels.
 ## ingest-content
 
 Converts supplied HTML content into deterministic vector points. Backend
-validates the result and atomically replaces the source rows in pgvector.
+validates the result and its output artifacts, then atomically replaces the
+source rows in pgvector.
 
 **Input:**
 
@@ -224,6 +225,14 @@ The `sourceType` field controls how `source_id` is built:
 {
   "sourceId": "resource_42",
   "chunks": 1,
+  "pointCount": 1
+}
+```
+
+The result references ordered `vector_points` artifacts whose bodies contain:
+
+```json
+{
   "points": [{ "id": "resource_42:1", "embedding": [], "payload": {} }]
 }
 ```
@@ -231,7 +240,8 @@ The `sourceType` field controls how `source_id` is built:
 - Cleans HTML and extracts text from block elements.
 - Splits text into semantic chunks (target: `RAG_CHUNK_TARGET_WORDS` words, max: `RAG_CHUNK_MAX_WORDS`, overlap: `RAG_CHUNK_OVERLAP_WORDS`).
 - Encodes each chunk with intfloat/multilingual-e5-small (L2-normalized).
-- Returns embeddings and metadata without opening a datastore.
+- Uploads embeddings and metadata as attempt-scoped artifacts without opening
+  a datastore.
 
 See [RAG Pipeline](./rag-pipeline.md) for details.
 

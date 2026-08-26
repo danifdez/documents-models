@@ -4,8 +4,27 @@ import json
 import math
 from typing import Any, Dict, List
 
+from lib.execution.output_artifact import HandlerOutput, json_output_artifact
+
 EMBEDDING_DIMENSIONS = 384
 MAX_CANDIDATES = 5_000
+VECTOR_ARTIFACT_BATCH_SIZE = 256
+
+
+def vector_points_output(
+    value: Dict[str, Any], points: List[Dict[str, Any]]
+) -> HandlerOutput:
+    artifacts = [
+        json_output_artifact(
+            "vector_points",
+            "vector_points",
+            {"points": points[index : index + VECTOR_ARTIFACT_BATCH_SIZE]},
+        )
+        for index in range(0, len(points), VECTOR_ARTIFACT_BATCH_SIZE)
+    ]
+    return HandlerOutput(
+        value={**value, "pointCount": len(points)}, artifacts=artifacts
+    )
 
 
 def load_vector_candidates(payload: Dict[str, Any]) -> List[Dict[str, Any]]:

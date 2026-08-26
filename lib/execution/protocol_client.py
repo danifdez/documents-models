@@ -96,6 +96,13 @@ class ExecutionProtocolClient:
     def submit_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         return self._authenticated_request("/models-work/results", result)
 
+    def upload_artifact(
+        self, attempt_id: str, artifact: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return self._authenticated_request(
+            f"/models-work/attempts/{attempt_id}/artifacts", artifact
+        )
+
     def download_artifact(self, attempt_id: str, artifact_id: str) -> bytes:
         if not self.credential:
             raise RuntimeError("Worker is not registered")

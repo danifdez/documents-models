@@ -6,7 +6,8 @@ storage and scope; Models owns embedding, ranking and answer generation.
 ```text
 ingest-content assignment
   -> Models cleans, chunks and embeds
-  -> StepResult returns deterministic vector points
+  -> Models uploads deterministic vector_points artifacts
+  -> StepResult references the artifacts and returns their point count
   -> Backend atomically replaces the source rows in pgvector
 
 search/ask request
@@ -31,6 +32,14 @@ chunk limits, and embeds every chunk with
 {
   "sourceId": "resource_42",
   "chunks": 1,
+  "pointCount": 1
+}
+```
+
+The `StepResult` references ordered `vector_points` artifacts containing:
+
+```json
+{
   "points": [
     {
       "id": "resource_42:1",

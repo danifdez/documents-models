@@ -2,11 +2,12 @@
 
 from common.execution_registry import execution_handler
 from common.vector_contract import load_vector_candidates, rank_vector_candidates
+from lib.execution.output_artifact import HandlerOutput, json_output_artifact
 from services.embedding_service import get_embedding_service
 
 
 @execution_handler("memory-ingest")
-def ingest_memory(payload: dict) -> dict:
+def ingest_memory(payload: dict) -> HandlerOutput:
     memory_id = int(payload["memoryId"])
     name = payload.get("name")
     body = payload.get("body")
@@ -17,7 +18,16 @@ def ingest_memory(payload: dict) -> dict:
     embedding = get_embedding_service().encode_single(
         f"{name.strip()}: {body.strip()}"
     )
-    return {"memoryId": memory_id, "embedding": embedding.tolist()}
+    return HandlerOutput(
+        value={"memoryId": memory_id, "artifactCount": 1},
+        artifacts=[
+            json_output_artifact(
+                "memory_embedding",
+                "memory_embedding",
+                {"embedding": embedding.tolist()},
+            )
+        ],
+    )
 
 
 @execution_handler("memory-search")

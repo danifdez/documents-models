@@ -5,13 +5,15 @@ from common.vector_contract import (
     load_vector_candidates,
     rank_vector_candidates,
     vector_point,
+    vector_points_output,
 )
+from lib.execution.output_artifact import HandlerOutput
 from services.embedding_service import get_embedding_service
 from services.text import semantic_chunk_text
 
 
 @execution_handler("indexed-file-ingest")
-def ingest_indexed_file(payload: dict) -> dict:
+def ingest_indexed_file(payload: dict) -> HandlerOutput:
     indexed_file_id = int(payload["indexedFileId"])
     content = payload.get("content")
     if not isinstance(content, str):
@@ -21,13 +23,15 @@ def ingest_indexed_file(payload: dict) -> dict:
     checksum = str(payload.get("checksum") or "")
     source_id = f"indexed_file_{indexed_file_id}"
     if not content:
-        return {
-            "indexedFileId": indexed_file_id,
-            "sourceId": source_id,
-            "chunks": 0,
-            "checksum": checksum,
-            "points": [],
-        }
+        return vector_points_output(
+            {
+                "indexedFileId": indexed_file_id,
+                "sourceId": source_id,
+                "chunks": 0,
+                "checksum": checksum,
+            },
+            [],
+        )
 
     chunks = semantic_chunk_text(content)
     embeddings = get_embedding_service().encode(
@@ -49,13 +53,15 @@ def ingest_indexed_file(payload: dict) -> dict:
                 },
             )
         )
-    return {
-        "indexedFileId": indexed_file_id,
-        "sourceId": source_id,
-        "chunks": len(points),
-        "checksum": checksum,
-        "points": points,
-    }
+    return vector_points_output(
+        {
+            "indexedFileId": indexed_file_id,
+            "sourceId": source_id,
+            "chunks": len(points),
+            "checksum": checksum,
+        },
+        points,
+    )
 
 
 @execution_handler("indexed-file-search")

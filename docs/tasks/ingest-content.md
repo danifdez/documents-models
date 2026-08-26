@@ -2,7 +2,8 @@
 
 `ingest-content` is a self-contained embedding step. It cleans and chunks the
 supplied content, calculates 384-dimensional embeddings and returns vector
-points. Backend owns replacement and persistence in pgvector.
+points as `vector_points` output artifacts. Backend owns validation,
+replacement and persistence in pgvector.
 
 ## Input
 
@@ -21,6 +22,15 @@ points. Backend owns replacement and persistence in pgvector.
 {
   "sourceId": "resource_42",
   "chunks": 1,
+  "pointCount": 1
+}
+```
+
+The result references one or more ordered `vector_points` artifacts. Each
+artifact contains at most 256 points:
+
+```json
+{
   "points": [
     {
       "id": "resource_42:1",
@@ -38,5 +48,5 @@ points. Backend owns replacement and persistence in pgvector.
 ```
 
 The abbreviated vector above represents 384 finite values. Empty content
-returns zero points. Cleanup is not a Models task: Backend deletes or replaces
-vectors directly as owner of the domain store.
+returns `pointCount: 0` with no artifact. Cleanup is not a Models task: Backend
+deletes or replaces vectors directly as owner of the domain store.

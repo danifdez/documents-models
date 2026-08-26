@@ -40,11 +40,13 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1
 LEASE_DURATION_MS = 30_000
-MIGRATED_TASK_TYPES = (
+SUPPORTED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
+    "ask",
     "detect-language",
     "document-extraction",
+    "embedding",
     "dataset.extract-row",
     "dataset.propose-columns",
     "entity-extraction-map",
@@ -55,6 +57,8 @@ MIGRATED_TASK_TYPES = (
     "keywords-reduce",
     "key-point-map",
     "key-point-reduce",
+    "memory-ingest",
+    "memory-search",
     "distribution",
     "correlation",
     "correlation-matrix",
@@ -69,6 +73,13 @@ MIGRATED_TASK_TYPES = (
     "translate",
     "summarize-map",
     "summarize-reduce",
+    "search",
+    "ingest-content",
+    "indexed-file-extraction",
+    "indexed-file-ingest",
+    "indexed-file-search",
+    "relationship-extraction-map",
+    "relationship-extraction-reduce",
 )
 STEP_KINDS = ["service", "code", "inference"]
 ACK_CODES = {
@@ -86,7 +97,7 @@ def effective_task_capabilities() -> list[str]:
     )
     return [
         task_type
-        for task_type in MIGRATED_TASK_TYPES
+        for task_type in SUPPORTED_TASK_TYPES
         if task_type in supported
     ]
 
@@ -110,11 +121,15 @@ def _pending_path() -> Path:
     return Path(worker_data_dir()) / ".pending_step_result.json"
 
 
-def _store_pending(result: dict) -> None:
+def _store_pending(result: dict, artifacts: list[dict] | None = None) -> None:
     path = _pending_path()
     temporary = path.with_suffix(".tmp")
     temporary.write_text(
-        json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(
+            {"result": result, "artifacts": artifacts or []},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
         encoding="utf-8",
     )
     temporary.replace(path)
@@ -125,15 +140,28 @@ def _load_pending() -> dict | None:
         value = json.loads(_pending_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
-    if not isinstance(value, dict):
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("result"), dict)
+        or not isinstance(value.get("artifacts"), list)
+    ):
         raise RuntimeError("Pending step result is invalid")
     return value
 
 
 def _deliver_pending(client: ExecutionProtocolClient) -> None:
-    result = _load_pending()
-    if result is None:
+    pending = _load_pending()
+    if pending is None:
         return
+    result = pending["result"]
+    for artifact in pending["artifacts"]:
+        ack = client.upload_artifact(result["attemptId"], artifact)
+        if ack.get("code") not in {"received", "duplicate"}:
+            if ack.get("code") == "stale_attempt":
+                break
+            raise ProtocolTransportError(
+                f"Output artifact rejected: {ack.get('code')}"
+            )
     ack = client.submit_result(result)
     code = ack.get("code")
     if code not in ACK_CODES:
@@ -200,14 +228,21 @@ def main() -> None:
                     )
                     for ref in assignment.get("inputArtifactRefs", [])
                 }
-                result = execute_assignment(assignment, artifacts)
+                output_artifacts = []
+                result = execute_assignment(
+                    assignment,
+                    artifacts,
+                    output_artifacts=output_artifacts,
+                )
                 if client.read_control(assignment["attemptId"]).get(
                     "cancelled"
                 ):
                     result["status"] = "cancelled"
                     result.pop("output", None)
+                    result["artifactRefs"] = []
                     result["error"] = None
-                _store_pending(result)
+                    output_artifacts = []
+                _store_pending(result, output_artifacts)
                 _deliver_pending(client)
                 continue
         except WorkerAuthenticationError as error:
