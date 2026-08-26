@@ -80,6 +80,7 @@ class ExecutionProtocolClient:
         capabilities: list[str],
         step_kinds: list[str],
         lease_duration_ms: int,
+        wait_timeout_ms: int,
     ) -> Optional[Dict[str, Any]]:
         return self._authenticated_request(
             "/models-work/claim",
@@ -87,7 +88,9 @@ class ExecutionProtocolClient:
                 "capabilities": capabilities,
                 "stepKinds": step_kinds,
                 "leaseDurationMs": lease_duration_ms,
+                "waitTimeoutMs": wait_timeout_ms,
             },
+            timeout=max(15, wait_timeout_ms / 1000 + 5),
         )
 
     def start(self, attempt_id: str) -> None:
@@ -191,7 +194,10 @@ class ExecutionProtocolClient:
         self.credential = ""
 
     def _authenticated_request(
-        self, path: str, body: Dict[str, Any]
+        self,
+        path: str,
+        body: Dict[str, Any],
+        timeout: float = 15,
     ) -> Dict[str, Any]:
         if not self.credential:
             raise RuntimeError("Worker is not registered")
@@ -202,10 +208,15 @@ class ExecutionProtocolClient:
                 "x-worker-id": WORKER_ID,
                 "x-worker-credential": self.credential,
             },
+            timeout,
         )
 
     def _request(
-        self, path: str, body: Dict[str, Any], headers: Dict[str, str]
+        self,
+        path: str,
+        body: Dict[str, Any],
+        headers: Dict[str, str],
+        timeout: float = 15,
     ) -> Dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -214,7 +225,7 @@ class ExecutionProtocolClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=15) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = response.read()
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")

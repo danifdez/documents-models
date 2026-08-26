@@ -38,8 +38,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL_SECONDS = 1
+PROTOCOL_RETRY_BACKOFF_SECONDS = 1
 LEASE_DURATION_MS = 30_000
+CLAIM_WAIT_TIMEOUT_MS = 10_000
 SUPPORTED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
@@ -206,8 +207,15 @@ def main() -> None:
                     _metadata(),
                 )
                 next_heartbeat = now + HEARTBEAT_INTERVAL
+            claim_wait_timeout_ms = min(
+                CLAIM_WAIT_TIMEOUT_MS,
+                max(0, int((next_heartbeat - time.monotonic()) * 1000)),
+            )
             assignment = client.claim(
-                CAPABILITIES, STEP_KINDS, LEASE_DURATION_MS
+                CAPABILITIES,
+                STEP_KINDS,
+                LEASE_DURATION_MS,
+                claim_wait_timeout_ms,
             )
             if assignment:
                 client.start(assignment["attemptId"])
@@ -261,7 +269,7 @@ def main() -> None:
             logger.warning("Worker credential rejected; re-enrolling: %s", error)
         except ProtocolTransportError as error:
             logger.warning("Protocol unavailable: %s", error)
-        time.sleep(POLL_INTERVAL_SECONDS)
+        time.sleep(PROTOCOL_RETRY_BACKOFF_SECONDS)
 
 
 if __name__ == "__main__":

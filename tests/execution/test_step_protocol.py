@@ -140,6 +140,41 @@ class StepProtocolTest(unittest.TestCase):
                 "worker-secret",
             )
 
+    def test_claim_requests_a_bounded_wait(self):
+        requests = []
+
+        def urlopen(request, timeout):
+            requests.append((request, timeout))
+            return _Response(None)
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "lib.execution.protocol_client.worker_data_dir",
+            return_value=directory,
+        ), patch("urllib.request.urlopen", side_effect=urlopen):
+            credential = Path(directory) / ".worker_credential"
+            credential.write_text("worker-secret", encoding="utf-8")
+            client = ExecutionProtocolClient()
+
+            assignment = client.claim(
+                ["detect-language"], ["service"], 30_000, 20_000
+            )
+
+        request, timeout = requests[0]
+        self.assertIsNone(assignment)
+        self.assertEqual(
+            request.full_url, "http://localhost:3000/models-work/claim"
+        )
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "capabilities": ["detect-language"],
+                "stepKinds": ["service"],
+                "leaseDurationMs": 30_000,
+                "waitTimeoutMs": 20_000,
+            },
+        )
+        self.assertEqual(timeout, 25)
+
     def test_executes_a_deterministic_assignment_without_database_context(self):
         task_type = "protocol-test-task"
         TASK_HANDLERS[task_type] = lambda payload: {

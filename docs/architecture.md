@@ -9,7 +9,8 @@ selection, retries, dependencies, leases, cancellation, and finalization.
 1. `executions.py` registers a stable worker identity, protocol, supported step
    kinds and concurrency through Backend.
 2. The worker heartbeats its effective capabilities and hardware metadata.
-3. It claims a compatible ready step over HTTP.
+3. It long-polls Backend for a compatible ready step over HTTP, bounding each
+   wait so heartbeats are still sent on schedule.
 4. Backend creates the `StepAttempt` and returns a fenced assignment.
 5. Models starts the attempt, renews its lease, checks cancellation, and
    downloads only the artifacts referenced by that assignment.
@@ -26,7 +27,9 @@ Backend coordinator.
 
 The current loop executes one assignment at a time and therefore declares
 `maximumConcurrency: 1`. Backend derives active assignments from live leases
-and refuses another claim until that slot is available.
+and refuses another claim until that slot is available. An empty claim waits in
+Backend for at most ten seconds before returning `null`; transport failures use
+a separate one-second retry backoff.
 
 ## Main modules
 
