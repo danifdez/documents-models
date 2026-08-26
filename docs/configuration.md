@@ -75,7 +75,9 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
 | `disable_embeddings` | `false` | Disable all embedding capabilities on this worker |
 
 Backend owns priority, fairness, deadlines and retry scheduling. Models does
-not expose queue or background-window configuration.
+not expose queue or background-window configuration. The current sequential
+executor declares one concurrency slot; this is a runtime guarantee rather
+than a user-configurable queue setting.
 
 ## tasks.json
 

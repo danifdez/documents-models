@@ -82,6 +82,7 @@ SUPPORTED_TASK_TYPES = (
     "relationship-extraction-reduce",
 )
 STEP_KINDS = ["service", "code", "inference"]
+MAXIMUM_CONCURRENCY = 1
 ACK_CODES = {
     "received",
     "duplicate",
@@ -173,7 +174,9 @@ def _deliver_pending(client: ExecutionProtocolClient) -> None:
 def main() -> None:
     log_hardware_summary()
     client = ExecutionProtocolClient()
-    client.ensure_registered(CAPABILITIES, _metadata())
+    client.ensure_registered(
+        CAPABILITIES, STEP_KINDS, MAXIMUM_CONCURRENCY, _metadata()
+    )
     logger.info(
         "Worker registered through Backend: %s (%s)", WORKER_NAME, WORKER_ID
     )
@@ -190,11 +193,18 @@ def main() -> None:
 
     while not stopping:
         try:
-            client.ensure_registered(CAPABILITIES, _metadata())
+            client.ensure_registered(
+                CAPABILITIES, STEP_KINDS, MAXIMUM_CONCURRENCY, _metadata()
+            )
             _deliver_pending(client)
             now = time.monotonic()
             if now >= next_heartbeat:
-                client.heartbeat(CAPABILITIES, _metadata())
+                client.heartbeat(
+                    CAPABILITIES,
+                    STEP_KINDS,
+                    MAXIMUM_CONCURRENCY,
+                    _metadata(),
+                )
                 next_heartbeat = now + HEARTBEAT_INTERVAL
             assignment = client.claim(
                 CAPABILITIES, STEP_KINDS, LEASE_DURATION_MS

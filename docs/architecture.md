@@ -6,7 +6,8 @@ selection, retries, dependencies, leases, cancellation, and finalization.
 
 ## Runtime flow
 
-1. `executions.py` registers a stable worker identity through Backend.
+1. `executions.py` registers a stable worker identity, protocol, supported step
+   kinds and concurrency through Backend.
 2. The worker heartbeats its effective capabilities and hardware metadata.
 3. It claims a compatible ready step over HTTP.
 4. Backend creates the `StepAttempt` and returns a fenced assignment.
@@ -22,6 +23,10 @@ selection, retries, dependencies, leases, cancellation, and finalization.
 Models never claims or updates execution rows in PostgreSQL. It does not create
 child executions. Durable fan-out and successor steps are materialized by the
 Backend coordinator.
+
+The current loop executes one assignment at a time and therefore declares
+`maximumConcurrency: 1`. Backend derives active assignments from live leases
+and refuses another claim until that slot is available.
 
 ## Main modules
 

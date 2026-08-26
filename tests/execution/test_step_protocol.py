@@ -111,13 +111,27 @@ class StepProtocolTest(unittest.TestCase):
             "urllib.request.urlopen", side_effect=urlopen
         ):
             client = ExecutionProtocolClient()
-            client.ensure_registered(["detect-language"], {"runtime": "test"})
+            client.ensure_registered(
+                ["detect-language"], ["service"], 1, {"runtime": "test"}
+            )
             request = requests[0][0]
             self.assertEqual(
                 request.full_url, "http://localhost:3000/models-work/register"
             )
             self.assertEqual(
                 request.headers["X-models-enrollment-token"], "enrollment"
+            )
+            self.assertEqual(
+                json.loads(request.data),
+                {
+                    "protocolVersion": "step-protocol/1",
+                    "workerId": executions.WORKER_ID,
+                    "name": executions.WORKER_NAME,
+                    "capabilities": ["detect-language"],
+                    "stepKinds": ["service"],
+                    "maximumConcurrency": 1,
+                    "metadata": {"runtime": "test"},
+                },
             )
             self.assertEqual(
                 (Path(directory) / ".worker_credential").read_text(

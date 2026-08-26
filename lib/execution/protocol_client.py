@@ -26,7 +26,11 @@ class ExecutionProtocolClient:
         self.credential = self._read_credential()
 
     def ensure_registered(
-        self, capabilities: list[str], metadata: Dict[str, Any]
+        self,
+        capabilities: list[str],
+        step_kinds: list[str],
+        maximum_concurrency: int,
+        metadata: Dict[str, Any],
     ) -> None:
         if self.credential:
             return
@@ -35,9 +39,12 @@ class ExecutionProtocolClient:
         response = self._request(
             "/models-work/register",
             {
+                "protocolVersion": "step-protocol/1",
                 "workerId": WORKER_ID,
                 "name": WORKER_NAME,
                 "capabilities": capabilities,
+                "stepKinds": step_kinds,
+                "maximumConcurrency": maximum_concurrency,
                 "metadata": metadata,
             },
             {"x-models-enrollment-token": self.enrollment_token},
@@ -51,11 +58,21 @@ class ExecutionProtocolClient:
         self.credential = credential
 
     def heartbeat(
-        self, capabilities: list[str], metadata: Dict[str, Any]
+        self,
+        capabilities: list[str],
+        step_kinds: list[str],
+        maximum_concurrency: int,
+        metadata: Dict[str, Any],
     ) -> None:
         self._authenticated_request(
             "/models-work/heartbeat",
-            {"capabilities": capabilities, "metadata": metadata},
+            {
+                "protocolVersion": "step-protocol/1",
+                "capabilities": capabilities,
+                "stepKinds": step_kinds,
+                "maximumConcurrency": maximum_concurrency,
+                "metadata": metadata,
+            },
         )
 
     def claim(
