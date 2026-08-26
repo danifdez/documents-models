@@ -123,6 +123,25 @@ _BROWSER_READ_TOOL = {
         },
     },
 }
+_BROWSER_NAVIGATE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "browser.navigate",
+        "description": (
+            "Propose navigating the active page in the user's paired IA Browser. "
+            "Backend requires user confirmation before changing the page."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+                "url": {"type": "string", "format": "uri"},
+                "expectedCurrentUrl": {"type": "string", "format": "uri"},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 _WORKSPACE_FILE_READ_TOOL = {
     "type": "function",
     "function": {
@@ -231,6 +250,7 @@ _TOOL_DEFINITIONS = {
         "browser.read_current_page/1",
         _BROWSER_READ_TOOL,
     ),
+    "browser.navigate": ("browser.navigate/1", _BROWSER_NAVIGATE_TOOL),
     "workspace_files.list": (
         "workspace_files.list/1",
         _WORKSPACE_FILE_LIST_TOOL,

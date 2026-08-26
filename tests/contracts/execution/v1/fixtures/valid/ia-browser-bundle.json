@@ -675,7 +675,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:a35d7d1f74736f4a094bddcc2e35c7d7854b750d5e5c61cf5c018a54ba1919c7",
-    "schemaManifestHash": "sha256:d3c68f3d75761ce48b38f6f57c823f5bb80d99c3adc07afb2cf141249b5e89db"
+    "schemaManifestHash": "sha256:75a0f273b2960609a41dfb9ce92cc3372203e836801776fa401bac4980bc684e"
   },
   "policySummary": {
     "decision": "allow",
@@ -693,7 +693,7 @@
     }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:baf98d95dc34adf53aa45fc6c121e944b7496473aedacf8956b8a017ae768c2c",
+  "manifestHash": "sha256:67118517cc3fcd64f68de27bb9fce9ff52f8a3e8f60ab7fd7a322b895f48245a",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

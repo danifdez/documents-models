@@ -32,6 +32,7 @@ _TOOL_VERSIONS = {
         "skills.load_resource",
         "user_tasks.create",
         "agents.delegate",
+        "browser.navigate",
         "browser.read_current_page",
         "workspace_files.list",
         "workspace_files.search",
@@ -509,6 +510,41 @@ class ChatInferenceTest(unittest.TestCase):
             for tool in llm.chat_with_tools.call_args.args[1]
         }
         self.assertIn("browser.read_current_page", tool_names)
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_exposes_browser_navigation_only_when_backend_selected_it(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(
+                    "browser.read_current_page", "browser.navigate"
+                ),
+                "conversation": [
+                    {
+                        "role": "user",
+                        "content": "Open https://example.test in my browser",
+                    }
+                ],
+            }
+        )
+
+        tools = {
+            tool["function"]["name"]: tool["function"]
+            for tool in llm.chat_with_tools.call_args.args[1]
+        }
+        self.assertIn("browser.navigate", tools)
+        self.assertEqual(
+            tools["browser.navigate"]["parameters"]["required"], ["url"]
+        )
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
