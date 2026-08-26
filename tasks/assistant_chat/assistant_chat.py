@@ -41,6 +41,23 @@ _USER_TASK_CREATE_TOOL = {
         },
     },
 }
+_AGENT_DELEGATE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "agents.delegate",
+        "description": (
+            "Delegate one focused, self-contained analysis to a durable subagent."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["goal"],
+            "properties": {
+                "goal": {"type": "string", "minLength": 1, "maxLength": 4000}
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -128,7 +145,11 @@ def _outcome(message: Dict[str, Any], max_tool_calls: int) -> Dict[str, Any]:
         for raw in tool_calls[:max_tool_calls]:
             function = raw.get("function") if isinstance(raw, dict) else None
             name = function.get("name") if isinstance(function, dict) else None
-            if name not in {"documents.search", "user_tasks.create"}:
+            if name not in {
+                "documents.search",
+                "user_tasks.create",
+                "agents.delegate",
+            }:
                 raise ValueError(f"Unsupported tool requested: {name}")
             calls.append(
                 {
@@ -152,13 +173,28 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
     task_type = str(payload.get("_task_type") or "assistant-chat")
     config = get_task_config(task_type)
     llm = get_llm_service(**get_llm_params(task_type))
-    message = llm.chat_with_tools(
-        _conversation(payload),
-        [_DOCUMENT_SEARCH_TOOL, _USER_TASK_CREATE_TOOL],
-        max_tokens=int(config.get("max_tokens", 1200)),
-        tool_choice="auto",
-        inference_name=task_type,
-    )
+    messages = _conversation(payload)
+    max_tokens = int(config.get("max_tokens", 1200))
+    if payload.get("delegationMode") is True:
+        message = {
+            "content": llm.chat(
+                messages,
+                max_tokens=max_tokens,
+                inference_name=task_type,
+            )
+        }
+    else:
+        message = llm.chat_with_tools(
+            messages,
+            [
+                _DOCUMENT_SEARCH_TOOL,
+                _USER_TASK_CREATE_TOOL,
+                _AGENT_DELEGATE_TOOL,
+            ],
+            max_tokens=max_tokens,
+            tool_choice="auto",
+            inference_name=task_type,
+        )
     return InferenceOutcome(
         _outcome(message, max(1, int(config.get("max_tool_calls", 4))))
     )
