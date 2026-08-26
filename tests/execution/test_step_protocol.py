@@ -8,6 +8,7 @@ from unittest.mock import patch
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.code_identity import code_fingerprint
 from lib.execution.protocol_client import ExecutionProtocolClient
+from lib.execution.result_outbox import ResultOutbox
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
 from lib.execution.runtime_identity import runtime_fingerprint
@@ -394,30 +395,43 @@ class StepProtocolTest(unittest.TestCase):
             {"kind": "final_text", "text": "Ready"},
         )
 
-    def test_keeps_a_result_until_backend_acknowledges_it(self):
-        result = {"attemptId": "attempt-1", "status": "succeeded"}
+    def test_keeps_results_per_attempt_until_backend_acknowledges_them(self):
+        first_attempt_id = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"
+        second_attempt_id = "018f1d8a-54d7-7d63-a1ee-5e9a6adca705"
+        first = {"attemptId": first_attempt_id, "status": "succeeded"}
+        second = {"attemptId": second_attempt_id, "status": "succeeded"}
         artifact = {"artifactId": "artifact-1"}
 
         class Client:
+            def __init__(self):
+                self.uploaded = []
+                self.submitted = []
+
             def upload_artifact(self, attempt_id, uploaded):
-                self.uploaded = (attempt_id, uploaded)
+                self.uploaded.append((attempt_id, uploaded))
                 return {"code": "received"}
 
             def submit_result(self, submitted):
-                self.submitted = submitted
+                self.submitted.append(submitted)
                 return {"code": "received"}
 
         client = Client()
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "executions.worker_data_dir", return_value=directory
-        ):
-            executions._store_pending(result, [artifact])
-            pending = Path(directory) / ".pending_step_result.json"
-            self.assertTrue(pending.exists())
-            executions._deliver_pending(client)
-            self.assertEqual(client.uploaded, ("attempt-1", artifact))
-            self.assertEqual(client.submitted, result)
-            self.assertFalse(pending.exists())
+        with tempfile.TemporaryDirectory() as directory:
+            outbox = ResultOutbox(directory)
+            outbox.store(first, [artifact])
+            outbox.store(second)
+
+            self.assertEqual(
+                outbox.pending_attempt_ids(),
+                [first_attempt_id, second_attempt_id],
+            )
+            outbox.deliver_all(client)
+
+            self.assertEqual(
+                client.uploaded, [(first_attempt_id, artifact)]
+            )
+            self.assertEqual(client.submitted, [first, second])
+            self.assertEqual(outbox.pending_attempt_ids(), [])
 
 
 if __name__ == "__main__":

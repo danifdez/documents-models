@@ -38,6 +38,13 @@ WORKER_ID = _load_or_create_worker_id()
 _worker_cfg = get_worker_config()
 WORKER_NAME = _worker_cfg.get("name", "") or f"worker-{WORKER_ID[:8]}"
 HEARTBEAT_INTERVAL = int(_worker_cfg.get("heartbeat_interval", 15))
+MAXIMUM_CONCURRENCY = _worker_cfg.get("maximum_concurrency", 2)
+if (
+    isinstance(MAXIMUM_CONCURRENCY, bool)
+    or not isinstance(MAXIMUM_CONCURRENCY, int)
+    or not 1 <= MAXIMUM_CONCURRENCY <= 64
+):
+    raise ValueError("worker.maximum_concurrency must be between 1 and 64")
 
 
 def worker_data_dir() -> str:

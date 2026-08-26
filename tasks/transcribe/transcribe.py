@@ -2,6 +2,7 @@ import os
 import logging
 import subprocess
 import tempfile
+from threading import Lock
 
 from common.execution_registry import execution_handler
 from lib.llm.config import get_task_config
@@ -12,21 +13,33 @@ _AUDIO_EXTENSIONS = {'.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.
 _VIDEO_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.avi', '.mkv', '.webm', '.wmv'}
 
 _model = None
+_model_lock = Lock()
+_inference_lock = Lock()
 
 
 def _get_model():
     global _model
     if _model is None:
-        from faster_whisper import WhisperModel
+        with _model_lock:
+            if _model is None:
+                from faster_whisper import WhisperModel
 
-        config = get_task_config("transcribe")
-        model_size = config.get("model", "base")
-        device = config.get("device", "cpu")
-        compute_type = config.get("compute_type", "int8")
+                config = get_task_config("transcribe")
+                model_size = config.get("model", "base")
+                device = config.get("device", "cpu")
+                compute_type = config.get("compute_type", "int8")
 
-        logger.info("Loading Whisper model: %s (device=%s, compute_type=%s)", model_size, device, compute_type)
-        _model = WhisperModel(model_size, device=device, compute_type=compute_type)
-        logger.info("Whisper model loaded successfully")
+                logger.info(
+                    "Loading Whisper model: %s "
+                    "(device=%s, compute_type=%s)",
+                    model_size,
+                    device,
+                    compute_type,
+                )
+                _model = WhisperModel(
+                    model_size, device=device, compute_type=compute_type
+                )
+                logger.info("Whisper model loaded successfully")
     return _model
 
 
@@ -80,11 +93,13 @@ def transcribe(payload) -> dict:
         beam_size = config.get("beam_size", 5)
 
         model = _get_model()
-        segments, info = model.transcribe(audio_path, beam_size=beam_size)
-
-        transcript_parts = []
-        for segment in segments:
-            transcript_parts.append(segment.text.strip())
+        with _inference_lock:
+            segments, info = model.transcribe(
+                audio_path, beam_size=beam_size
+            )
+            transcript_parts = []
+            for segment in segments:
+                transcript_parts.append(segment.text.strip())
 
         transcript = " ".join(transcript_parts)
 

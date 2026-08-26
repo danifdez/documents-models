@@ -1,4 +1,5 @@
 from sentence_transformers import SentenceTransformer
+from threading import Lock
 from typing import List
 from utils.device import get_device
 from lib.llm.config import get_task_config
@@ -20,30 +21,43 @@ class EmbeddingService:
         self.model_name = task_config.get("model", "intfloat/multilingual-e5-small")
         self.device = get_device()
         self.model = SentenceTransformer(self.model_name, device=self.device)
+        self._inference_lock = Lock()
 
     def encode(self, texts: List[str], normalize_embeddings: bool = True):
         """Encode passages (documents) with the E5 passage prefix."""
         prefixed = [f"passage: {t}" for t in texts]
-        return self.model.encode(prefixed, normalize_embeddings=normalize_embeddings)
+        with self._inference_lock:
+            return self.model.encode(
+                prefixed, normalize_embeddings=normalize_embeddings
+            )
 
     def encode_single(self, text: str, normalize_embeddings: bool = True):
         """Encode a single passage."""
         prefixed = f"passage: {text}"
-        return self.model.encode([prefixed], normalize_embeddings=normalize_embeddings)[0]
+        with self._inference_lock:
+            return self.model.encode(
+                [prefixed], normalize_embeddings=normalize_embeddings
+            )[0]
 
     def encode_query(self, text: str, normalize_embeddings: bool = True):
         """Encode a search query (E5 asymmetric prefix)."""
         prefixed = f"query: {text}"
-        return self.model.encode([prefixed], normalize_embeddings=normalize_embeddings)[0]
+        with self._inference_lock:
+            return self.model.encode(
+                [prefixed], normalize_embeddings=normalize_embeddings
+            )[0]
 
 
 # Singleton instance
 _embedding_service = None
+_embedding_service_lock = Lock()
 
 
 def get_embedding_service() -> EmbeddingService:
     """Get the singleton embedding service instance"""
     global _embedding_service
     if _embedding_service is None:
-        _embedding_service = EmbeddingService()
+        with _embedding_service_lock:
+            if _embedding_service is None:
+                _embedding_service = EmbeddingService()
     return _embedding_service

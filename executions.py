@@ -1,18 +1,17 @@
-import json
 import logging
 import signal
 import sys
 import time
-from pathlib import Path
 
+from lib.execution.result_outbox import ResultOutbox
 from lib.execution.protocol_client import (
     ExecutionProtocolClient,
     ProtocolTransportError,
     WorkerAuthenticationError,
 )
-from lib.execution.step_executor import execute_assignment
 from lib.execution.code_identity import code_fingerprint
 from lib.execution.runtime_identity import runtime_fingerprint
+from lib.execution.worker_runtime import WorkerRuntime
 from utils.device import (
     CPU_COUNT,
     GPU_NAME,
@@ -23,6 +22,7 @@ from utils.device import (
 )
 from worker.identity import (
     HEARTBEAT_INTERVAL,
+    MAXIMUM_CONCURRENCY,
     WORKER_ID,
     WORKER_NAME,
     worker_data_dir,
@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 PROTOCOL_RETRY_BACKOFF_SECONDS = 1
 LEASE_DURATION_MS = 30_000
 CLAIM_WAIT_TIMEOUT_MS = 10_000
+ACTIVE_CLAIM_WAIT_TIMEOUT_MS = 1_000
 SUPPORTED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
@@ -83,14 +84,6 @@ SUPPORTED_TASK_TYPES = (
     "relationship-extraction-reduce",
 )
 STEP_KINDS = ["service", "code", "inference"]
-MAXIMUM_CONCURRENCY = 1
-ACK_CODES = {
-    "received",
-    "duplicate",
-    "stale_attempt",
-    "result_conflict",
-    "rejected",
-}
 
 
 def effective_task_capabilities() -> list[str]:
@@ -119,59 +112,6 @@ def _metadata() -> dict:
     }
 
 
-def _pending_path() -> Path:
-    return Path(worker_data_dir()) / ".pending_step_result.json"
-
-
-def _store_pending(result: dict, artifacts: list[dict] | None = None) -> None:
-    path = _pending_path()
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(
-            {"result": result, "artifacts": artifacts or []},
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ),
-        encoding="utf-8",
-    )
-    temporary.replace(path)
-
-
-def _load_pending() -> dict | None:
-    try:
-        value = json.loads(_pending_path().read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    if (
-        not isinstance(value, dict)
-        or not isinstance(value.get("result"), dict)
-        or not isinstance(value.get("artifacts"), list)
-    ):
-        raise RuntimeError("Pending step result is invalid")
-    return value
-
-
-def _deliver_pending(client: ExecutionProtocolClient) -> None:
-    pending = _load_pending()
-    if pending is None:
-        return
-    result = pending["result"]
-    for artifact in pending["artifacts"]:
-        ack = client.upload_artifact(result["attemptId"], artifact)
-        if ack.get("code") not in {"received", "duplicate"}:
-            if ack.get("code") == "stale_attempt":
-                break
-            raise ProtocolTransportError(
-                f"Output artifact rejected: {ack.get('code')}"
-            )
-    ack = client.submit_result(result)
-    code = ack.get("code")
-    if code not in ACK_CODES:
-        raise ProtocolTransportError(f"Unknown result ACK: {code}")
-    _pending_path().unlink(missing_ok=True)
-    logger.info("Result %s acknowledged as %s", result.get("attemptId"), code)
-
-
 def main() -> None:
     log_hardware_summary()
     client = ExecutionProtocolClient()
@@ -191,85 +131,75 @@ def main() -> None:
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     next_heartbeat = 0.0
+    outbox = ResultOutbox(worker_data_dir())
+    runtime = WorkerRuntime(
+        client,
+        outbox,
+        MAXIMUM_CONCURRENCY,
+        LEASE_DURATION_MS,
+    )
 
-    while not stopping:
-        try:
-            client.ensure_registered(
-                CAPABILITIES, STEP_KINDS, MAXIMUM_CONCURRENCY, _metadata()
-            )
-            _deliver_pending(client)
-            now = time.monotonic()
-            if now >= next_heartbeat:
-                client.heartbeat(
+    try:
+        while not stopping:
+            try:
+                runtime.collect_completed()
+                client.ensure_registered(
                     CAPABILITIES,
                     STEP_KINDS,
                     MAXIMUM_CONCURRENCY,
                     _metadata(),
                 )
-                next_heartbeat = now + HEARTBEAT_INTERVAL
-            claim_wait_timeout_ms = min(
-                CLAIM_WAIT_TIMEOUT_MS,
-                max(0, int((next_heartbeat - time.monotonic()) * 1000)),
-            )
-            assignment = client.claim(
-                CAPABILITIES,
-                STEP_KINDS,
-                LEASE_DURATION_MS,
-                claim_wait_timeout_ms,
-            )
-            if assignment:
-                client.start(assignment["attemptId"])
-                control = client.read_control(assignment["attemptId"])
-                if control.get("cancelled"):
-                    result = {
-                        "schemaVersion": "step-result/1",
-                        "executionId": assignment["executionId"],
-                        "stepId": assignment["stepId"],
-                        "operationId": assignment["operationId"],
-                        "attemptId": assignment["attemptId"],
-                        "stepKind": assignment["stepKind"],
-                        "status": "cancelled",
-                        "codeFingerprint": code_fingerprint(),
-                        "runtimeFingerprint": runtime_fingerprint(),
-                        "artifactRefs": [],
-                        "error": None,
-                    }
-                    _store_pending(result)
-                    _deliver_pending(client)
-                    continue
-                client.renew_lease(
-                    assignment["attemptId"], LEASE_DURATION_MS
-                )
-                artifacts = {
-                    ref["role"]: client.download_artifact(
-                        assignment["attemptId"], ref["artifactId"]
+                outbox.deliver_all(client, runtime.active_attempt_ids)
+                now = time.monotonic()
+                if now >= next_heartbeat:
+                    client.heartbeat(
+                        CAPABILITIES,
+                        STEP_KINDS,
+                        MAXIMUM_CONCURRENCY,
+                        _metadata(),
                     )
-                    for ref in assignment.get("inputArtifactRefs", [])
-                }
-                output_artifacts = []
-                result = execute_assignment(
-                    assignment,
-                    artifacts,
-                    output_artifacts=output_artifacts,
+                    next_heartbeat = now + HEARTBEAT_INTERVAL
+                runtime.maintain_leases(now)
+
+                if runtime.available_slots > 0:
+                    wait_seconds = min(
+                        CLAIM_WAIT_TIMEOUT_MS / 1000,
+                        max(0, next_heartbeat - time.monotonic()),
+                        runtime.seconds_until_maintenance(),
+                    )
+                    if runtime.active_attempt_ids:
+                        wait_seconds = min(
+                            wait_seconds,
+                            ACTIVE_CLAIM_WAIT_TIMEOUT_MS / 1000,
+                        )
+                    assignment = client.claim(
+                        CAPABILITIES,
+                        STEP_KINDS,
+                        LEASE_DURATION_MS,
+                        max(0, int(wait_seconds * 1000)),
+                    )
+                    if assignment:
+                        runtime.submit(assignment)
+                        continue
+                else:
+                    runtime.wait_for_completion(
+                        min(
+                            max(0, next_heartbeat - time.monotonic()),
+                            runtime.seconds_until_maintenance(),
+                        )
+                    )
+                    continue
+            except WorkerAuthenticationError as error:
+                client.reset_credential()
+                next_heartbeat = 0.0
+                logger.warning(
+                    "Worker credential rejected; re-enrolling: %s", error
                 )
-                if client.read_control(assignment["attemptId"]).get(
-                    "cancelled"
-                ):
-                    result["status"] = "cancelled"
-                    result.pop("output", None)
-                    result["artifactRefs"] = []
-                    result["error"] = None
-                    output_artifacts = []
-                _store_pending(result, output_artifacts)
-                _deliver_pending(client)
-                continue
-        except WorkerAuthenticationError as error:
-            client.reset_credential()
-            next_heartbeat = 0.0
-            logger.warning("Worker credential rejected; re-enrolling: %s", error)
-        except ProtocolTransportError as error:
-            logger.warning("Protocol unavailable: %s", error)
-        time.sleep(PROTOCOL_RETRY_BACKOFF_SECONDS)
+            except ProtocolTransportError as error:
+                logger.warning("Protocol unavailable: %s", error)
+            time.sleep(PROTOCOL_RETRY_BACKOFF_SECONDS)
+    finally:
+        runtime.close()
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@
     "id": "",
     "name": "",
     "heartbeat_interval": 15,
+    "maximum_concurrency": 2,
     "disable_llm": false,
     "disable_embeddings": false
   },

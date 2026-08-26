@@ -61,6 +61,7 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
   "id": "",
   "name": "",
   "heartbeat_interval": 15,
+  "maximum_concurrency": 2,
   "disable_llm": false,
   "disable_embeddings": false
 }
@@ -71,13 +72,15 @@ Shared parameters for all LLM-based tasks. Individual tasks can override any of 
 | `id` | auto UUID (persisted to `.worker_id`) | Stable worker identity across restarts |
 | `name` | `worker-{id[:8]}` | Human-readable name for logs |
 | `heartbeat_interval` | `15` | Seconds between heartbeat updates |
+| `maximum_concurrency` | `2` | Independent assignment slots, from 1 to 64 |
 | `disable_llm` | `false` | Disable all LLM capabilities on this worker |
 | `disable_embeddings` | `false` | Disable all embedding capabilities on this worker |
 
 Backend owns priority, fairness, deadlines and retry scheduling. Models does
-not expose queue or background-window configuration. The current sequential
-executor declares one concurrency slot; this is a runtime guarantee rather
-than a user-configurable queue setting.
+not expose queue or background-window configuration. Models instantiates and
+advertises exactly `maximum_concurrency`; every slot has independent execution,
+lease maintenance and durable result state. Keep this aligned with available
+CPU/GPU memory and the parallel slots exposed by the inference server.
 
 ## tasks.json
 

@@ -1,20 +1,30 @@
 from typing import List, Dict, Any, Optional, Tuple
+from threading import Lock
 from transformers import pipeline as hf_pipeline
 from common.execution_registry import execution_handler
 from utils.device import get_device
 from services.text import chunk_units
 
 _translation_pipelines: Dict[str, Any] = {}
+_translation_pipeline_lock = Lock()
+_translation_inference_lock = Lock()
 
 
 def _get_translation_pipeline(source: str, target: str):
     key = f"{source}-{target}"
     if key not in _translation_pipelines:
-        from lib.llm.config import get_task_config
-        prefix = get_task_config("translate").get("model_prefix", "Helsinki-NLP/opus-mt")
-        model_name = f"{prefix}-{source}-{target}"
-        device = get_device()
-        _translation_pipelines[key] = hf_pipeline("translation", model=model_name, device=device)
+        with _translation_pipeline_lock:
+            if key not in _translation_pipelines:
+                from lib.llm.config import get_task_config
+
+                prefix = get_task_config("translate").get(
+                    "model_prefix", "Helsinki-NLP/opus-mt"
+                )
+                model_name = f"{prefix}-{source}-{target}"
+                device = get_device()
+                _translation_pipelines[key] = hf_pipeline(
+                    "translation", model=model_name, device=device
+                )
     return _translation_pipelines[key]
 
 
@@ -97,7 +107,8 @@ def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
     for start in range(0, len(non_empty), batch_size):
         batch = non_empty[start:start + batch_size]
         batch_texts = [p for _, p in batch]
-        output = translation(batch_texts)
+        with _translation_inference_lock:
+            output = translation(batch_texts)
         for j, item in enumerate(output):
             tx = item.get('translation_text') if isinstance(item, dict) else str(item)
             piece_translations[batch[j][0]] = tx or ""

@@ -9,14 +9,16 @@ selection, retries, dependencies, leases, cancellation, and finalization.
 1. `executions.py` registers a stable worker identity, protocol, supported step
    kinds and concurrency through Backend.
 2. The worker heartbeats its effective capabilities and hardware metadata.
-3. It long-polls Backend for a compatible ready step over HTTP, bounding each
-   wait so heartbeats are still sent on schedule.
+3. It long-polls Backend while its local pool has an available slot, bounding
+   each wait so heartbeats and lease renewals are still sent on schedule.
 4. Backend creates the `StepAttempt` and returns a fenced assignment.
-5. Models starts the attempt, renews its lease, checks cancellation, and
-   downloads only the artifacts referenced by that assignment.
-6. `lib/execution/step_executor.py` loads the task handler and executes it.
+5. Models starts the attempt in an independent pool slot; the control thread
+   renews its lease and records cancellation while the handler runs.
+6. The slot downloads only the referenced artifacts and
+   `lib/execution/step_executor.py` executes the task handler.
 7. Large handler outputs are encoded as immutable attempt-scoped artifacts.
-8. Artifacts and the lightweight result are stored together in a local outbox;
+8. Each result and its artifacts are stored atomically in a per-attempt local
+   outbox entry;
    artifacts are uploaded first and the result is retried until Backend returns
    a terminal ACK (`received`, `duplicate`, `stale_attempt`,
    `result_conflict`, or `rejected`).
@@ -25,18 +27,25 @@ Models never claims or updates execution rows in PostgreSQL. It does not create
 child executions. Durable fan-out and successor steps are materialized by the
 Backend coordinator.
 
-The current loop executes one assignment at a time and therefore declares
-`maximumConcurrency: 1`. Backend derives active assignments from live leases
-and refuses another claim until that slot is available. An empty claim waits in
-Backend for at most ten seconds before returning `null`; transport failures use
-a separate one-second retry backoff.
+The worker instantiates exactly `worker.maximum_concurrency` execution slots
+and advertises that same value. The default is two, matching the shared
+`llama-server` default slot count. Backend derives active assignments from live
+leases and refuses another claim when all declared slots are occupied. An empty
+claim waits in Backend for at most ten seconds when the pool is idle and one
+second while other slots are active; transport failures use a separate
+one-second retry backoff. Embedded singleton runtimes for embeddings, Whisper
+and translation serialize their own initialization and inference calls; this
+prevents unsafe shared-model access without serializing unrelated assignments.
 
 ## Main modules
 
 ```text
-executions.py                         worker loop and durable result outbox
+executions.py                         worker control loop and claim scheduling
 worker/identity.py                    stable local worker identity
 lib/execution/protocol_client.py      authenticated Backend protocol
+lib/execution/worker_runtime.py       concurrent slots and lease maintenance
+lib/execution/assignment_runner.py    isolated assignment lifecycle
+lib/execution/result_outbox.py        per-attempt durable result delivery
 lib/execution/step_executor.py        assignment-to-handler adapter
 lib/execution/output_artifact.py      deterministic output artifact encoding
 utils/task_dispatch.py                conventional task module loading
@@ -78,6 +87,9 @@ Backend applies every relational, vector or graph effect during finalization.
 - Artifact retries are idempotent and fenced to the attempt that produced them.
 - A lost response is safe: an identical retry returns `duplicate`.
 - An expired or superseded lease fences late results as `stale_attempt`.
+- Cancellation is checked before artifact loading and after handler execution;
+  a running Python handler is not preempted, but its output is discarded when
+  cancellation was observed.
 - A worker credential can be rotated; a rejected credential triggers
   re-enrollment.
 - A task is advertised only after it can run through this protocol without
