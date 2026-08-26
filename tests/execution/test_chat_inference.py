@@ -7,6 +7,15 @@ from tasks.assistant_chat.product_skills import (
     DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
     DOCUMENT_FORMAT_RESOURCE_ID,
     DOCUMENT_FORMAT_RESOURCE_TITLE,
+    EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
+    EVIDENCE_RESEARCH_SKILL_ID,
+    EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS,
+    EVIDENCE_RESEARCH_SKILL_TITLE,
+    EVIDENCE_RESEARCH_SKILL_VERSION,
+    SOURCE_EVALUATION_RESOURCE_CONTENT,
+    SOURCE_EVALUATION_RESOURCE_DESCRIPTION,
+    SOURCE_EVALUATION_RESOURCE_ID,
+    SOURCE_EVALUATION_RESOURCE_TITLE,
     WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
     WORKSPACE_DOCUMENT_SKILL_ID,
     WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
@@ -136,6 +145,71 @@ class ChatInferenceTest(unittest.TestCase):
                     "conversation": [{"role": "user", "content": "Read the file"}],
                 }
             )
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_resolves_multiple_selected_skills_from_the_packaged_registry(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+        research_skill = {
+            "skillId": EVIDENCE_RESEARCH_SKILL_ID,
+            "version": EVIDENCE_RESEARCH_SKILL_VERSION,
+            "title": EVIDENCE_RESEARCH_SKILL_TITLE,
+            "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
+            "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
+            "activationReason": "objective_match",
+            "resources": [
+                {
+                    "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
+                    "title": SOURCE_EVALUATION_RESOURCE_TITLE,
+                    "description": SOURCE_EVALUATION_RESOURCE_DESCRIPTION,
+                    "contentHash": _canonical_hash(
+                        SOURCE_EVALUATION_RESOURCE_CONTENT
+                    ),
+                }
+            ],
+        }
+        workspace_skill = {
+            "skillId": WORKSPACE_DOCUMENT_SKILL_ID,
+            "version": WORKSPACE_DOCUMENT_SKILL_VERSION,
+            "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
+            "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
+            "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
+            "activationReason": "objective_match",
+            "resources": [
+                {
+                    "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
+                    "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
+                    "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
+                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                }
+            ],
+        }
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(
+                    "documents.search",
+                    "skills.load_resource",
+                    skills=[workspace_skill, research_skill],
+                ),
+                "conversation": [
+                    {"role": "user", "content": "Compare the evidence"}
+                ],
+            }
+        )
+
+        prompt = llm.chat_with_tools.call_args.args[0][0]["content"]
+        self.assertIn(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS, prompt)
+        self.assertIn(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS, prompt)
+        self.assertIn(SOURCE_EVALUATION_RESOURCE_ID, prompt)
+        self.assertNotIn(SOURCE_EVALUATION_RESOURCE_CONTENT, prompt)
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")

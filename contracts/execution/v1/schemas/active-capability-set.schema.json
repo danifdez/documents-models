@@ -74,6 +74,12 @@
       "additionalProperties": false
     },
     "skill": {
+      "oneOf": [
+        { "$ref": "#/$defs/workspaceDocumentSkill" },
+        { "$ref": "#/$defs/evidenceResearchSkill" }
+      ]
+    },
+    "workspaceDocumentSkill": {
       "type": "object",
       "required": [
         "skillId",
@@ -100,12 +106,12 @@
           "minItems": 1,
           "maxItems": 8,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/skillResource" }
+          "items": { "$ref": "#/$defs/documentFormatResource" }
         }
       },
       "additionalProperties": false
     },
-    "skillResource": {
+    "documentFormatResource": {
       "type": "object",
       "required": ["resourceId", "title", "description", "contentHash"],
       "properties": {
@@ -116,6 +122,53 @@
         },
         "contentHash": {
           "const": "sha256:ccb06824a5ed7559cac8327619cb3f8de834ee44f2fda7f0460c7501df1b179c"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceResearchSkill": {
+      "type": "object",
+      "required": [
+        "skillId",
+        "version",
+        "title",
+        "description",
+        "contentHash",
+        "activationReason",
+        "resources"
+      ],
+      "properties": {
+        "skillId": { "const": "evidence-research-workflow" },
+        "version": { "const": "evidence-research-workflow/1" },
+        "title": { "const": "Evidence research workflow" },
+        "description": {
+          "const": "Search, compare, and synthesize available sources while preserving provenance and uncertainty."
+        },
+        "contentHash": {
+          "const": "sha256:902f4eb209b750d9b7a62c8cb9daa297158e45a284a8f857fba3a676dcea8002"
+        },
+        "activationReason": { "const": "objective_match" },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sourceEvaluationResource" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceEvaluationResource": {
+      "type": "object",
+      "required": ["resourceId", "title", "description", "contentHash"],
+      "properties": {
+        "resourceId": { "const": "source-evaluation" },
+        "title": { "const": "Source evaluation" },
+        "description": {
+          "const": "Criteria for provenance, corroboration, contradictions, freshness, and evidence gaps."
+        },
+        "contentHash": {
+          "const": "sha256:3c5472ac70881363440979f779dac8ad657c662a6666495a5f667ef4a8a79879"
         }
       },
       "additionalProperties": false

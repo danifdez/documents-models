@@ -22,11 +22,9 @@
     "schemaVersion": { "const": "skill-activation/1" },
     "activationId": { "$ref": "common.schema.json#/$defs/id" },
     "executionId": { "$ref": "common.schema.json#/$defs/id" },
-    "skillId": { "const": "workspace-document-workflow" },
-    "skillVersion": { "const": "workspace-document-workflow/1" },
-    "contentHash": {
-      "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
-    },
+    "skillId": { "type": "string" },
+    "skillVersion": { "type": "string" },
+    "contentHash": { "$ref": "common.schema.json#/$defs/hash" },
     "activationReason": { "const": "objective_match" },
     "inputBindings": {
       "type": "object",
@@ -46,10 +44,7 @@
     },
     "phase": { "type": "string", "minLength": 1, "maxLength": 80 },
     "checkpoint": {
-      "oneOf": [
-        { "type": "object" },
-        { "type": "null" }
-      ]
+      "oneOf": [{ "type": "object" }, { "type": "null" }]
     },
     "status": {
       "enum": ["active", "completed", "failed", "cancelled", "superseded"]
@@ -63,6 +58,30 @@
     }
   },
   "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "skillId": { "const": "workspace-document-workflow" },
+            "skillVersion": { "const": "workspace-document-workflow/1" },
+            "contentHash": {
+              "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
+            }
+          },
+          "required": ["skillId", "skillVersion", "contentHash"]
+        },
+        {
+          "properties": {
+            "skillId": { "const": "evidence-research-workflow" },
+            "skillVersion": { "const": "evidence-research-workflow/1" },
+            "contentHash": {
+              "const": "sha256:902f4eb209b750d9b7a62c8cb9daa297158e45a284a8f857fba3a676dcea8002"
+            }
+          },
+          "required": ["skillId", "skillVersion", "contentHash"]
+        }
+      ]
+    },
     {
       "if": {
         "properties": { "status": { "const": "active" } },
