@@ -18,7 +18,7 @@
     "selectionPolicy": { "const": "backend-availability/1" },
     "tools": {
       "type": "array",
-      "maxItems": 9,
+      "maxItems": 10,
       "items": { "$ref": "#/$defs/tool" }
     },
     "skills": {
@@ -36,6 +36,7 @@
         "name": {
           "enum": [
             "documents.search",
+            "skills.load_resource",
             "user_tasks.create",
             "agents.delegate",
             "browser.read_current_page",
@@ -49,6 +50,7 @@
         "descriptorVersion": {
           "enum": [
             "documents.search/1",
+            "skills.load_resource/1",
             "user_tasks.create/1",
             "agents.delegate/1",
             "browser.read_current_page/1",
@@ -79,7 +81,8 @@
         "title",
         "description",
         "contentHash",
-        "activationReason"
+        "activationReason",
+        "resources"
       ],
       "properties": {
         "skillId": { "const": "workspace-document-workflow" },
@@ -91,7 +94,29 @@
         "contentHash": {
           "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
         },
-        "activationReason": { "const": "objective_match" }
+        "activationReason": { "const": "objective_match" },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/skillResource" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillResource": {
+      "type": "object",
+      "required": ["resourceId", "title", "description", "contentHash"],
+      "properties": {
+        "resourceId": { "const": "document-format-handling" },
+        "title": { "const": "Document format handling" },
+        "description": {
+          "const": "Safety and preservation rules for editing text, binary, and container document formats."
+        },
+        "contentHash": {
+          "const": "sha256:ccb06824a5ed7559cac8327619cb3f8de834ee44f2fda7f0460c7501df1b179c"
+        }
       },
       "additionalProperties": false
     }

@@ -3,6 +3,10 @@ from unittest.mock import Mock, patch
 
 from tasks.assistant_chat.assistant_chat import _SYSTEM_PROMPT, chat_inference
 from tasks.assistant_chat.product_skills import (
+    DOCUMENT_FORMAT_RESOURCE_CONTENT,
+    DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
+    DOCUMENT_FORMAT_RESOURCE_ID,
+    DOCUMENT_FORMAT_RESOURCE_TITLE,
     WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
     WORKSPACE_DOCUMENT_SKILL_ID,
     WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
@@ -16,6 +20,7 @@ _TOOL_VERSIONS = {
     name: f"{name}/1"
     for name in (
         "documents.search",
+        "skills.load_resource",
         "user_tasks.create",
         "agents.delegate",
         "browser.read_current_page",
@@ -66,13 +71,23 @@ class ChatInferenceTest(unittest.TestCase):
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
             "activationReason": "objective_match",
+            "resources": [
+                {
+                    "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
+                    "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
+                    "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
+                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                }
+            ],
         }
 
         chat_inference(
             {
                 "_task_type": "assistant-chat",
                 "activeCapabilities": capabilities(
-                    "workspace_files.read", skills=[selected_skill]
+                    "workspace_files.read",
+                    "skills.load_resource",
+                    skills=[selected_skill],
                 ),
                 "conversation": [{"role": "user", "content": "Read the file"}],
             }
@@ -80,6 +95,13 @@ class ChatInferenceTest(unittest.TestCase):
 
         messages = llm.chat_with_tools.call_args.args[0]
         self.assertIn(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS, messages[0]["content"])
+        self.assertIn(DOCUMENT_FORMAT_RESOURCE_ID, messages[0]["content"])
+        self.assertNotIn(DOCUMENT_FORMAT_RESOURCE_CONTENT, messages[0]["content"])
+        tools = llm.chat_with_tools.call_args.args[1]
+        self.assertIn(
+            "skills.load_resource",
+            [tool["function"]["name"] for tool in tools],
+        )
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
@@ -96,6 +118,14 @@ class ChatInferenceTest(unittest.TestCase):
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": "sha256:" + "0" * 64,
             "activationReason": "objective_match",
+            "resources": [
+                {
+                    "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
+                    "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
+                    "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
+                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                }
+            ],
         }
 
         with self.assertRaisesRegex(ValueError, "Unsupported active skill"):

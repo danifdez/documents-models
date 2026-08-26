@@ -15,6 +15,19 @@ WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS = """Use the configured workspace folder a
 Discover before acting: list files when the relevant path is unknown, search indexed content to locate evidence, and read concrete files before modifying them. Preserve the existing format and unrelated content when editing. A document may be text or binary; use UTF-8 content for text formats and base64 bytes for binary formats.
 
 Writing or deleting is allowed only when the user's explicit request requires that effect. A skill never grants a tool, permission, confirmation, path, or broader data access. If a required workspace tool is absent, explain the limitation instead of inventing an effect."""
+DOCUMENT_FORMAT_RESOURCE_ID = "document-format-handling"
+DOCUMENT_FORMAT_RESOURCE_TITLE = "Document format handling"
+DOCUMENT_FORMAT_RESOURCE_DESCRIPTION = (
+    "Safety and preservation rules for editing text, binary, and container "
+    "document formats."
+)
+DOCUMENT_FORMAT_RESOURCE_CONTENT = """Document format handling
+
+Inspect the existing file and its extension before changing it. Keep the original format unless the user explicitly asks for a conversion.
+
+For plain-text formats, write UTF-8 text. For binary or container formats such as PDF, DOCX, XLSX, PPTX, or images, use contentBase64 only when complete valid bytes have been produced by a compatible document processor. Never place a textual description inside a binary file or pretend that changing an extension converts the format.
+
+When replacing an existing document, preserve unrelated content and formatting. If the available tools cannot safely produce the requested format, explain the limitation instead of corrupting the file."""
 
 
 def _canonical_hash(value: Any) -> str:
@@ -33,6 +46,14 @@ _PRODUCT_SKILLS = {
         "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
         "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
         "instructions": WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
+        "resources": [
+            {
+                "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
+                "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
+                "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
+                "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+            }
+        ],
     }
 }
 
@@ -50,7 +71,7 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
         if not isinstance(selection, dict):
             raise ValueError("Invalid active skill selection")
         identity = (selection.get("skillId"), selection.get("version"))
-        definition: Dict[str, str] | None = _PRODUCT_SKILLS.get(identity)
+        definition: Dict[str, Any] | None = _PRODUCT_SKILLS.get(identity)
         if (
             definition is None
             or identity in seen
@@ -58,6 +79,7 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
             or selection.get("description") != definition["description"]
             or selection.get("contentHash") != definition["contentHash"]
             or selection.get("activationReason") != "objective_match"
+            or selection.get("resources") != definition["resources"]
             or set(selection) != {
                 "skillId",
                 "version",
@@ -65,9 +87,22 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
                 "description",
                 "contentHash",
                 "activationReason",
+                "resources",
             }
         ):
             raise ValueError("Unsupported active skill selection")
         seen.add(identity)
-        resolved.append(definition["instructions"])
+        catalog = "\n".join(
+            "- {resourceId} ({contentHash}): {title}. {description}".format(
+                **resource
+            )
+            for resource in definition["resources"]
+        )
+        resolved.append(
+            f"{definition['instructions']}\n\nAvailable skill resources. Load one "
+            "with skills.load_resource only when its full guidance is needed; "
+            "the catalog does not grant access or effects:\n"
+            f"Skill identity: {identity[0]} {identity[1]} "
+            f"{definition['contentHash']}\n{catalog}"
+        )
     return resolved
