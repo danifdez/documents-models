@@ -17,6 +17,8 @@ ACK_CODES = {
     "result_conflict",
     "rejected",
 }
+ACCEPTED_ARTIFACT_ACK_CODES = {"received", "duplicate"}
+TERMINAL_ARTIFACT_ACK_CODES = {"stale_attempt", "artifact_conflict"}
 logger = logging.getLogger(__name__)
 
 
@@ -84,11 +86,18 @@ class ResultOutbox:
         result = pending["result"]
         for artifact in pending["artifacts"]:
             ack = client.upload_artifact(result["attemptId"], artifact)
-            if ack.get("code") not in {"received", "duplicate"}:
-                if ack.get("code") == "stale_attempt":
-                    break
+            code = ack.get("code")
+            if code in TERMINAL_ARTIFACT_ACK_CODES:
+                path.unlink(missing_ok=True)
+                logger.info(
+                    "Result %s closed after output artifact ACK %s",
+                    result.get("attemptId"),
+                    code,
+                )
+                return
+            if code not in ACCEPTED_ARTIFACT_ACK_CODES:
                 raise ProtocolTransportError(
-                    f"Output artifact rejected: {ack.get('code')}"
+                    f"Output artifact rejected: {code}"
                 )
         ack = client.submit_result(result)
         code = ack.get("code")

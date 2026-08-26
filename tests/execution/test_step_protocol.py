@@ -432,6 +432,34 @@ class StepProtocolTest(unittest.TestCase):
             self.assertEqual(client.submitted, [first, second])
             self.assertEqual(outbox.pending_attempt_ids(), [])
 
+    def test_closes_result_outbox_after_a_terminal_artifact_ack(self):
+        attempt_id = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"
+        result = {"attemptId": attempt_id, "status": "succeeded"}
+        artifact = {"artifactId": "artifact-1"}
+
+        for terminal_code in ("stale_attempt", "artifact_conflict"):
+            with self.subTest(terminal_code=terminal_code):
+                class Client:
+                    submitted = []
+
+                    @staticmethod
+                    def upload_artifact(_attempt_id, _artifact):
+                        return {"code": terminal_code}
+
+                    @classmethod
+                    def submit_result(cls, submitted):
+                        cls.submitted.append(submitted)
+                        return {"code": "received"}
+
+                with tempfile.TemporaryDirectory() as directory:
+                    outbox = ResultOutbox(directory)
+                    outbox.store(result, [artifact])
+
+                    outbox.deliver_all(Client())
+
+                    self.assertEqual(Client.submitted, [])
+                    self.assertEqual(outbox.pending_attempt_ids(), [])
+
 
 if __name__ == "__main__":
     unittest.main()
