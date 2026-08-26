@@ -609,6 +609,7 @@
       "contentHash": "sha256:64c7fe56c7ba1140154f8f6999f097a828028f97812826ea4e3c2960ca9bf436"
     }
   ],
+  "skillActivations": [],
   "artifacts": [
     {
       "artifactId": "artifact_browser_page",
@@ -674,7 +675,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:a35d7d1f74736f4a094bddcc2e35c7d7854b750d5e5c61cf5c018a54ba1919c7",
-    "schemaManifestHash": "sha256:21d3c7dc47b5dc3b3fabaf62d8420bf7ab043250a9afdff8f88597c31101868c"
+    "schemaManifestHash": "sha256:ee289bd1e00ca0c6ddd2fdcee89fff3bab9709f2a01f3b1b8dd56f2fde953655"
   },
   "policySummary": {
     "decision": "allow",
@@ -692,7 +693,7 @@
     }
   },
   "exportedAt": "2026-08-19T11:00:07Z",
-  "manifestHash": "sha256:1d573f97d2464c3151bcb54fe1dbe5b8f09df8113d2d2f14018688d532058a35",
+  "manifestHash": "sha256:611d36da651b85099b560f8daee22d72ae3e1b52eba6853b92dad86069e5860c",
   "rootExecutionId": "exec_browser_fixture",
   "executionSchema": "execution-event/1"
 }

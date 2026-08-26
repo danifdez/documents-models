@@ -270,6 +270,7 @@ def validate_bundle_invariants(
     reject_floats(bundle)
     check_forbidden_data(bundle)
     events = bundle["events"]
+    skill_activations = bundle["skillActivations"]
     artifacts = bundle["artifacts"]
     root_execution_id = bundle["rootExecutionId"]
     event_ids = {}
@@ -291,6 +292,18 @@ def validate_bundle_invariants(
     artifact_by_id = {artifact["artifactId"]: artifact for artifact in artifacts}
     if len(artifact_by_id) != len(artifacts):
         raise ContractError("duplicate artifactId")
+
+    activation_ids = {
+        activation["activationId"] for activation in skill_activations
+    }
+    if len(activation_ids) != len(skill_activations):
+        raise ContractError("duplicate skill activationId")
+    activation_identities = {
+        (activation["executionId"], activation["skillId"])
+        for activation in skill_activations
+    }
+    if len(activation_identities) != len(skill_activations):
+        raise ContractError("duplicate skill activation identity")
 
     embedded = bundle.get("embeddedArtifacts") or {}
     for artifact_id, entry in embedded.items():
@@ -406,6 +419,27 @@ def validate_bundle_invariants(
     ]
     if len(terminal) != 1 or terminal[0] is not events[-1]:
         raise ContractError("bundle must end in exactly one terminal execution state")
+
+    event_execution_ids = {event["executionId"] for event in events}
+    terminal_by_execution = {
+        event["executionId"]: event["payload"]["to"]
+        for event in events
+        if event["eventType"] == "execution.state_changed"
+        and event["payload"].get("to") in {"completed", "failed", "cancelled"}
+    }
+    for activation in skill_activations:
+        execution_id = activation["executionId"]
+        if execution_id not in event_execution_ids:
+            raise ContractError(
+                f"skill activation execution is absent: {activation['activationId']}"
+            )
+        terminal_status = terminal_by_execution.get(execution_id)
+        if activation["status"] == "superseded":
+            continue
+        if terminal_status is None or activation["status"] != terminal_status:
+            raise ContractError(
+                f"skill activation status differs from execution: {activation['activationId']}"
+            )
 
     for artifact in artifacts:
         if artifact["dataClassification"] == "secret":

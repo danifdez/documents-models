@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:21d3c7dc47b5dc3b3fabaf62d8420bf7ab043250a9afdff8f88597c31101868c",
+  "contractSetHash": "sha256:ee289bd1e00ca0c6ddd2fdcee89fff3bab9709f2a01f3b1b8dd56f2fde953655",
   "schemas": [
     {
       "path": "schemas/active-capability-set.schema.json",
@@ -41,7 +41,7 @@
     },
     {
       "path": "schemas/execution-bundle.schema.json",
-      "sha256": "sha256:c58a9921b4f3e040f54cd48e941bc78a7e399799497f446339918baa95b50020"
+      "sha256": "sha256:6c05c097ed67c7000368c09baa65a117b769d2ec6bb0e9b08202663aa05ec002"
     },
     {
       "path": "schemas/execution-event.schema.json",
@@ -86,6 +86,10 @@
     {
       "path": "schemas/payload/source-observed.schema.json",
       "sha256": "sha256:2ea5d6f74d8fa9164f242d5cd45c2d03e9922a5eae67bb007ec8c4e527f01660"
+    },
+    {
+      "path": "schemas/skill-activation.schema.json",
+      "sha256": "sha256:b7e4314460ed54eb30c18bd004f7d9e0b02b384594b579bfc3803bcf92bb4c47"
     },
     {
       "path": "schemas/step-assignment.schema.json",

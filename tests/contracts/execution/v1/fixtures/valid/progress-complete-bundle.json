@@ -715,6 +715,7 @@
       "contentHash": "sha256:d325415e56429dd868ffde30cdd23c06f0eaa622dcb3b4fae097a33030c6d3c2"
     }
   ],
+  "skillActivations": [],
   "artifacts": [
     {
       "artifactId": "artifact_doc_user",
@@ -796,7 +797,7 @@
   },
   "integrity": {
     "eventsHash": "sha256:aa10d39d498e7945b6616f42338af9819f0ed498f85a3573db7fc0acb6596fab",
-    "schemaManifestHash": "sha256:21d3c7dc47b5dc3b3fabaf62d8420bf7ab043250a9afdff8f88597c31101868c"
+    "schemaManifestHash": "sha256:ee289bd1e00ca0c6ddd2fdcee89fff3bab9709f2a01f3b1b8dd56f2fde953655"
   },
   "policySummary": {
     "decision": "allow",
@@ -814,7 +815,7 @@
     }
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:4ff8b0ca447573c245fb752bdada14eacc6b7e7df806eb524a327ba6938b75ff",
+  "manifestHash": "sha256:c67395ad2ad7b736413442c4a8c513e407ccbc26c293c461c447e3c5c1c6ef55",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }
