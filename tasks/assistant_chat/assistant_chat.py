@@ -80,6 +80,101 @@ _BROWSER_READ_TOOL = {
         },
     },
 }
+_WORKSPACE_FILE_READ_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "workspace_files.read",
+        "description": "Read a text file from the configured workspace folder.",
+        "parameters": {
+            "type": "object",
+            "required": ["filename"],
+            "properties": {
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                "offset": {"type": "integer", "minimum": 0},
+                "maxChars": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8000,
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+_WORKSPACE_FILE_LIST_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "workspace_files.list",
+        "description": "List files in the configured workspace folder.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+_WORKSPACE_FILE_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "workspace_files.search",
+        "description": "Search indexed content in the configured workspace folder.",
+        "parameters": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "minLength": 3, "maxLength": 2000},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+_WORKSPACE_FILE_WRITE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "workspace_files.write",
+        "description": (
+            "Create or replace a text file in the configured workspace folder. "
+            "Backend requires user confirmation before applying the write."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["filename"],
+            "properties": {
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                "content": {"type": "string", "maxLength": 1000000},
+                "contentBase64": {"type": "string", "maxLength": 1400000},
+                "overwrite": {"type": "boolean"},
+            },
+            "oneOf": [
+                {"required": ["content"]},
+                {"required": ["contentBase64"]},
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
+_WORKSPACE_FILE_DELETE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "workspace_files.delete",
+        "description": (
+            "Delete a file from the configured workspace folder. "
+            "Backend requires user confirmation before applying the deletion."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["filename"],
+            "properties": {
+                "filename": {"type": "string", "minLength": 1, "maxLength": 255}
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -200,6 +295,11 @@ def _outcome(message: Dict[str, Any], max_tool_calls: int) -> Dict[str, Any]:
                 "user_tasks.create",
                 "agents.delegate",
                 "browser.read_current_page",
+                "workspace_files.read",
+                "workspace_files.list",
+                "workspace_files.search",
+                "workspace_files.write",
+                "workspace_files.delete",
             }:
                 raise ValueError(f"Unsupported tool requested: {name}")
             calls.append(
@@ -235,14 +335,26 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
             )
         }
     else:
+        tools = [
+            _DOCUMENT_SEARCH_TOOL,
+            _USER_TASK_CREATE_TOOL,
+            _AGENT_DELEGATE_TOOL,
+            _BROWSER_READ_TOOL,
+        ]
+        folder_scope = payload.get("folderScope")
+        if isinstance(folder_scope, str) and folder_scope.strip():
+            tools.extend(
+                [
+                    _WORKSPACE_FILE_LIST_TOOL,
+                    _WORKSPACE_FILE_SEARCH_TOOL,
+                    _WORKSPACE_FILE_READ_TOOL,
+                    _WORKSPACE_FILE_WRITE_TOOL,
+                    _WORKSPACE_FILE_DELETE_TOOL,
+                ]
+            )
         message = llm.chat_with_tools(
             messages,
-            [
-                _DOCUMENT_SEARCH_TOOL,
-                _USER_TASK_CREATE_TOOL,
-                _AGENT_DELEGATE_TOOL,
-                _BROWSER_READ_TOOL,
-            ],
+            tools,
             max_tokens=max_tokens,
             tool_choice="auto",
             inference_name=task_type,

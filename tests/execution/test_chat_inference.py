@@ -188,6 +188,100 @@ class ChatInferenceTest(unittest.TestCase):
         }
         self.assertIn("browser.read_current_page", tool_names)
 
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_only_exposes_workspace_file_tools_with_a_configured_folder(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "folderScope": "/workspace/project",
+                "conversation": [{"role": "user", "content": "Read README.md"}],
+            }
+        )
+
+        tool_names = {
+            tool["function"]["name"]
+            for tool in llm.chat_with_tools.call_args.args[1]
+        }
+        self.assertIn("workspace_files.list", tool_names)
+        self.assertIn("workspace_files.search", tool_names)
+        self.assertIn("workspace_files.read", tool_names)
+        self.assertIn("workspace_files.write", tool_names)
+        self.assertIn("workspace_files.delete", tool_names)
+
+        llm.reset_mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "conversation": [{"role": "user", "content": "Read README.md"}],
+            }
+        )
+        tool_names = {
+            tool["function"]["name"]
+            for tool in llm.chat_with_tools.call_args.args[1]
+        }
+        self.assertNotIn("workspace_files.list", tool_names)
+        self.assertNotIn("workspace_files.search", tool_names)
+        self.assertNotIn("workspace_files.read", tool_names)
+        self.assertNotIn("workspace_files.write", tool_names)
+        self.assertNotIn("workspace_files.delete", tool_names)
+
+    @patch("tasks.assistant_chat.assistant_chat.uuid4", return_value="call-id")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_returns_a_workspace_file_write_request(
+        self,
+        get_llm_service,
+        get_task_config,
+        _get_llm_params,
+        _uuid4,
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "workspace_files.write",
+                        "arguments": '{"filename":"notes.md","content":"Hello"}',
+                    }
+                }
+            ]
+        }
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        outcome = chat_inference(
+            {
+                "_task_type": "agent-chat",
+                "folderScope": "/workspace/project",
+                "conversation": [{"role": "user", "content": "Create notes.md"}],
+            }
+        )
+
+        self.assertEqual(
+            outcome.value,
+            {
+                "kind": "tool_requests",
+                "calls": [
+                    {
+                        "toolCallId": "call-id",
+                        "name": "workspace_files.write",
+                        "arguments": {"filename": "notes.md", "content": "Hello"},
+                    }
+                ],
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
