@@ -23,7 +23,9 @@
     },
     "skills": {
       "type": "array",
-      "maxItems": 0
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/skill" }
     }
   },
   "$defs": {
@@ -66,6 +68,30 @@
             "paired_browser"
           ]
         }
+      },
+      "additionalProperties": false
+    },
+    "skill": {
+      "type": "object",
+      "required": [
+        "skillId",
+        "version",
+        "title",
+        "description",
+        "contentHash",
+        "activationReason"
+      ],
+      "properties": {
+        "skillId": { "const": "workspace-document-workflow" },
+        "version": { "const": "workspace-document-workflow/1" },
+        "title": { "const": "Workspace document workflow" },
+        "description": {
+          "const": "Discover, inspect, create, edit, or remove documents in the optional workspace folder."
+        },
+        "contentHash": {
+          "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
+        },
+        "activationReason": { "const": "objective_match" }
       },
       "additionalProperties": false
     }

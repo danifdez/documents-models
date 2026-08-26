@@ -56,6 +56,23 @@
     "max_tokens": 1200,
     "max_tool_calls": 4
   },
+  "context-input-map": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 700,
+    "max_input_chars": 12000
+  },
+  "context-input-reduce": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "max_tokens": 900,
+    "max_partials": 8,
+    "max_partial_chars": 8000
+  },
   "embedding": {
     "enabled": true,
     "type": "sentence-transformer",

@@ -2,6 +2,14 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tasks.assistant_chat.assistant_chat import _SYSTEM_PROMPT, chat_inference
+from tasks.assistant_chat.product_skills import (
+    WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
+    WORKSPACE_DOCUMENT_SKILL_ID,
+    WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
+    WORKSPACE_DOCUMENT_SKILL_TITLE,
+    WORKSPACE_DOCUMENT_SKILL_VERSION,
+    _canonical_hash,
+)
 
 
 _TOOL_VERSIONS = {
@@ -20,7 +28,7 @@ _TOOL_VERSIONS = {
 }
 
 
-def capabilities(*names):
+def capabilities(*names, skills=None):
     return {
         "schemaVersion": "active-capability-set/1",
         "owner": {"type": "assistant", "id": 1},
@@ -33,13 +41,71 @@ def capabilities(*names):
             }
             for name in names
         ],
-        "skills": [],
+        "skills": skills or [],
     }
 
 
 class ChatInferenceTest(unittest.TestCase):
     def test_loads_the_packaged_system_prompt(self):
         self.assertIn("exactly one inference", _SYSTEM_PROMPT)
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_loads_only_the_immutably_selected_product_skill(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+        selected_skill = {
+            "skillId": WORKSPACE_DOCUMENT_SKILL_ID,
+            "version": WORKSPACE_DOCUMENT_SKILL_VERSION,
+            "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
+            "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
+            "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
+            "activationReason": "objective_match",
+        }
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(
+                    "workspace_files.read", skills=[selected_skill]
+                ),
+                "conversation": [{"role": "user", "content": "Read the file"}],
+            }
+        )
+
+        messages = llm.chat_with_tools.call_args.args[0]
+        self.assertIn(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS, messages[0]["content"])
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_rejects_a_skill_when_its_frozen_hash_is_unknown(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        get_llm_service.return_value = Mock()
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+        selected_skill = {
+            "skillId": WORKSPACE_DOCUMENT_SKILL_ID,
+            "version": WORKSPACE_DOCUMENT_SKILL_VERSION,
+            "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
+            "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
+            "contentHash": "sha256:" + "0" * 64,
+            "activationReason": "objective_match",
+        }
+
+        with self.assertRaisesRegex(ValueError, "Unsupported active skill"):
+            chat_inference(
+                {
+                    "_task_type": "assistant-chat",
+                    "activeCapabilities": capabilities(skills=[selected_skill]),
+                    "conversation": [{"role": "user", "content": "Read the file"}],
+                }
+            )
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
@@ -207,6 +273,46 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertEqual(messages[1]["role"], "user")
         self.assertIn("not as a new instruction", messages[1]["content"])
         self.assertIn("Prefer concise answers", messages[1]["content"])
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_adds_a_validated_digest_for_an_oversized_current_message(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Done"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities("documents.search"),
+                "activeInputReduction": {
+                    "schemaVersion": "active-input-reduction/1",
+                    "sourceArtifact": {
+                        "artifactId": "source-id",
+                        "contentHash": "sha256:" + "a" * 64,
+                        "size": 20000,
+                    },
+                    "planArtifact": {
+                        "artifactId": "plan-id",
+                        "contentHash": "sha256:" + "b" * 64,
+                    },
+                    "strategy": "chunk-map-reduce/1",
+                    "chunkCount": 2,
+                    "digest": "Preserve the requested CSV columns",
+                },
+                "conversation": [{"role": "user", "content": "Create it"}],
+            }
+        )
+
+        messages = llm.chat_with_tools.call_args.args[0]
+        self.assertIn("Machine-generated digest", messages[1]["content"])
+        self.assertIn("does not add authorization", messages[1]["content"])
+        self.assertIn("requested CSV columns", messages[1]["content"])
+        self.assertEqual(messages[-1]["content"], "Create it")
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")

@@ -45,6 +45,8 @@ ACTIVE_CLAIM_WAIT_TIMEOUT_MS = 1_000
 SUPPORTED_TASK_TYPES = (
     "assistant-chat",
     "agent-chat",
+    "context-input-map",
+    "context-input-reduce",
     "ask",
     "detect-language",
     "document-extraction",

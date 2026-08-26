@@ -34,7 +34,7 @@
         "stable": { "type": "object", "additionalProperties": true },
         "contextual": {
           "type": "object",
-          "required": ["conversation", "continuityCapsule", "activeMemory", "activeCapabilities"],
+          "required": ["conversation", "continuityCapsule", "activeMemory", "activeCapabilities", "activeInputReduction"],
           "properties": {
             "conversation": {
               "type": "array",
@@ -56,6 +56,12 @@
             "activeCapabilities": {
               "oneOf": [
                 { "$ref": "active-capability-set.schema.json" },
+                { "type": "null" }
+              ]
+            },
+            "activeInputReduction": {
+              "oneOf": [
+                { "$ref": "active-input-reduction.schema.json" },
                 { "type": "null" }
               ]
             }

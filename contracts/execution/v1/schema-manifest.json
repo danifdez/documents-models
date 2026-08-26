@@ -1,15 +1,19 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:17d37d62d871fdcf3f8aa343fbb554b2acf8703132651c58a4e6af88ae537ed6",
+  "contractSetHash": "sha256:21d3c7dc47b5dc3b3fabaf62d8420bf7ab043250a9afdff8f88597c31101868c",
   "schemas": [
     {
       "path": "schemas/active-capability-set.schema.json",
-      "sha256": "sha256:6c24669bede8dc0d709b4bcb246d73e61efa890036eefb18752e195123e27c02"
+      "sha256": "sha256:c114266d6651ce339a0fbf46bfec82332ed688434c6a01ae575ed0be998dff86"
     },
     {
       "path": "schemas/active-context.schema.json",
-      "sha256": "sha256:8f5ae2ca2371d19b79471cc89fd14788fbba339aad258a0dca08f1f2c5951805"
+      "sha256": "sha256:939e845a30a5e274fdee83b7432ffa7da0e361f39437441cce690d1e4277f772"
+    },
+    {
+      "path": "schemas/active-input-reduction.schema.json",
+      "sha256": "sha256:e5bb7adc30dfa276d7b202d59745192a64ffbabb2b1d9fedc3eed87ee208dab2"
     },
     {
       "path": "schemas/active-memory.schema.json",
@@ -26,6 +30,10 @@
     {
       "path": "schemas/confirmation.schema.json",
       "sha256": "sha256:b6c02dd0f5166926ea8d64de83b8ca8e741b3cb72d6aaabfff608c7712b0ec83"
+    },
+    {
+      "path": "schemas/context-chunk-plan.schema.json",
+      "sha256": "sha256:9de46dba9854617a96c6104a24018934d9e980ec6069d45c59e5f40cf5a4b11f"
     },
     {
       "path": "schemas/error-envelope.schema.json",
