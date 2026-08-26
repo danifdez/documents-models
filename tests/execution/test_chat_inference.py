@@ -33,6 +33,7 @@ _TOOL_VERSIONS = {
         "user_tasks.create",
         "agents.delegate",
         "browser.navigate",
+        "browser.go_back",
         "browser.read_current_page",
         "workspace_files.list",
         "workspace_files.search",
@@ -526,7 +527,9 @@ class ChatInferenceTest(unittest.TestCase):
             {
                 "_task_type": "assistant-chat",
                 "activeCapabilities": capabilities(
-                    "browser.read_current_page", "browser.navigate"
+                    "browser.read_current_page",
+                    "browser.navigate",
+                    "browser.go_back",
                 ),
                 "conversation": [
                     {
@@ -544,6 +547,10 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertIn("browser.navigate", tools)
         self.assertEqual(
             tools["browser.navigate"]["parameters"]["required"], ["url"]
+        )
+        self.assertEqual(
+            tools["browser.go_back"]["parameters"]["required"],
+            ["expectedCurrentUrl"],
         )
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
