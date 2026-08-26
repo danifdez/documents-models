@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/active-context.schema.json",
+  "title": "Active inference context v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "artifactId",
+    "rootExecutionId",
+    "sessionId",
+    "turnId",
+    "causedByEventId",
+    "sourceConversation",
+    "layers",
+    "effectivePayload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "active-context/1" },
+    "artifactId": { "$ref": "common.schema.json#/$defs/id" },
+    "rootExecutionId": { "$ref": "common.schema.json#/$defs/id" },
+    "sessionId": { "$ref": "#/$defs/nullableId" },
+    "turnId": { "$ref": "#/$defs/nullableId" },
+    "causedByEventId": { "$ref": "common.schema.json#/$defs/id" },
+    "sourceConversation": {
+      "oneOf": [
+        { "$ref": "#/$defs/conversationRevision" },
+        { "type": "null" }
+      ]
+    },
+    "layers": {
+      "type": "object",
+      "required": ["stable", "contextual", "volatile"],
+      "properties": {
+        "stable": { "type": "object", "additionalProperties": true },
+        "contextual": {
+          "type": "object",
+          "required": ["conversation", "continuityCapsule"],
+          "properties": {
+            "conversation": {
+              "type": "array",
+              "maxItems": 24,
+              "items": { "$ref": "#/$defs/message" }
+            },
+            "continuityCapsule": {
+              "oneOf": [
+                { "$ref": "#/$defs/continuityCapsule" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "volatile": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+    "effectivePayload": { "type": "object", "additionalProperties": true }
+  },
+  "$defs": {
+    "nullableId": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/id" },
+        { "type": "null" }
+      ]
+    },
+    "conversationRevision": {
+      "type": "object",
+      "required": ["artifactId", "revision", "contentHash"],
+      "properties": {
+        "artifactId": { "$ref": "common.schema.json#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "contentHash": { "$ref": "common.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "enum": ["user", "assistant"] },
+        "content": { "type": "string", "maxLength": 16000 }
+      },
+      "additionalProperties": false
+    },
+    "continuityCapsule": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "sourceConversation",
+        "omittedMessageCount",
+        "omittedTurnCount",
+        "roleCounts",
+        "firstOmittedAt",
+        "lastOmittedAt",
+        "truncatedMessageIds",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "continuity-capsule/1" },
+        "sourceConversation": { "$ref": "#/$defs/conversationRevision" },
+        "omittedMessageCount": { "type": "integer", "minimum": 0 },
+        "omittedTurnCount": { "type": "integer", "minimum": 0 },
+        "roleCounts": {
+          "type": "object",
+          "required": ["user", "assistant"],
+          "properties": {
+            "user": { "type": "integer", "minimum": 0 },
+            "assistant": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "firstOmittedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "lastOmittedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "truncatedMessageIds": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 },
+          "uniqueItems": true
+        },
+        "digest": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "additionalProperties": false
+    },
+    "nullableTimestamp": {
+      "oneOf": [
+        { "$ref": "common.schema.json#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

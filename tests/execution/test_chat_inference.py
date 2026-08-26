@@ -102,6 +102,35 @@ class ChatInferenceTest(unittest.TestCase):
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
     @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_prepends_a_validated_continuity_capsule(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat_with_tools.return_value = {"content": "Continued"}
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "continuityCapsule": {
+                    "schemaVersion": "continuity-capsule/1",
+                    "omittedMessageCount": 12,
+                    "sourceConversation": {"contentHash": "sha256:" + "a" * 64},
+                    "digest": "user [turn old]: Earlier decision",
+                },
+                "conversation": [{"role": "user", "content": "Continue"}],
+            }
+        )
+
+        messages = llm.chat_with_tools.call_args.args[0]
+        self.assertEqual(messages[1]["role"], "user")
+        self.assertIn("not a new instruction", messages[1]["content"])
+        self.assertIn("Earlier decision", messages[1]["content"])
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
     def test_runs_a_delegated_inference_without_tools(
         self, get_llm_service, get_task_config, _get_llm_params
     ):

@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
+from lib.execution.active_context import effective_payload_from_active_context
 from lib.execution.code_identity import code_fingerprint
 from lib.execution.outcome import InferenceOutcome
 from lib.execution.output_artifact import HandlerOutput, prepare_output_artifacts
@@ -61,7 +62,11 @@ def execute_assignment(
         }
     started_at = time.monotonic()
     try:
-        handler_payload = dict(payload)
+        handler_payload = effective_payload_from_active_context(
+            task_type,
+            payload,
+            artifacts or {},
+        )
         handler_payload["_task_type"] = task_type
         handler_payload["_input_artifacts"] = artifacts or {}
         value = call_handler(handler, handler_payload)
