@@ -50,6 +50,7 @@ SUPPORTED_TASK_TYPES = (
     "ask",
     "detect-language",
     "document-extraction",
+    "data-source-sync",
     "embedding",
     "dataset.extract-row",
     "dataset.propose-columns",
