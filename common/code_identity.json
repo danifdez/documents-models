@@ -3,6 +3,8 @@
   "versionScope": [
     "common/**",
     "config/**",
+    "config.py",
+    "database/**",
     "lib/**",
     "rag/**",
     "services/**",
