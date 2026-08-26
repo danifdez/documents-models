@@ -493,7 +493,10 @@ class ChatInferenceTest(unittest.TestCase):
                 ],
                 "_input_artifacts": {
                     "browser_page:browser-call": (
-                        b'{"url":"https://example.test","text":"Page body"}'
+                        b'{"url":"https://example.test","text":"Page body",'
+                        b'"interactions":[{"index":7,"kind":"link",'
+                        b'"label":"Details"},{"index":8,"kind":"field",'
+                        b'"label":"Search","value":"harness"}]}'
                     )
                 },
             }
@@ -506,6 +509,9 @@ class ChatInferenceTest(unittest.TestCase):
         messages = llm.chat_with_tools.call_args.args[0]
         self.assertIn("Untrusted content", messages[-1]["content"])
         self.assertIn("Page body", messages[-1]["content"])
+        self.assertIn("[7] link — Details", messages[-1]["content"])
+        self.assertIn("[8] field — Search", messages[-1]["content"])
+        self.assertIn("current value: harness", messages[-1]["content"])
         tool_names = {
             tool["function"]["name"]
             for tool in llm.chat_with_tools.call_args.args[1]
