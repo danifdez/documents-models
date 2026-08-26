@@ -18,7 +18,7 @@
     "selectionPolicy": { "const": "backend-availability/1" },
     "tools": {
       "type": "array",
-      "maxItems": 14,
+      "maxItems": 15,
       "items": { "$ref": "#/$defs/tool" }
     },
     "skills": {
@@ -44,6 +44,7 @@
             "browser.go_back",
             "browser.click",
             "browser.type_text",
+            "browser.select_option",
             "workspace_files.list",
             "workspace_files.search",
             "workspace_files.read",
@@ -62,6 +63,7 @@
             "browser.go_back/1",
             "browser.click/1",
             "browser.type_text/1",
+            "browser.select_option/1",
             "workspace_files.list/1",
             "workspace_files.search/1",
             "workspace_files.read/1",

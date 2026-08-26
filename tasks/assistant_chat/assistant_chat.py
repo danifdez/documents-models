@@ -230,6 +230,38 @@ _BROWSER_TYPE_TEXT_TOOL = {
         },
     },
 }
+_BROWSER_SELECT_OPTION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "browser.select_option",
+        "description": (
+            "Propose selecting an exact option from a visible select field in "
+            "the most recent paired IA Browser page read, without submitting."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": [
+                "expectedCurrentUrl",
+                "elementIndex",
+                "expectedLabel",
+                "expectedCurrentValue",
+                "expectedCurrentValueTruncated",
+                "optionValue",
+                "expectedOptionLabel",
+            ],
+            "properties": {
+                "expectedCurrentUrl": {"type": "string", "format": "uri"},
+                "elementIndex": {"type": "integer", "minimum": 1, "maximum": 60},
+                "expectedLabel": {"type": "string", "minLength": 1, "maxLength": 120},
+                "expectedCurrentValue": {"type": "string", "maxLength": 60},
+                "expectedCurrentValueTruncated": {"type": "boolean", "enum": [False]},
+                "optionValue": {"type": "string", "minLength": 1, "maxLength": 120},
+                "expectedOptionLabel": {"type": "string", "minLength": 1, "maxLength": 120},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 _WORKSPACE_FILE_READ_TOOL = {
     "type": "function",
     "function": {
@@ -342,6 +374,7 @@ _TOOL_DEFINITIONS = {
     "browser.go_back": ("browser.go_back/1", _BROWSER_GO_BACK_TOOL),
     "browser.click": ("browser.click/1", _BROWSER_CLICK_TOOL),
     "browser.type_text": ("browser.type_text/1", _BROWSER_TYPE_TEXT_TOOL),
+    "browser.select_option": ("browser.select_option/1", _BROWSER_SELECT_OPTION_TOOL),
     "workspace_files.list": (
         "workspace_files.list/1",
         _WORKSPACE_FILE_LIST_TOOL,
@@ -599,6 +632,7 @@ def _tool_result_content(
             label = interaction.get("label")
             value = interaction.get("value")
             value_truncated = interaction.get("valueTruncated")
+            control_type = interaction.get("controlType")
             if (
                 not isinstance(index, int)
                 or index < 1
@@ -609,12 +643,34 @@ def _tool_result_content(
                 continue
             line = f"[{index}] {kind} — {label[:120]}"
             if kind == "field":
-                if not isinstance(value, str) or not isinstance(value_truncated, bool):
+                if (
+                    not isinstance(value, str)
+                    or not isinstance(value_truncated, bool)
+                    or control_type not in {"input", "textarea", "select"}
+                ):
                     continue
                 if value_truncated:
                     line += " (current value exceeds the safe edit limit)"
                 else:
-                    line += f" (current value: {value[:60] or 'empty'})"
+                    line += f" ({control_type}; current value: {value[:60] or 'empty'})"
+                if control_type == "select":
+                    options = interaction.get("options")
+                    options_truncated = interaction.get("optionsTruncated")
+                    if not isinstance(options, list) or not isinstance(options_truncated, bool):
+                        continue
+                    rendered = []
+                    for option in options[:30]:
+                        if not isinstance(option, dict):
+                            continue
+                        option_value = option.get("value")
+                        option_label = option.get("label")
+                        if isinstance(option_value, str) and option_value and isinstance(option_label, str) and option_label:
+                            rendered.append(f"{option_label[:120]} = {option_value[:120]}")
+                    if not rendered:
+                        continue
+                    line += "; options: " + " | ".join(rendered)
+                    if options_truncated:
+                        line += " | (more options not shown)"
             controls.append(line)
         if controls:
             message += (

@@ -36,6 +36,7 @@ _TOOL_VERSIONS = {
         "browser.go_back",
         "browser.click",
         "browser.type_text",
+        "browser.select_option",
         "browser.read_current_page",
         "workspace_files.list",
         "workspace_files.search",
@@ -499,11 +500,18 @@ class ChatInferenceTest(unittest.TestCase):
                         b'"interactions":[{"index":7,"kind":"link",'
                         b'"label":"Details"},{"index":8,"kind":"field",'
                         b'"label":"Search","value":"harness",'
-                        b'"valueTruncated":false},'
+                        b'"valueTruncated":false,"controlType":"input"},'
                         b'{"index":9,"kind":"field","label":"Filter",'
-                        b'"value":"","valueTruncated":false},'
+                        b'"value":"","valueTruncated":false,'
+                        b'"controlType":"textarea"},'
                         b'{"index":10,"kind":"field","label":"Long note",'
-                        b'"value":"preview","valueTruncated":true}]}'
+                        b'"value":"preview","valueTruncated":true,'
+                        b'"controlType":"input"},'
+                        b'{"index":11,"kind":"field","label":"Country",'
+                        b'"value":"es","valueTruncated":false,'
+                        b'"controlType":"select","optionsTruncated":false,'
+                        b'"options":[{"value":"es","label":"Spain"},'
+                        b'{"value":"pt","label":"Portugal"}]}]}'
                     )
                 },
             }
@@ -518,12 +526,13 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertIn("Page body", messages[-1]["content"])
         self.assertIn("[7] link — Details", messages[-1]["content"])
         self.assertIn("[8] field — Search", messages[-1]["content"])
-        self.assertIn("current value: harness", messages[-1]["content"])
-        self.assertIn("[9] field — Filter (current value: empty)", messages[-1]["content"])
+        self.assertIn("input; current value: harness", messages[-1]["content"])
+        self.assertIn("textarea; current value: empty", messages[-1]["content"])
         self.assertIn(
             "[10] field — Long note (current value exceeds the safe edit limit)",
             messages[-1]["content"],
         )
+        self.assertIn("Spain = es | Portugal = pt", messages[-1]["content"])
         tool_names = {
             tool["function"]["name"]
             for tool in llm.chat_with_tools.call_args.args[1]
@@ -550,6 +559,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "browser.go_back",
                     "browser.click",
                     "browser.type_text",
+                    "browser.select_option",
                 ),
                 "conversation": [
                     {
@@ -596,6 +606,18 @@ class ChatInferenceTest(unittest.TestCase):
                 "expectedCurrentValue",
                 "expectedCurrentValueTruncated",
                 "text",
+            ],
+        )
+        self.assertEqual(
+            tools["browser.select_option"]["parameters"]["required"],
+            [
+                "expectedCurrentUrl",
+                "elementIndex",
+                "expectedLabel",
+                "expectedCurrentValue",
+                "expectedCurrentValueTruncated",
+                "optionValue",
+                "expectedOptionLabel",
             ],
         )
 
