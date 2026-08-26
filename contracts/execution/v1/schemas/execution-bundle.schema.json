@@ -116,8 +116,7 @@
           "type": "object",
           "required": ["ownerPrincipal"],
           "properties": {
-            "ownerPrincipal": { "type": "string", "minLength": 1 },
-            "workspaceId": { "type": "string", "minLength": 1 }
+            "ownerPrincipal": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": false
         }

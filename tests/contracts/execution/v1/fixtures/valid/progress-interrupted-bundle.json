@@ -301,7 +301,7 @@
       "payload": {
         "operationKind": "tool_call",
         "status": "dispatched",
-        "name": "search_workspace",
+        "name": "documents.search",
         "inputSummary": {
           "query": "next milestone"
         },
@@ -323,7 +323,7 @@
         ],
         "redactionApplied": false
       },
-      "contentHash": "sha256:cd6a5a912c648c3e8dbfd15da80365230d4e6eff810ecc2638cb2c08901c98cc"
+      "contentHash": "sha256:4d4cd7de91e4b6697fe1cc71b3173baf6febe3cdf14c0c3acfdac30de60f355e"
     },
     {
       "schemaVersion": "execution-event/1",
@@ -905,7 +905,7 @@
       "fixture-prompt"
     ],
     "toolVersions": [
-      "search_workspace:fixture"
+      "documents.search/1"
     ],
     "modelFingerprints": [
       "fixture-model"
@@ -925,8 +925,8 @@
     ]
   },
   "integrity": {
-    "eventsHash": "sha256:60e4475278eb5da7cadbc7eee0e5cbab5cda3f9144130e7617c6dd53e5ce0cdd",
-    "schemaManifestHash": "sha256:76f4d8995847602216b1e687c554d9d336ba791dd864cc96c310d5bd9abafd46"
+    "eventsHash": "sha256:62df823b118ed142edb656da13e4f7eb253c1236f9399b67e020fe1928583586",
+    "schemaManifestHash": "sha256:deb8c0b8295eb92372849604f898d9eff36ee6d6a48ad658c710778c346a10b5"
   },
   "policySummary": {
     "decision": "allow",
@@ -940,12 +940,11 @@
     ],
     "retentionClass": "evaluation",
     "accessScope": {
-      "ownerPrincipal": "fixture-user",
-      "workspaceId": "fixture-workspace"
+      "ownerPrincipal": "fixture-user"
     }
   },
   "exportedAt": "2026-08-19T10:00:07Z",
-  "manifestHash": "sha256:b212a22bb28f4190b009447299a42893ee60da6d23bd14275a572e725c5cf47d",
+  "manifestHash": "sha256:c6a33f77d37d75830927e7e6edd1249eed5b8e1cffb9f78cec5e4085e17a5048",
   "rootExecutionId": "exec_documents_fixture",
   "executionSchema": "execution-event/1"
 }

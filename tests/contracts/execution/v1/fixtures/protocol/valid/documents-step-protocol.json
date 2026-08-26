@@ -169,7 +169,7 @@
         "normalizedArguments": { "query": "canonical harness", "limit": 10 },
         "resources": [
           {
-            "resourceKey": "workspace:default:documents",
+            "resourceKey": "documents:collection",
             "mode": "shared",
             "kind": "document_collection"
           }
@@ -177,7 +177,7 @@
         "effects": [],
         "policyDecision": {
           "decision": "allowed",
-          "rule": "workspace_read"
+          "rule": "local_documents_read"
         },
         "confirmationRequirement": null,
         "recoveryClass": "read_only_replayable",
