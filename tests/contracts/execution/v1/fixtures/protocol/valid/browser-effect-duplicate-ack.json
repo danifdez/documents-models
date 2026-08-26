@@ -1,0 +1,243 @@
+{
+  "fixtureVersion": "step-protocol-fixture/1",
+  "scenario": "browser-effect-result-replayed-after-lost-ack",
+  "records": [
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/execution.schema.json",
+      "instance": {
+        "schemaVersion": "execution/1",
+        "rootExecutionId": "execution-browser-ack-001",
+        "executionId": "execution-browser-ack-001",
+        "requester": { "type": "user", "id": "user-001" },
+        "coordinator": { "type": "service", "id": "documents-backend" },
+        "payload": { "content": "Navigate to the confirmed destination" },
+        "inputArtifactRefs": [],
+        "taskType": "assistant-chat",
+        "status": "running",
+        "phase": "browser_federated_result",
+        "version": 4,
+        "priority": 0,
+        "availableAt": "2026-08-26T12:00:00Z",
+        "createdAt": "2026-08-26T12:00:00Z",
+        "updatedAt": "2026-08-26T12:00:04Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step.schema.json",
+      "instance": {
+        "schemaVersion": "step/1",
+        "stepId": "step-browser-ack-001",
+        "executionId": "execution-browser-ack-001",
+        "stepKind": "tool",
+        "status": "result_received",
+        "version": 3,
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [],
+        "work": {
+          "taskType": "browser.navigate",
+          "toolPlan": {
+            "operationId": "operation-browser-ack-001",
+            "toolCallId": "tool-call-browser-ack-001",
+            "normalizedArguments": {
+              "url": "https://example.test/next",
+              "expectedCurrentUrl": "https://example.test/current"
+            }
+          }
+        },
+        "requiredCapabilities": ["tool.browser.navigate/1"],
+        "resourceKeys": ["browser:active-page"],
+        "priority": 0,
+        "availableAt": "2026-08-26T12:00:00Z",
+        "deadline": "2026-08-26T12:05:00Z",
+        "operationId": "operation-browser-ack-001",
+        "currentAttemptId": "attempt-browser-ack-001"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-attempt.schema.json",
+      "instance": {
+        "schemaVersion": "step-attempt/1",
+        "attemptId": "attempt-browser-ack-001",
+        "executionId": "execution-browser-ack-001",
+        "stepId": "step-browser-ack-001",
+        "operationId": "operation-browser-ack-001",
+        "claimedBy": "ia-browser-installation-001",
+        "status": "result_received",
+        "leaseGrantedAt": "2026-08-26T12:00:01Z",
+        "leaseExpiresAt": "2026-08-26T12:01:01Z",
+        "startedAt": "2026-08-26T12:00:02Z",
+        "resultReceiptId": "receipt-browser-ack-001"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-assignment.schema.json",
+      "instance": {
+        "schemaVersion": "step-assignment/1",
+        "executionId": "execution-browser-ack-001",
+        "stepId": "step-browser-ack-001",
+        "operationId": "operation-browser-ack-001",
+        "attemptId": "attempt-browser-ack-001",
+        "stepKind": "tool",
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [],
+        "work": {
+          "taskType": "browser.navigate",
+          "toolPlan": {
+            "operationId": "operation-browser-ack-001",
+            "toolCallId": "tool-call-browser-ack-001",
+            "normalizedArguments": {
+              "url": "https://example.test/next",
+              "expectedCurrentUrl": "https://example.test/current"
+            }
+          }
+        },
+        "limits": { "maxDurationMs": 60000 },
+        "deadline": "2026-08-26T12:05:00Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result.schema.json",
+      "instance": {
+        "schemaVersion": "step-result/1",
+        "executionId": "execution-browser-ack-001",
+        "stepId": "step-browser-ack-001",
+        "operationId": "operation-browser-ack-001",
+        "attemptId": "attempt-browser-ack-001",
+        "stepKind": "tool",
+        "status": "succeeded",
+        "runtimeFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "output": {
+          "kind": "tool",
+          "toolResult": {
+            "schemaVersion": "tool-result/1",
+            "operationId": "operation-browser-ack-001",
+            "toolCallId": "tool-call-browser-ack-001",
+            "status": "succeeded",
+            "content": "Navigation applied and verified.",
+            "structuredContent": {
+              "url": "https://example.test/next",
+              "title": "Example destination"
+            },
+            "artifactRefs": [],
+            "sourceRefs": [],
+            "effects": [
+              {
+                "effectClass": "external_reversible",
+                "resourceKey": "browser:active-page",
+                "status": "applied"
+              }
+            ],
+            "error": null
+          }
+        },
+        "artifactRefs": [],
+        "error": null
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result-ack.schema.json",
+      "instance": {
+        "schemaVersion": "step-result-ack/1",
+        "executionId": "execution-browser-ack-001",
+        "stepId": "step-browser-ack-001",
+        "operationId": "operation-browser-ack-001",
+        "attemptId": "attempt-browser-ack-001",
+        "code": "duplicate",
+        "receiptId": "receipt-browser-ack-001",
+        "acknowledgedAt": "2026-08-26T12:00:05Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-invocation.schema.json",
+      "instance": {
+        "schemaVersion": "tool-invocation/1",
+        "toolCallId": "tool-call-browser-ack-001",
+        "name": "browser.navigate",
+        "arguments": {
+          "url": "https://example.test/next",
+          "expectedCurrentUrl": "https://example.test/current"
+        },
+        "requester": {
+          "kind": "deterministic",
+          "component": "documents-agent-loop"
+        },
+        "executionContext": {
+          "executionId": "execution-browser-ack-001",
+          "causedByEventId": "event-browser-request-001",
+          "phase": "tool",
+          "dataClassification": "workspace"
+        }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-plan.schema.json",
+      "instance": {
+        "schemaVersion": "tool-plan/1",
+        "operationId": "operation-browser-ack-001",
+        "toolCallId": "tool-call-browser-ack-001",
+        "toolName": "browser.navigate",
+        "descriptorVersion": "browser.navigate/1",
+        "normalizedArguments": {
+          "url": "https://example.test/next",
+          "expectedCurrentUrl": "https://example.test/current"
+        },
+        "resources": [
+          {
+            "resourceKey": "browser:active-page",
+            "mode": "exclusive",
+            "kind": "browser_page"
+          }
+        ],
+        "effects": [
+          {
+            "effectClass": "external_reversible",
+            "resourceKey": "browser:active-page",
+            "description": "Navigate IA Browser to: https://example.test/next",
+            "reversible": true,
+            "verificationRequired": true
+          }
+        ],
+        "policyDecision": {
+          "decision": "confirmation_required",
+          "rule": "paired_browser_navigation_requires_confirmation"
+        },
+        "confirmationRequirement": {
+          "confirmationId": "confirmation-browser-ack-001",
+          "reason": "Navigation changes the active page in the paired IA Browser.",
+          "prompt": "Navigate IA Browser to \"https://example.test/next\"?",
+          "scope": "once",
+          "expiresAt": "2026-08-26T12:04:00Z"
+        },
+        "recoveryClass": "effect_checked",
+        "idempotencyKey": "browser-navigate:tool-call-browser-ack-001",
+        "requiredCapabilities": ["tool.browser.navigate/1"],
+        "deadline": "2026-08-26T12:05:00Z",
+        "preparedAt": "2026-08-26T12:00:00Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-result.schema.json",
+      "instance": {
+        "schemaVersion": "tool-result/1",
+        "operationId": "operation-browser-ack-001",
+        "toolCallId": "tool-call-browser-ack-001",
+        "status": "succeeded",
+        "content": "Navigation applied and verified.",
+        "structuredContent": {
+          "url": "https://example.test/next",
+          "title": "Example destination"
+        },
+        "artifactRefs": [],
+        "sourceRefs": [],
+        "effects": [
+          {
+            "effectClass": "external_reversible",
+            "resourceKey": "browser:active-page",
+            "status": "applied"
+          }
+        ],
+        "error": null
+      }
+    }
+  ]
+}
