@@ -149,13 +149,25 @@ def validate_protocol_fixture(fixture, schemas):
     if not all((execution, step, attempt, assignment, result, ack)):
         return "invalid_contract"
 
+    terminal_attempt = attempt["status"] in {
+        "expired",
+        "cancelled",
+        "failed",
+        "closed",
+    }
+    attempt_is_current = step.get("currentAttemptId") == attempt["attemptId"]
+    attempt_is_fenced = (
+        terminal_attempt
+        and "currentAttemptId" not in step
+        and step["status"] not in {"running", "result_received"}
+    )
     if (
         (
             not execution.get("parentExecutionId")
             and execution["rootExecutionId"] != execution["executionId"]
         )
         or step["executionId"] != execution["executionId"]
-        or step.get("currentAttemptId") != attempt["attemptId"]
+        or not (attempt_is_current or attempt_is_fenced)
     ):
         return "invalid_protocol_identity"
 

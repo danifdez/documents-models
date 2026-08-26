@@ -1,0 +1,253 @@
+{
+  "fixtureVersion": "step-protocol-fixture/1",
+  "scenario": "browser-effect-lease-expires-before-application",
+  "records": [
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/execution.schema.json",
+      "instance": {
+        "schemaVersion": "execution/1",
+        "rootExecutionId": "execution-browser-lease-001",
+        "executionId": "execution-browser-lease-001",
+        "requester": { "type": "user", "id": "user-001" },
+        "coordinator": { "type": "service", "id": "documents-backend" },
+        "payload": { "content": "Navigate to the confirmed destination" },
+        "inputArtifactRefs": [],
+        "taskType": "assistant-chat",
+        "status": "running",
+        "phase": "terminal_pending_failed",
+        "version": 5,
+        "priority": 0,
+        "availableAt": "2026-08-26T12:10:00Z",
+        "createdAt": "2026-08-26T12:10:00Z",
+        "updatedAt": "2026-08-26T12:11:01Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step.schema.json",
+      "instance": {
+        "schemaVersion": "step/1",
+        "stepId": "step-browser-lease-001",
+        "executionId": "execution-browser-lease-001",
+        "stepKind": "tool",
+        "status": "failed",
+        "version": 4,
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [],
+        "work": {
+          "taskType": "browser.navigate",
+          "toolPlan": {
+            "operationId": "operation-browser-lease-001",
+            "toolCallId": "tool-call-browser-lease-001",
+            "normalizedArguments": {
+              "url": "https://example.test/next",
+              "expectedCurrentUrl": "https://example.test/current"
+            }
+          }
+        },
+        "requiredCapabilities": ["tool.browser.navigate/1"],
+        "resourceKeys": ["browser:active-page"],
+        "priority": 0,
+        "availableAt": "2026-08-26T12:10:00Z",
+        "deadline": "2026-08-26T12:15:00Z",
+        "operationId": "operation-browser-lease-001",
+        "error": {
+          "code": "effect_unknown",
+          "message": "The dispatched operation could not be recovered safely",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-attempt.schema.json",
+      "instance": {
+        "schemaVersion": "step-attempt/1",
+        "attemptId": "attempt-browser-lease-001",
+        "executionId": "execution-browser-lease-001",
+        "stepId": "step-browser-lease-001",
+        "operationId": "operation-browser-lease-001",
+        "claimedBy": "ia-browser-installation-001",
+        "status": "expired",
+        "leaseGrantedAt": "2026-08-26T12:10:00Z",
+        "leaseExpiresAt": "2026-08-26T12:11:00Z",
+        "startedAt": "2026-08-26T12:10:01Z",
+        "finishedAt": "2026-08-26T12:11:00Z",
+        "finishReason": "lease_expired"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-assignment.schema.json",
+      "instance": {
+        "schemaVersion": "step-assignment/1",
+        "executionId": "execution-browser-lease-001",
+        "stepId": "step-browser-lease-001",
+        "operationId": "operation-browser-lease-001",
+        "attemptId": "attempt-browser-lease-001",
+        "stepKind": "tool",
+        "dependsOnStepIds": [],
+        "inputArtifactRefs": [],
+        "work": {
+          "taskType": "browser.navigate",
+          "toolPlan": {
+            "operationId": "operation-browser-lease-001",
+            "toolCallId": "tool-call-browser-lease-001",
+            "normalizedArguments": {
+              "url": "https://example.test/next",
+              "expectedCurrentUrl": "https://example.test/current"
+            }
+          }
+        },
+        "limits": { "maxDurationMs": 60000 },
+        "deadline": "2026-08-26T12:15:00Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result.schema.json",
+      "instance": {
+        "schemaVersion": "step-result/1",
+        "executionId": "execution-browser-lease-001",
+        "stepId": "step-browser-lease-001",
+        "operationId": "operation-browser-lease-001",
+        "attemptId": "attempt-browser-lease-001",
+        "stepKind": "tool",
+        "status": "failed",
+        "runtimeFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "output": {
+          "kind": "tool",
+          "toolResult": {
+            "schemaVersion": "tool-result/1",
+            "operationId": "operation-browser-lease-001",
+            "toolCallId": "tool-call-browser-lease-001",
+            "status": "failed",
+            "content": "",
+            "structuredContent": null,
+            "artifactRefs": [],
+            "sourceRefs": [],
+            "effects": [
+              {
+                "effectClass": "external_reversible",
+                "resourceKey": "browser:active-page",
+                "status": "not_applied"
+              }
+            ],
+            "error": {
+              "code": "federated_lease_unavailable",
+              "message": "The assignment lease could not be renewed before the effect",
+              "retryable": false
+            }
+          }
+        },
+        "artifactRefs": [],
+        "error": {
+          "code": "federated_lease_unavailable",
+          "message": "The assignment lease could not be renewed before the effect",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/step-result-ack.schema.json",
+      "instance": {
+        "schemaVersion": "step-result-ack/1",
+        "executionId": "execution-browser-lease-001",
+        "stepId": "step-browser-lease-001",
+        "operationId": "operation-browser-lease-001",
+        "attemptId": "attempt-browser-lease-001",
+        "code": "stale_attempt",
+        "acknowledgedAt": "2026-08-26T12:11:01Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-invocation.schema.json",
+      "instance": {
+        "schemaVersion": "tool-invocation/1",
+        "toolCallId": "tool-call-browser-lease-001",
+        "name": "browser.navigate",
+        "arguments": {
+          "url": "https://example.test/next",
+          "expectedCurrentUrl": "https://example.test/current"
+        },
+        "requester": {
+          "kind": "deterministic",
+          "component": "documents-agent-loop"
+        },
+        "executionContext": {
+          "executionId": "execution-browser-lease-001",
+          "causedByEventId": "event-browser-request-lease-001",
+          "phase": "tool",
+          "dataClassification": "workspace"
+        }
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-plan.schema.json",
+      "instance": {
+        "schemaVersion": "tool-plan/1",
+        "operationId": "operation-browser-lease-001",
+        "toolCallId": "tool-call-browser-lease-001",
+        "toolName": "browser.navigate",
+        "descriptorVersion": "browser.navigate/1",
+        "normalizedArguments": {
+          "url": "https://example.test/next",
+          "expectedCurrentUrl": "https://example.test/current"
+        },
+        "resources": [
+          {
+            "resourceKey": "browser:active-page",
+            "mode": "exclusive",
+            "kind": "browser_page"
+          }
+        ],
+        "effects": [
+          {
+            "effectClass": "external_reversible",
+            "resourceKey": "browser:active-page",
+            "description": "Navigate IA Browser to: https://example.test/next",
+            "reversible": true,
+            "verificationRequired": true
+          }
+        ],
+        "policyDecision": {
+          "decision": "confirmation_required",
+          "rule": "paired_browser_navigation_requires_confirmation"
+        },
+        "confirmationRequirement": {
+          "confirmationId": "confirmation-browser-lease-001",
+          "reason": "Navigation changes the active page in the paired IA Browser.",
+          "prompt": "Navigate IA Browser to \"https://example.test/next\"?",
+          "scope": "once",
+          "expiresAt": "2026-08-26T12:14:00Z"
+        },
+        "recoveryClass": "effect_checked",
+        "idempotencyKey": "browser-navigate:tool-call-browser-lease-001",
+        "requiredCapabilities": ["tool.browser.navigate/1"],
+        "deadline": "2026-08-26T12:15:00Z",
+        "preparedAt": "2026-08-26T12:10:00Z"
+      }
+    },
+    {
+      "schemaId": "https://documents.local/harness/v1/schemas/tool-result.schema.json",
+      "instance": {
+        "schemaVersion": "tool-result/1",
+        "operationId": "operation-browser-lease-001",
+        "toolCallId": "tool-call-browser-lease-001",
+        "status": "failed",
+        "content": "",
+        "structuredContent": null,
+        "artifactRefs": [],
+        "sourceRefs": [],
+        "effects": [
+          {
+            "effectClass": "external_reversible",
+            "resourceKey": "browser:active-page",
+            "status": "not_applied"
+          }
+        ],
+        "error": {
+          "code": "federated_lease_unavailable",
+          "message": "The assignment lease could not be renewed before the effect",
+          "retryable": false
+        }
+      }
+    }
+  ]
+}
