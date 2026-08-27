@@ -23,6 +23,18 @@ FIRST_ATTEMPT_ID = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"
 SECOND_ATTEMPT_ID = "018f1d8a-54d7-7d63-a1ee-5e9a6adca705"
 
 
+def _artifact_policy(**overrides):
+    return {
+        "classification": "workspace",
+        "allowedPurposes": ["execution"],
+        "allowedDestinations": ["documents-models"],
+        "retentionClass": "operational",
+        "expiresAt": "2999-01-01T00:00:00Z",
+        "sourceRefs": [],
+        **overrides,
+    }
+
+
 def _blocking_process_executor(
     assignment,
     _artifacts,
@@ -82,8 +94,16 @@ class WorkerRuntimeTest(unittest.TestCase):
             "attemptId": FIRST_ATTEMPT_ID,
             "stepKind": "service",
             "inputArtifactRefs": [
-                {"role": "first", "artifactId": "artifact-1"},
-                {"role": "second", "artifactId": "artifact-2"},
+                {
+                    "role": "first",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(),
+                },
+                {
+                    "role": "second",
+                    "artifactId": "artifact-2",
+                    "dataPolicy": _artifact_policy(),
+                },
             ],
         }
 
@@ -111,7 +131,11 @@ class WorkerRuntimeTest(unittest.TestCase):
             "attemptId": FIRST_ATTEMPT_ID,
             "stepKind": "service",
             "inputArtifactRefs": [
-                {"role": "source", "artifactId": "artifact-1"}
+                {
+                    "role": "source",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(),
+                }
             ],
         }
 
@@ -133,7 +157,11 @@ class WorkerRuntimeTest(unittest.TestCase):
             "attemptId": FIRST_ATTEMPT_ID,
             "stepKind": "service",
             "inputArtifactRefs": [
-                {"role": "source", "artifactId": "artifact-1"}
+                {
+                    "role": "source",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(),
+                }
             ],
         }
 
@@ -141,6 +169,112 @@ class WorkerRuntimeTest(unittest.TestCase):
             run_assignment(client, outbox, assignment, threading.Event())
 
         outbox.store.assert_not_called()
+
+    def test_rejects_an_expired_artifact_before_downloading_or_running(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        handler = Mock()
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+            "inputArtifactRefs": [
+                {
+                    "role": "source",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(
+                        expiresAt="2000-01-01T00:00:00Z"
+                    ),
+                }
+            ],
+        }
+
+        run_assignment(
+            client,
+            outbox,
+            assignment,
+            threading.Event(),
+            handler_executor=handler,
+        )
+
+        client.download_artifact.assert_not_called()
+        handler.assert_not_called()
+        result = outbox.store.call_args.args[0]
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error"]["code"], "ARTIFACT_EXPIRED")
+
+    def test_rejects_an_unauthorized_destination_before_any_download(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        handler = Mock()
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+            "inputArtifactRefs": [
+                {
+                    "role": "source",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(
+                        allowedDestinations=["ia-browser"]
+                    ),
+                }
+            ],
+        }
+
+        run_assignment(
+            client,
+            outbox,
+            assignment,
+            threading.Event(),
+            handler_executor=handler,
+        )
+
+        client.download_artifact.assert_not_called()
+        handler.assert_not_called()
+        result = outbox.store.call_args.args[0]
+        self.assertEqual(result["error"]["code"], "ARTIFACT_DESTINATION_DENIED")
+
+    def test_rejects_secret_input_without_starting_inference(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        handler = Mock()
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "inference",
+            "inputArtifactRefs": [
+                {
+                    "role": "source",
+                    "artifactId": "artifact-1",
+                    "dataPolicy": _artifact_policy(classification="secret"),
+                }
+            ],
+        }
+
+        run_assignment(
+            client,
+            outbox,
+            assignment,
+            threading.Event(),
+            handler_executor=handler,
+        )
+
+        client.download_artifact.assert_not_called()
+        handler.assert_not_called()
+        result = outbox.store.call_args.args[0]
+        self.assertEqual(result["error"]["code"], "SECRET_INPUT_REJECTED")
+        self.assertEqual(result["inference"]["effectiveModel"], "not_executed")
+        self.assertEqual(result["usage"]["totalTokens"], None)
 
     def test_leaves_a_crashed_handler_attempt_to_lease_recovery(self):
         client = Mock()

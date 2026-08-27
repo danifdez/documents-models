@@ -30,7 +30,20 @@
     },
     "inputArtifactRefs": {
       "type": "array",
-      "items": { "$ref": "common.schema.json#/$defs/artifactRef" }
+      "items": {
+        "allOf": [
+          { "$ref": "common.schema.json#/$defs/artifactRef" },
+          {
+            "type": "object",
+            "required": ["dataPolicy"],
+            "properties": {
+              "dataPolicy": {
+                "$ref": "common.schema.json#/$defs/artifactDataPolicy"
+              }
+            }
+          }
+        ]
+      }
     },
     "work": {
       "type": "object",

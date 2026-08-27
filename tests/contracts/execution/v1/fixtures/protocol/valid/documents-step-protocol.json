@@ -32,7 +32,19 @@
         "version": 2,
         "dependsOnStepIds": [],
         "inputArtifactRefs": [
-          { "role": "input", "artifactId": "artifact-input-001", "revision": 1 }
+          {
+            "role": "input",
+            "artifactId": "artifact-input-001",
+            "revision": 1,
+            "dataPolicy": {
+              "classification": "workspace",
+              "allowedPurposes": ["execution"],
+              "allowedDestinations": ["documents-models"],
+              "retentionClass": "operational",
+              "expiresAt": "2026-08-24T10:00:00Z",
+              "sourceRefs": ["source-input-001"]
+            }
+          }
         ],
         "work": {
           "taskType": "harness-contract-check",
@@ -76,7 +88,19 @@
         "stepKind": "inference",
         "dependsOnStepIds": [],
         "inputArtifactRefs": [
-          { "role": "input", "artifactId": "artifact-input-001", "revision": 1 }
+          {
+            "role": "input",
+            "artifactId": "artifact-input-001",
+            "revision": 1,
+            "dataPolicy": {
+              "classification": "workspace",
+              "allowedPurposes": ["execution"],
+              "allowedDestinations": ["documents-models"],
+              "retentionClass": "operational",
+              "expiresAt": "2026-08-24T10:00:00Z",
+              "sourceRefs": ["source-input-001"]
+            }
+          }
         ],
         "work": {
           "taskType": "harness-contract-check",

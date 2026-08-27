@@ -429,8 +429,19 @@ def validate_bundle_invariants(
         if event["eventType"] == "execution.state_changed"
         and event["payload"].get("to") in {"completed", "failed", "cancelled"}
     ]
-    if len(terminal) != 1 or terminal[0] is not events[-1]:
-        raise ContractError("bundle must end in exactly one terminal execution state")
+    lifecycle_events = {
+        "source.withdrawn", "artifact.withdrawn", "artifact.expired",
+    }
+    if len(terminal) != 1:
+        raise ContractError("bundle must contain exactly one terminal execution state")
+    terminal_index = events.index(terminal[0])
+    if any(
+        event["eventType"] not in lifecycle_events
+        for event in events[terminal_index + 1:]
+    ):
+        raise ContractError(
+            "only evidence lifecycle events may follow the terminal execution state"
+        )
 
     event_execution_ids = {event["executionId"] for event in events}
     terminal_by_execution = {

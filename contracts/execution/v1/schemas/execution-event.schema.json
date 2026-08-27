@@ -22,7 +22,7 @@
     "sequence": { "type": "integer", "minimum": 1 },
     "producerSequence": { "type": "integer", "minimum": 1 },
     "eventType": {
-      "enum": ["execution.created", "execution.state_changed", "operation.started", "operation.finished", "message.recorded", "source.observed", "progress.reported", "confirmation.requested", "confirmation.decided"]
+      "enum": ["execution.created", "execution.state_changed", "operation.started", "operation.finished", "message.recorded", "source.observed", "source.withdrawn", "artifact.withdrawn", "artifact.expired", "progress.reported", "confirmation.requested", "confirmation.decided"]
     },
     "producer": { "$ref": "common.schema.json#/$defs/producer" },
     "actor": { "$ref": "common.schema.json#/$defs/actor" },
@@ -43,7 +43,8 @@
       "enum": [
         "execution.created/1", "execution.state_changed/1", "operation.started/1",
         "operation.finished/1", "message.recorded/1", "source.observed/1", "progress.reported/1",
-        "confirmation.requested/1", "confirmation.decided/1"
+        "confirmation.requested/1", "confirmation.decided/1",
+        "source.withdrawn/1", "artifact.withdrawn/1", "artifact.expired/1"
       ]
     },
     "payload": { "type": "object" },
@@ -85,6 +86,24 @@
     {
       "if": { "properties": { "payloadSchema": { "const": "source.observed/1" } }, "required": ["payloadSchema"] },
       "then": { "properties": { "eventType": { "const": "source.observed" }, "payload": { "$ref": "payload/source-observed.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "source.withdrawn/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["sourceId"],
+        "properties": { "eventType": { "const": "source.withdrawn" }, "sourceId": { "$ref": "common.schema.json#/$defs/id" }, "payload": { "$ref": "payload/source-withdrawn.schema.json" } }
+      }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "artifact.withdrawn/1" } }, "required": ["payloadSchema"] },
+      "then": {
+        "required": ["artifactId"],
+        "properties": { "eventType": { "const": "artifact.withdrawn" }, "artifactId": { "$ref": "common.schema.json#/$defs/id" }, "payload": { "$ref": "payload/artifact-withdrawn.schema.json" } }
+      }
+    },
+    {
+      "if": { "properties": { "payloadSchema": { "const": "artifact.expired/1" } }, "required": ["payloadSchema"] },
+      "then": { "properties": { "eventType": { "const": "artifact.expired" }, "payload": { "$ref": "payload/artifact-expired.schema.json" } } }
     },
     {
       "if": { "properties": { "payloadSchema": { "const": "progress.reported/1" } }, "required": ["payloadSchema"] },

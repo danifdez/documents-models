@@ -140,6 +140,43 @@
       },
       "additionalProperties": true
     },
+    "artifactDataPolicy": {
+      "type": "object",
+      "required": [
+        "classification", "allowedPurposes", "allowedDestinations",
+        "retentionClass", "expiresAt", "sourceRefs"
+      ],
+      "properties": {
+        "classification": { "$ref": "#/$defs/dataClassification" },
+        "allowedPurposes": {
+          "type": "array",
+          "items": { "const": "execution" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "allowedDestinations": {
+          "type": "array",
+          "items": { "enum": ["documents-models", "ia-browser"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "retentionClass": {
+          "enum": ["operational", "diagnostic", "evaluation"]
+        },
+        "expiresAt": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "sourceRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
     "serviceIdentity": {
       "type": "object",
       "required": ["type", "id"],

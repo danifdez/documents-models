@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from threading import Event
 from typing import Callable
 
@@ -36,6 +37,11 @@ def run_assignment(
 
     if cancellation.is_set():
         outbox.store(_cancelled_result(assignment))
+        return
+
+    policy_error = _assignment_policy_error(assignment)
+    if policy_error is not None:
+        outbox.store(_policy_rejected_result(assignment, policy_error))
         return
 
     artifacts = {}
@@ -123,3 +129,126 @@ def _cancelled_result(assignment: dict) -> dict:
         "artifactRefs": [],
         "error": None,
     }
+
+
+def _assignment_policy_error(assignment: dict) -> tuple[str, str] | None:
+    for ref in assignment.get("inputArtifactRefs", []):
+        policy = ref.get("dataPolicy") if isinstance(ref, dict) else None
+        if not isinstance(policy, dict):
+            return (
+                "ARTIFACT_POLICY_MISSING",
+                "Input artifact policy is required",
+            )
+        if "execution" not in policy.get("allowedPurposes", []):
+            return (
+                "ARTIFACT_PURPOSE_DENIED",
+                "Input artifact is not authorized for execution",
+            )
+        if "documents-models" not in policy.get("allowedDestinations", []):
+            return (
+                "ARTIFACT_DESTINATION_DENIED",
+                "Input artifact is not authorized for Models",
+            )
+        if policy.get("classification") == "secret":
+            return (
+                "SECRET_INPUT_REJECTED",
+                "Secret content cannot be provided to Models",
+            )
+        if policy.get("classification") not in {
+            "public",
+            "workspace",
+            "personal",
+            "sensitive",
+        }:
+            return (
+                "ARTIFACT_CLASSIFICATION_INVALID",
+                "Input artifact classification is invalid",
+            )
+        if policy.get("retentionClass") not in {
+            "operational",
+            "diagnostic",
+            "evaluation",
+        }:
+            return (
+                "ARTIFACT_RETENTION_INVALID",
+                "Input artifact retention policy is invalid",
+            )
+        if not isinstance(policy.get("sourceRefs"), list):
+            return (
+                "ARTIFACT_PROVENANCE_MISSING",
+                "Input artifact provenance is required",
+            )
+        expires_at = policy.get("expiresAt")
+        if expires_at is None:
+            continue
+        if not isinstance(expires_at, str):
+            return (
+                "ARTIFACT_EXPIRY_INVALID",
+                "Input artifact expiry is invalid",
+            )
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return (
+                "ARTIFACT_EXPIRY_INVALID",
+                "Input artifact expiry is invalid",
+            )
+        if expiry.tzinfo is None:
+            return (
+                "ARTIFACT_EXPIRY_INVALID",
+                "Input artifact expiry must include a timezone",
+            )
+        if expiry <= datetime.now(timezone.utc):
+            return (
+                "ARTIFACT_EXPIRED",
+                "Input artifact has expired",
+            )
+    return None
+
+
+def _policy_rejected_result(
+    assignment: dict,
+    policy_error: tuple[str, str],
+) -> dict:
+    code, message = policy_error
+    result = {
+        "schemaVersion": "step-result/1",
+        "executionId": assignment["executionId"],
+        "stepId": assignment["stepId"],
+        "operationId": assignment["operationId"],
+        "attemptId": assignment["attemptId"],
+        "stepKind": assignment["stepKind"],
+        "status": "failed",
+        "codeFingerprint": code_fingerprint(),
+        "runtimeFingerprint": runtime_fingerprint(),
+        "artifactRefs": [],
+        "error": {
+            "code": code,
+            "message": message,
+            "retryable": False,
+        },
+    }
+    if assignment["stepKind"] == "inference":
+        result.update(
+            {
+                "output": {
+                    "kind": "inference",
+                    "outcome": {"kind": "failed"},
+                },
+                "usage": {
+                    "promptTokens": None,
+                    "completionTokens": None,
+                    "totalTokens": None,
+                },
+                "inference": {
+                    "effectiveModel": "not_executed",
+                    "effectiveAdapter": None,
+                    "effectivePromptPackages": ["not_executed"],
+                    "finishReason": "policy_rejected",
+                    "inferenceMs": 0,
+                    "cacheOutcome": "bypass",
+                    "warnings": [code],
+                },
+            }
+        )
+    return result

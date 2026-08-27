@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/harness/v1/schemas/payload/source-withdrawn.schema.json",
+  "title": "source.withdrawn payload v1",
+  "type": "object",
+  "required": ["sourceId", "reason", "affectedArtifactIds"],
+  "properties": {
+    "sourceId": { "$ref": "../common.schema.json#/$defs/id" },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "affectedArtifactIds": {
+      "type": "array",
+      "items": { "$ref": "../common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

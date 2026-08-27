@@ -1,7 +1,7 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:ca6a7d6109797460bd70dfb683186779a14bedc4164b18054fe3a031760f07e0",
+  "contractSetHash": "sha256:5b8df1d4d07041230ff2fffc2ca9340917aaeee0db14e073669f20a8322b3a97",
   "schemas": [
     {
       "path": "schemas/active-capability-set.schema.json",
@@ -21,11 +21,11 @@
     },
     {
       "path": "schemas/artifact-manifest.schema.json",
-      "sha256": "sha256:76824d5754fef38f4663d22d588b1805fa4efb0a6afbe68a54cc2b17a9a1e756"
+      "sha256": "sha256:20edf541455e9c14df76082ba88033950f39382375b2e8d70843eb9b26b892f2"
     },
     {
       "path": "schemas/common.schema.json",
-      "sha256": "sha256:353a359844a3eaf95ada8faff55dd34812c70f1bd467ab7fed5e430a9bbd6918"
+      "sha256": "sha256:85d7d2dc960f87c64072b5eb081779b09fc6bcc25657e04bdee2c262fa164724"
     },
     {
       "path": "schemas/confirmation.schema.json",
@@ -45,11 +45,19 @@
     },
     {
       "path": "schemas/execution-event.schema.json",
-      "sha256": "sha256:3d47d2162f74a13bc22a6abb4340293b6dad3709bd0536bd2cb0c21d82e24955"
+      "sha256": "sha256:fce424a488fa1375eab566eda84b13b47657569095355a7219f8440dbc4ad2c1"
     },
     {
       "path": "schemas/execution.schema.json",
       "sha256": "sha256:bc1dd004798b986aa37a6abfeb355651b45ae0c676a40a88a671fe01c8e99716"
+    },
+    {
+      "path": "schemas/payload/artifact-expired.schema.json",
+      "sha256": "sha256:fb8d6ecf6402317439a85903f91113e912246d853ef457f833170e681e933cc6"
+    },
+    {
+      "path": "schemas/payload/artifact-withdrawn.schema.json",
+      "sha256": "sha256:41ca91bdffb116d20ba9fdf1af10a95c7731360f0f98ca2acc725a07b4bc7c7a"
     },
     {
       "path": "schemas/payload/confirmation-decided.schema.json",
@@ -88,12 +96,16 @@
       "sha256": "sha256:2ea5d6f74d8fa9164f242d5cd45c2d03e9922a5eae67bb007ec8c4e527f01660"
     },
     {
+      "path": "schemas/payload/source-withdrawn.schema.json",
+      "sha256": "sha256:a74de37677f865bb18669f9957333f7ae8196a2d8091659e5e633f7868c9b547"
+    },
+    {
       "path": "schemas/skill-activation.schema.json",
       "sha256": "sha256:e8c4bb4e0d9f254180a43351701161080bb577dbd07f6da66b92e201307e503e"
     },
     {
       "path": "schemas/step-assignment.schema.json",
-      "sha256": "sha256:5342a52e74e624796a57b81aab8e504131a9414c74715efe1b41c1991b722452"
+      "sha256": "sha256:e7255d035456c26d4e0428722b08002d99fab765cf6b5a88c82f581906bbb8c7"
     },
     {
       "path": "schemas/step-attempt.schema.json",

@@ -32,12 +32,51 @@
     },
     "retentionClass": { "enum": ["operational", "diagnostic", "evaluation"] },
     "expiresAt": { "$ref": "common.schema.json#/$defs/timestamp" },
-    "omissionReason": { "enum": ["redacted", "expired", "permission_denied", "not_captured"] }
+    "contentState": { "enum": ["active", "expired", "withdrawn"] },
+    "contentDeletedAt": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "withdrawalReason": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "derivedFromArtifactIds": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/id" },
+      "uniqueItems": true
+    },
+    "omissionReason": { "enum": ["redacted", "expired", "withdrawn", "permission_denied", "not_captured"] }
   },
   "anyOf": [
     { "required": ["storageRef"], "properties": { "storageRef": true } },
     { "required": ["bundlePath"], "properties": { "bundlePath": true } },
     { "required": ["omissionReason"], "properties": { "omissionReason": true } }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "contentState": { "const": "expired" } },
+        "required": ["contentState"]
+      },
+      "then": {
+        "required": ["expiresAt", "contentDeletedAt", "withdrawalReason", "omissionReason"],
+        "properties": {
+          "expiresAt": {},
+          "contentDeletedAt": {},
+          "withdrawalReason": {},
+          "omissionReason": { "const": "expired" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "contentState": { "const": "withdrawn" } },
+        "required": ["contentState"]
+      },
+      "then": {
+        "required": ["contentDeletedAt", "withdrawalReason", "omissionReason"],
+        "properties": {
+          "contentDeletedAt": {},
+          "withdrawalReason": {},
+          "omissionReason": { "const": "withdrawn" }
+        }
+      }
+    }
   ],
   "additionalProperties": true
 }
