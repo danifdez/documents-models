@@ -5,7 +5,6 @@ from mutagen.mp4 import MP4
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
-from mutagen.aiff import AIFF
 
 
 _AUDIO_EXTENSIONS = {'.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.opus', '.aiff', '.aif'}

@@ -1,5 +1,4 @@
 from odf.opendocument import load
-from odf import text as odf_text
 from odf.namespaces import DCNS
 
 

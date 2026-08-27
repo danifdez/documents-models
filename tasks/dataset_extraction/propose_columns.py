@@ -26,7 +26,7 @@ without one, so the proposal is useless without it.
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from lib.llm.json import parse_json
 from lib.llm.config import get_llm_defaults, get_llm_params, get_task_config

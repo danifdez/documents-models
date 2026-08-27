@@ -314,13 +314,3 @@ def llm_params_for(task: dict, model_name: str | None = None) -> dict:
         'lora_path': lora_path,
         'lora_scale': lora_scale,
     }
-
-
-def reload_config():
-    """Force reload all config from disk."""
-    global _config, _tasks, _inference_defaults
-    _config = None
-    _tasks = None
-    _inference_defaults = None
-    _load_config()
-    _load_tasks()

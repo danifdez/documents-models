@@ -9,12 +9,8 @@ constrains decoding, which cannot produce invalid JSON in the first place.)
 """
 
 import json
-import logging
 import re
 from typing import Any, Optional
-
-logger = logging.getLogger(__name__)
-
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
@@ -82,47 +78,3 @@ def parse_json(text: str, default: Any = None) -> Any:
                 continue
 
     return default
-
-
-def chat_json(
-    llm,
-    messages: list,
-    schema_hint: str,
-    max_retries: int = 2,
-    max_tokens: int = 500,
-) -> Any:
-    """
-    Call llm.chat and parse JSON from the response. On parse failure,
-    re-ask up to max_retries times with the previous (invalid) response
-    plus an explicit reminder of the expected schema.
-
-    Returns the parsed JSON value, or None if all retries fail.
-    """
-    convo = list(messages)
-    last_raw = None
-
-    for attempt in range(max_retries + 1):
-        raw = llm.chat(convo, max_tokens=max_tokens)
-        last_raw = raw
-        parsed = parse_json(raw, default=None)
-        if parsed is not None:
-            return parsed
-
-        logger.warning(
-            "chat_json: parse failed on attempt %d/%d. raw=%r",
-            attempt + 1, max_retries + 1, raw[:200] if raw else "",
-        )
-        convo = list(messages) + [
-            {"role": "assistant", "content": raw or ""},
-            {
-                "role": "user",
-                "content": (
-                    "Your previous response was not valid JSON. Respond ONLY "
-                    "with a JSON value matching this schema, no prose, no fences:\n"
-                    + schema_hint
-                ),
-            },
-        ]
-
-    logger.error("chat_json: exhausted retries. last_raw=%r", (last_raw or "")[:200])
-    return None

@@ -5,7 +5,7 @@ manually whenever the prompt body (prompts/extract_row.md) changes.
 """
 
 import os
-from typing import List, Optional
+from typing import List
 
 from lib.llm.prompts import load_prompt
 

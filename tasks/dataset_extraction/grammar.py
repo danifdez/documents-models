@@ -13,7 +13,7 @@ that constrains the LLM output to:
 the model must declare "not found in source" with null, not invent).
 """
 
-from typing import Iterable, List
+from typing import List
 
 
 def _escape_literal(text: str) -> str:

@@ -28,11 +28,3 @@ def create_ask_pipeline() -> RAGPipeline:
         PromptBuilder(),
         Generator(),
     ])
-
-
-def create_search_pipeline() -> RAGPipeline:
-    """Search-only pipeline: retrieve -> rerank."""
-    return RAGPipeline([
-        Retriever(),
-        Reranker(),
-    ])
