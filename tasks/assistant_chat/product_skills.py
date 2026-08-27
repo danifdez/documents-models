@@ -7,6 +7,12 @@ WORKSPACE_DOCUMENT_SKILL_ID = "workspace-document-workflow"
 WORKSPACE_DOCUMENT_SKILL_VERSION = "workspace-document-workflow/1"
 EVIDENCE_RESEARCH_SKILL_ID = "evidence-research-workflow"
 EVIDENCE_RESEARCH_SKILL_VERSION = "evidence-research-workflow/1"
+WORKSPACE_FOLDER_CONFIGURED_SIGNAL = "workspace_folder_configured"
+DOCUMENT_SEARCH_AVAILABLE_SIGNAL = "document_search_available"
+PRODUCT_SKILL_SIGNALS = {
+    WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
+    DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
+}
 WORKSPACE_DOCUMENT_SKILL_TITLE = "Workspace document workflow"
 WORKSPACE_DOCUMENT_SKILL_DESCRIPTION = (
     "Discover, inspect, create, edit, or remove documents in the optional "
@@ -71,6 +77,7 @@ _PRODUCT_SKILLS = {
         "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
         "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
         "instructions": WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
+        "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
         "resources": [
             {
                 "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -85,6 +92,7 @@ _PRODUCT_SKILLS = {
         "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
         "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
         "instructions": EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS,
+        "activationSignal": DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
         "resources": [
             {
                 "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
@@ -100,6 +108,15 @@ _PRODUCT_SKILLS = {
 def resolve_active_skill_instructions(value: Any) -> List[str]:
     if not isinstance(value, dict):
         raise ValueError("Missing active capability set")
+    signals = value.get("skillSignals")
+    if (
+        not isinstance(signals, list)
+        or any(not isinstance(signal, str) for signal in signals)
+        or len(signals) != len(set(signals))
+        or any(signal not in PRODUCT_SKILL_SIGNALS for signal in signals)
+    ):
+        raise ValueError("Invalid product skill signals")
+    signal_set = set(signals)
     skills = value.get("skills")
     if not isinstance(skills, list) or len(skills) > 4:
         raise ValueError("Invalid active skill selection")
@@ -117,7 +134,9 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
             or selection.get("title") != definition["title"]
             or selection.get("description") != definition["description"]
             or selection.get("contentHash") != definition["contentHash"]
-            or selection.get("activationReason") != "objective_match"
+            or selection.get("activationReason") != "signal_match"
+            or selection.get("activationSignal") != definition["activationSignal"]
+            or selection.get("activationSignal") not in signal_set
             or selection.get("resources") != definition["resources"]
             or set(selection) != {
                 "skillId",
@@ -126,6 +145,7 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
                 "description",
                 "contentHash",
                 "activationReason",
+                "activationSignal",
                 "resources",
             }
         ):

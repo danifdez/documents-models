@@ -53,7 +53,7 @@
         "properties": {
           "to": { "const": "completed" },
           "completionKind": { "const": "partial" },
-          "completionReason": { "enum": ["budget_exhausted", "tool_budget_exhausted", "loop_detected"] },
+          "completionReason": { "enum": ["partial_budget_exhausted", "partial_loop_guard"] },
           "partialResult": true,
           "error": { "type": "null" }
         }

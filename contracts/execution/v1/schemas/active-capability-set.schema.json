@@ -3,7 +3,7 @@
   "$id": "https://documents.local/harness/v1/schemas/active-capability-set.schema.json",
   "title": "Backend-selected turn capabilities v1",
   "type": "object",
-  "required": ["schemaVersion", "owner", "selectionPolicy", "tools", "skills"],
+  "required": ["schemaVersion", "owner", "selectionPolicy", "skillSignals", "tools", "skills"],
   "properties": {
     "schemaVersion": { "const": "active-capability-set/1" },
     "owner": {
@@ -15,7 +15,18 @@
       },
       "additionalProperties": false
     },
-    "selectionPolicy": { "const": "backend-availability/1" },
+    "selectionPolicy": { "const": "backend-signals/1" },
+    "skillSignals": {
+      "type": "array",
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "document_search_available",
+          "workspace_folder_configured"
+        ]
+      }
+    },
     "tools": {
       "type": "array",
       "maxItems": 15,
@@ -98,6 +109,7 @@
         "description",
         "contentHash",
         "activationReason",
+        "activationSignal",
         "resources"
       ],
       "properties": {
@@ -110,7 +122,8 @@
         "contentHash": {
           "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
         },
-        "activationReason": { "const": "objective_match" },
+        "activationReason": { "const": "signal_match" },
+        "activationSignal": { "const": "workspace_folder_configured" },
         "resources": {
           "type": "array",
           "minItems": 1,
@@ -145,6 +158,7 @@
         "description",
         "contentHash",
         "activationReason",
+        "activationSignal",
         "resources"
       ],
       "properties": {
@@ -157,7 +171,8 @@
         "contentHash": {
           "const": "sha256:902f4eb209b750d9b7a62c8cb9daa297158e45a284a8f857fba3a676dcea8002"
         },
-        "activationReason": { "const": "objective_match" },
+        "activationReason": { "const": "signal_match" },
+        "activationSignal": { "const": "document_search_available" },
         "resources": {
           "type": "array",
           "minItems": 1,

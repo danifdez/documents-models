@@ -47,11 +47,15 @@ _TOOL_VERSIONS = {
 }
 
 
-def capabilities(*names, skills=None):
+def capabilities(*names, skills=None, skill_signals=None):
+    selected_skills = skills or []
     return {
         "schemaVersion": "active-capability-set/1",
         "owner": {"type": "assistant", "id": 1},
-        "selectionPolicy": "backend-availability/1",
+        "selectionPolicy": "backend-signals/1",
+        "skillSignals": skill_signals or [
+            skill["activationSignal"] for skill in selected_skills
+        ],
         "tools": [
             {
                 "name": name,
@@ -60,7 +64,7 @@ def capabilities(*names, skills=None):
             }
             for name in names
         ],
-        "skills": skills or [],
+        "skills": selected_skills,
     }
 
 
@@ -84,7 +88,8 @@ class ChatInferenceTest(unittest.TestCase):
             "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
-            "activationReason": "objective_match",
+            "activationReason": "signal_match",
+            "activationSignal": "workspace_folder_configured",
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -131,7 +136,8 @@ class ChatInferenceTest(unittest.TestCase):
             "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": "sha256:" + "0" * 64,
-            "activationReason": "objective_match",
+            "activationReason": "signal_match",
+            "activationSignal": "workspace_folder_configured",
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -167,7 +173,8 @@ class ChatInferenceTest(unittest.TestCase):
             "title": EVIDENCE_RESEARCH_SKILL_TITLE,
             "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
-            "activationReason": "objective_match",
+            "activationReason": "signal_match",
+            "activationSignal": "document_search_available",
             "resources": [
                 {
                     "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
@@ -185,7 +192,8 @@ class ChatInferenceTest(unittest.TestCase):
             "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
-            "activationReason": "objective_match",
+            "activationReason": "signal_match",
+            "activationSignal": "workspace_folder_configured",
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -240,6 +248,63 @@ class ChatInferenceTest(unittest.TestCase):
             {"kind": "final_text", "text": "Respuesta final"},
         )
         llm.chat_with_tools.assert_called_once()
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_forced_finalization_disables_tools_and_uses_confirmed_context(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat.return_value = "Best available answer"
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        outcome = chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(),
+                "runtimeDirective": {
+                    "schemaVersion": "runtime-directive/1",
+                    "kind": "forced_finalization",
+                    "reason": "tool_budget_exhausted",
+                    "toolsAllowed": False,
+                },
+                "conversation": [{"role": "user", "content": "Finish"}],
+            }
+        )
+
+        self.assertEqual(
+            outcome.value,
+            {"kind": "final_text", "text": "Best available answer"},
+        )
+        prompt = llm.chat.call_args.args[0][0]["content"]
+        self.assertIn("no further normal work", prompt)
+        llm.chat_with_tools.assert_not_called()
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_returns_typed_invalid_outcome_for_an_empty_model_response(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat.return_value = "   "
+        get_llm_service.return_value = llm
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+
+        outcome = chat_inference(
+            {
+                "_task_type": "assistant-chat",
+                "activeCapabilities": capabilities(),
+                "conversation": [{"role": "user", "content": "Finish"}],
+            }
+        )
+
+        self.assertEqual(
+            outcome.value,
+            {"kind": "invalid", "reason": "empty_model_response"},
+        )
 
     @patch("tasks.assistant_chat.assistant_chat.uuid4", return_value="call-id")
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})

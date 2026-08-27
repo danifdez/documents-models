@@ -703,7 +703,55 @@ def _system_prompt(payload: Dict[str, Any]) -> str:
             "(subordinate to product policy and explicit user intent):\n"
             + "\n\n".join(skill_instructions)
         )
+    directive = payload.get("runtimeDirective")
+    if directive is not None:
+        prompt = f"{prompt}\n\n{_runtime_directive(directive)}"
     return prompt
+
+
+def _runtime_directive(value: Any) -> str:
+    if not isinstance(value, dict) or value.get("schemaVersion") != "runtime-directive/1":
+        raise ValueError("Invalid runtime directive")
+    kind = value.get("kind")
+    reason = value.get("reason")
+    tools_allowed = value.get("toolsAllowed")
+    if kind == "output_repair" and isinstance(reason, str) and tools_allowed is False:
+        return (
+            "Runtime repair: the previous model output was invalid "
+            f"({reason}). Return one corrected, non-empty final answer. "
+            "Do not request tools or introduce new work."
+        )
+    if (
+        kind == "forced_finalization"
+        and reason in {"budget_exhausted", "tool_budget_exhausted"}
+        and tools_allowed is False
+    ):
+        return (
+            "Runtime finalization: no further normal work may be opened. "
+            "Using only the confirmed context and tool results already present, "
+            "return the best non-empty final answer. Do not request tools."
+        )
+    warnings = {
+        "normal_budget_soft_limit": (
+            "The normal inference budget is nearly exhausted. Prefer completing "
+            "the answer with current evidence."
+        ),
+        "tool_budget_soft_limit": (
+            "The tool budget is nearly exhausted. Avoid optional tool calls and "
+            "prefer completing the answer with current evidence."
+        ),
+        "exact_tool_repeat_warning": (
+            "A tool request repeated without new progress. Change strategy or "
+            "complete the answer; do not repeat the same call."
+        ),
+        "exact_tool_repeat_blocked": (
+            "The previous repeated tool request was blocked. Incorporate that "
+            "result, change strategy, or complete the answer."
+        ),
+    }
+    if kind == "progress_warning" and reason in warnings and tools_allowed is True:
+        return f"Runtime progress signal: {warnings[reason]}"
+    raise ValueError("Unsupported runtime directive")
 
 
 def _arguments(value: Any) -> Dict[str, Any]:
@@ -722,7 +770,8 @@ def _active_tools(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         raise ValueError("Missing active capability set")
     if (
         value.get("schemaVersion") != "active-capability-set/1"
-        or value.get("selectionPolicy") != "backend-availability/1"
+        or value.get("selectionPolicy") != "backend-signals/1"
+        or not isinstance(value.get("skillSignals"), list)
         or not isinstance(value.get("skills"), list)
         or not isinstance(value.get("tools"), list)
     ):
@@ -770,7 +819,7 @@ def _outcome(
 
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
-        raise ValueError("The model returned neither text nor tool requests")
+        return {"kind": "invalid", "reason": "empty_model_response"}
     return {"kind": "final_text", "text": content.strip()}
 
 

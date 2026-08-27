@@ -25,10 +25,10 @@
     "skillId": { "type": "string" },
     "skillVersion": { "type": "string" },
     "contentHash": { "$ref": "common.schema.json#/$defs/hash" },
-    "activationReason": { "const": "objective_match" },
+    "activationReason": { "const": "signal_match" },
     "inputBindings": {
       "type": "object",
-      "required": ["owner"],
+      "required": ["owner", "signal"],
       "properties": {
         "owner": {
           "type": "object",
@@ -38,6 +38,12 @@
             "id": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": false
+        },
+        "signal": {
+          "enum": [
+            "document_search_available",
+            "workspace_folder_configured"
+          ]
         }
       },
       "additionalProperties": false
@@ -61,21 +67,35 @@
     {
       "oneOf": [
         {
+          "type": "object",
           "properties": {
             "skillId": { "const": "workspace-document-workflow" },
             "skillVersion": { "const": "workspace-document-workflow/1" },
             "contentHash": {
               "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
+            },
+            "inputBindings": {
+              "type": "object",
+              "properties": {
+                "signal": { "const": "workspace_folder_configured" }
+              }
             }
           },
           "required": ["skillId", "skillVersion", "contentHash"]
         },
         {
+          "type": "object",
           "properties": {
             "skillId": { "const": "evidence-research-workflow" },
             "skillVersion": { "const": "evidence-research-workflow/1" },
             "contentHash": {
               "const": "sha256:902f4eb209b750d9b7a62c8cb9daa297158e45a284a8f857fba3a676dcea8002"
+            },
+            "inputBindings": {
+              "type": "object",
+              "properties": {
+                "signal": { "const": "document_search_available" }
+              }
             }
           },
           "required": ["skillId", "skillVersion", "contentHash"]

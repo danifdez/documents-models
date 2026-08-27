@@ -1,11 +1,11 @@
 {
   "manifestSchema": "execution-contract-manifest/1",
   "contractVersion": "v1",
-  "contractSetHash": "sha256:05c0be7ee144feb755d1b57aa60b09e53f71d58ea0e4d202e3a79f3057c3e7f1",
+  "contractSetHash": "sha256:30f26025082a484f43e9ee24c7f677b4817596ec8d8a439eb76721c02f0069c5",
   "schemas": [
     {
       "path": "schemas/active-capability-set.schema.json",
-      "sha256": "sha256:fb395f05b47daf9e10a4473365b891e4923088e8d4800c0f3dfbd9f2df841833"
+      "sha256": "sha256:b683a340b4e3aa4c6ddbe1c9984fb0e9e9e61bddd4f586df01c2d05974896f96"
     },
     {
       "path": "schemas/active-context.schema.json",
@@ -65,7 +65,7 @@
     },
     {
       "path": "schemas/payload/execution-state-changed.schema.json",
-      "sha256": "sha256:594939df86e074fd8594dfa886ff9fec599f9bec785c0d3a4b8273ea936e6ba4"
+      "sha256": "sha256:ef9b90f8285f0b1066376b28c4f8fc8fa8141861a1c2ddce4df3dc75670eb214"
     },
     {
       "path": "schemas/payload/message-recorded.schema.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "schemas/skill-activation.schema.json",
-      "sha256": "sha256:f42b3472849d0d7791ad8a070419bb6f8601573165e7926f63cf39e082d5f99e"
+      "sha256": "sha256:037ab6a52f33d121f186a98b2c73b83bf05206c1d70824d857f485fc0a1d184a"
     },
     {
       "path": "schemas/step-assignment.schema.json",
