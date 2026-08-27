@@ -72,6 +72,26 @@ class DateExtractionStepTest(unittest.TestCase):
         )
         llm.chat.assert_called_once()
 
+    @patch("tasks.dates.dates.get_llm_params", return_value={})
+    @patch("tasks.dates.dates.get_llm_service")
+    def test_map_resolves_an_italian_date_with_a_leading_article(
+        self, get_llm_service, _get_llm_params
+    ):
+        llm = Mock()
+        llm.chat.return_value = '["il 20 luglio 1969"]'
+        get_llm_service.return_value = llm
+
+        result = date_extraction_map(
+            {
+                "content": "Il modulo lunare atterrò il 20 luglio 1969.",
+                "language": "it",
+            }
+        )
+
+        self.assertEqual(result["dates"][0]["date"], "1969-07-20")
+        self.assertEqual(result["dates"][0]["precision"], "day")
+        self.assertIsNone(result["dates"][0]["unresolvedReason"])
+
     def test_reduce_merges_empty_maps_and_sorts_dates(self):
         result = date_extraction_reduce(
             {

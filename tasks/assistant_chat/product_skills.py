@@ -7,11 +7,13 @@ WORKSPACE_DOCUMENT_SKILL_ID = "workspace-document-workflow"
 WORKSPACE_DOCUMENT_SKILL_VERSION = "workspace-document-workflow/1"
 EVIDENCE_RESEARCH_SKILL_ID = "evidence-research-workflow"
 EVIDENCE_RESEARCH_SKILL_VERSION = "evidence-research-workflow/1"
-WORKSPACE_FOLDER_CONFIGURED_SIGNAL = "workspace_folder_configured"
-DOCUMENT_SEARCH_AVAILABLE_SIGNAL = "document_search_available"
-PRODUCT_SKILL_SIGNALS = {
-    WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
-    DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
+WORKSPACE_FOLDER_CONFIGURED_SIGNAL = {
+    "kind": "owner_scope_configured",
+    "scope": "workspace_folder",
+}
+DOCUMENT_SEARCH_AVAILABLE_SIGNAL = {
+    "kind": "capability_available",
+    "capability": "documents.search",
 }
 WORKSPACE_DOCUMENT_SKILL_TITLE = "Workspace document workflow"
 WORKSPACE_DOCUMENT_SKILL_DESCRIPTION = (
@@ -71,6 +73,22 @@ def _canonical_hash(value: Any) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+def _signal_key(value: Any) -> tuple[str, str]:
+    if (
+        isinstance(value, dict)
+        and set(value) == {"kind", "capability"}
+        and value == DOCUMENT_SEARCH_AVAILABLE_SIGNAL
+    ):
+        return (value["kind"], value["capability"])
+    if (
+        isinstance(value, dict)
+        and set(value) == {"kind", "scope"}
+        and value == WORKSPACE_FOLDER_CONFIGURED_SIGNAL
+    ):
+        return (value["kind"], value["scope"])
+    raise ValueError("Invalid product skill signal")
+
+
 _PRODUCT_SKILLS = {
     (WORKSPACE_DOCUMENT_SKILL_ID, WORKSPACE_DOCUMENT_SKILL_VERSION): {
         "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
@@ -109,14 +127,13 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
     if not isinstance(value, dict):
         raise ValueError("Missing active capability set")
     signals = value.get("skillSignals")
-    if (
-        not isinstance(signals, list)
-        or any(not isinstance(signal, str) for signal in signals)
-        or len(signals) != len(set(signals))
-        or any(signal not in PRODUCT_SKILL_SIGNALS for signal in signals)
-    ):
+    try:
+        signal_keys = [_signal_key(signal) for signal in signals]
+    except (TypeError, ValueError):
+        raise ValueError("Invalid product skill signals") from None
+    if not isinstance(signals, list) or len(signal_keys) != len(set(signal_keys)):
         raise ValueError("Invalid product skill signals")
-    signal_set = set(signals)
+    signal_set = set(signal_keys)
     skills = value.get("skills")
     if not isinstance(skills, list) or len(skills) > 4:
         raise ValueError("Invalid active skill selection")
@@ -136,7 +153,7 @@ def resolve_active_skill_instructions(value: Any) -> List[str]:
             or selection.get("contentHash") != definition["contentHash"]
             or selection.get("activationReason") != "signal_match"
             or selection.get("activationSignal") != definition["activationSignal"]
-            or selection.get("activationSignal") not in signal_set
+            or _signal_key(selection.get("activationSignal")) not in signal_set
             or selection.get("resources") != definition["resources"]
             or set(selection) != {
                 "skillId",

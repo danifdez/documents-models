@@ -70,6 +70,9 @@ _TIME_UNIT_RE = re.compile(
 )
 _DECOR_RE = re.compile(r"^[\s_*`~@#]+|[\s_*`~@#]+$")
 _DETECT_PROMPT = get_prompt("date-extraction-map", "detect_prompt.md")
+_LANGUAGE_SKIP_TOKENS = {
+    "it": ["il"],
+}
 
 
 def _parse_expression_array(response: str) -> List[str]:
@@ -156,6 +159,8 @@ def _parse_with_dateparser(
     is_relative: bool,
 ) -> Optional[datetime]:
     settings: Dict[str, Any] = {"PREFER_DATES_FROM": "past"}
+    if language in _LANGUAGE_SKIP_TOKENS:
+        settings["SKIP_TOKENS"] = _LANGUAGE_SKIP_TOKENS[language]
     if is_relative and anchor is not None:
         settings["RELATIVE_BASE"] = anchor
     try:

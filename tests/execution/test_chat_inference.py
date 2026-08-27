@@ -16,12 +16,15 @@ from tasks.assistant_chat.product_skills import (
     SOURCE_EVALUATION_RESOURCE_DESCRIPTION,
     SOURCE_EVALUATION_RESOURCE_ID,
     SOURCE_EVALUATION_RESOURCE_TITLE,
+    DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
+    WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
     WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
     WORKSPACE_DOCUMENT_SKILL_ID,
     WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
     WORKSPACE_DOCUMENT_SKILL_TITLE,
     WORKSPACE_DOCUMENT_SKILL_VERSION,
     _canonical_hash,
+    resolve_active_skill_instructions,
 )
 
 
@@ -72,6 +75,12 @@ class ChatInferenceTest(unittest.TestCase):
     def test_loads_the_packaged_system_prompt(self):
         self.assertIn("exactly one inference", _SYSTEM_PROMPT)
 
+    def test_rejects_legacy_text_skill_signals(self):
+        with self.assertRaisesRegex(ValueError, "Invalid product skill signals"):
+            resolve_active_skill_instructions(
+                capabilities(skill_signals=["workspace_folder_configured"])
+            )
+
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
     @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
@@ -89,7 +98,7 @@ class ChatInferenceTest(unittest.TestCase):
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
-            "activationSignal": "workspace_folder_configured",
+            "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -137,7 +146,7 @@ class ChatInferenceTest(unittest.TestCase):
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": "sha256:" + "0" * 64,
             "activationReason": "signal_match",
-            "activationSignal": "workspace_folder_configured",
+            "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
@@ -174,7 +183,7 @@ class ChatInferenceTest(unittest.TestCase):
             "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
-            "activationSignal": "document_search_available",
+            "activationSignal": DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
             "resources": [
                 {
                     "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
@@ -193,7 +202,7 @@ class ChatInferenceTest(unittest.TestCase):
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
             "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
-            "activationSignal": "workspace_folder_configured",
+            "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
             "resources": [
                 {
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,

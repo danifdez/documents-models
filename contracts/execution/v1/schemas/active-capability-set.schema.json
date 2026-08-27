@@ -20,12 +20,7 @@
       "type": "array",
       "maxItems": 2,
       "uniqueItems": true,
-      "items": {
-        "enum": [
-          "document_search_available",
-          "workspace_folder_configured"
-        ]
-      }
+      "items": { "$ref": "#/$defs/skillSignal" }
     },
     "tools": {
       "type": "array",
@@ -40,6 +35,28 @@
     }
   },
   "$defs": {
+    "skillSignal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "capability"],
+          "properties": {
+            "kind": { "const": "capability_available" },
+            "capability": { "const": "documents.search" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "scope"],
+          "properties": {
+            "kind": { "const": "owner_scope_configured" },
+            "scope": { "const": "workspace_folder" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "tool": {
       "type": "object",
       "required": ["name", "descriptorVersion", "availabilityBasis"],
@@ -123,7 +140,15 @@
           "const": "sha256:c755864bb8f6b113ff62c4912c20277bf66e71d37819921de46111a24c7cec91"
         },
         "activationReason": { "const": "signal_match" },
-        "activationSignal": { "const": "workspace_folder_configured" },
+        "activationSignal": {
+          "type": "object",
+          "required": ["kind", "scope"],
+          "properties": {
+            "kind": { "const": "owner_scope_configured" },
+            "scope": { "const": "workspace_folder" }
+          },
+          "additionalProperties": false
+        },
         "resources": {
           "type": "array",
           "minItems": 1,
@@ -172,7 +197,15 @@
           "const": "sha256:902f4eb209b750d9b7a62c8cb9daa297158e45a284a8f857fba3a676dcea8002"
         },
         "activationReason": { "const": "signal_match" },
-        "activationSignal": { "const": "document_search_available" },
+        "activationSignal": {
+          "type": "object",
+          "required": ["kind", "capability"],
+          "properties": {
+            "kind": { "const": "capability_available" },
+            "capability": { "const": "documents.search" }
+          },
+          "additionalProperties": false
+        },
         "resources": {
           "type": "array",
           "minItems": 1,

@@ -39,12 +39,7 @@
           },
           "additionalProperties": false
         },
-        "signal": {
-          "enum": [
-            "document_search_available",
-            "workspace_folder_configured"
-          ]
-        }
+        "signal": { "$ref": "#/$defs/skillSignal" }
       },
       "additionalProperties": false
     },
@@ -63,6 +58,30 @@
       ]
     }
   },
+  "$defs": {
+    "skillSignal": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "capability"],
+          "properties": {
+            "kind": { "const": "capability_available" },
+            "capability": { "const": "documents.search" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "scope"],
+          "properties": {
+            "kind": { "const": "owner_scope_configured" },
+            "scope": { "const": "workspace_folder" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
   "allOf": [
     {
       "oneOf": [
@@ -77,7 +96,15 @@
             "inputBindings": {
               "type": "object",
               "properties": {
-                "signal": { "const": "workspace_folder_configured" }
+                "signal": {
+                  "type": "object",
+                  "required": ["kind", "scope"],
+                  "properties": {
+                    "kind": { "const": "owner_scope_configured" },
+                    "scope": { "const": "workspace_folder" }
+                  },
+                  "additionalProperties": false
+                }
               }
             }
           },
@@ -94,7 +121,15 @@
             "inputBindings": {
               "type": "object",
               "properties": {
-                "signal": { "const": "document_search_available" }
+                "signal": {
+                  "type": "object",
+                  "required": ["kind", "capability"],
+                  "properties": {
+                    "kind": { "const": "capability_available" },
+                    "capability": { "const": "documents.search" }
+                  },
+                  "additionalProperties": false
+                }
               }
             }
           },
