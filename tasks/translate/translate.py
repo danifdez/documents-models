@@ -1,8 +1,6 @@
 from threading import Lock
 from typing import Any, Dict, List
 
-from transformers import pipeline as hf_pipeline
-
 from common.execution_registry import execution_handler
 from utils.device import get_device
 
@@ -17,6 +15,7 @@ def _get_translation_pipeline(source: str, target: str):
     if key not in _translation_pipelines:
         with _translation_pipeline_lock:
             if key not in _translation_pipelines:
+                from transformers import pipeline as hf_pipeline
                 from lib.llm.config import get_task_config
 
                 prefix = get_task_config("translate-map").get(

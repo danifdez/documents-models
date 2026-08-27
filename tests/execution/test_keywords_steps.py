@@ -34,7 +34,10 @@ class KeywordsStepTest(unittest.TestCase):
                     ["Durable workflows", "PostgreSQL", "Durable workflows"],
                     ["postgresql", "execution evidence"],
                     ["PostgreSQL", "retries"],
-                ]
+                ],
+                "final": True,
+                "inputKind": "candidates",
+                "leafStartIndex": 0,
             }
         )
 
@@ -71,7 +74,51 @@ class KeywordsStepTest(unittest.TestCase):
 
     def test_reduce_rejects_an_empty_map_result(self):
         with self.assertRaisesRegex(ValueError, "string arrays"):
-            keywords_reduce({"partials": [["PostgreSQL"], []]})
+            keywords_reduce(
+                {
+                    "partials": [["PostgreSQL"], []],
+                    "final": True,
+                    "inputKind": "candidates",
+                    "leafStartIndex": 0,
+                }
+            )
+
+    def test_intermediate_reductions_preserve_global_frequency(self):
+        first = keywords_reduce(
+            {
+                "partials": [["Shared", "alpha"], ["shared", "beta"]],
+                "final": False,
+                "inputKind": "candidates",
+                "leafStartIndex": 0,
+            }
+        )
+        second = keywords_reduce(
+            {
+                "partials": [["Shared", "gamma"]],
+                "final": False,
+                "inputKind": "candidates",
+                "leafStartIndex": 2,
+            }
+        )
+
+        result = keywords_reduce(
+            {
+                "partials": [
+                    first["keyword_statistics"],
+                    second["keyword_statistics"],
+                ],
+                "final": True,
+                "inputKind": "statistics",
+            }
+        )
+
+        self.assertEqual(result["keywords"], ["Shared", "alpha", "beta", "gamma"])
+        shared = next(
+            item
+            for item in first["keyword_statistics"]
+            if item["value"] == "Shared"
+        )
+        self.assertEqual(shared["count"], 2)
 
     def test_reduce_executes_as_code_assignment(self):
         assignment = {
@@ -82,7 +129,12 @@ class KeywordsStepTest(unittest.TestCase):
             "stepKind": "code",
             "work": {
                 "taskType": "keywords-reduce",
-                "payload": {"partials": [["PostgreSQL"], ["durable workflows"]]},
+                "payload": {
+                    "partials": [["PostgreSQL"], ["durable workflows"]],
+                    "final": True,
+                    "inputKind": "candidates",
+                    "leafStartIndex": 0,
+                },
             },
         }
 

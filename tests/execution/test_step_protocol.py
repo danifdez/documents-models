@@ -340,7 +340,7 @@ class StepProtocolTest(unittest.TestCase):
     def test_preserves_the_verified_deployment_checksum_in_registry(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "deployments.json"
-            path.write_text(json.dumps({"tasks": {"summarize": {
+            path.write_text(json.dumps({"tasks": {"summarize-map": {
                 "enabled": True,
                 "path": "/models/adapter.gguf",
                 "scale": 0.5,
@@ -351,7 +351,7 @@ class StepProtocolTest(unittest.TestCase):
             ):
                 deployments = active_deployments()
 
-        self.assertEqual(deployments["summarize"]["sha256"], "b" * 64)
+        self.assertEqual(deployments["summarize-map"]["sha256"], "b" * 64)
 
     def test_does_not_claim_an_identity_for_an_unverified_adapter(self):
         with patch(
@@ -361,7 +361,7 @@ class StepProtocolTest(unittest.TestCase):
                 "lora_path": "/private/unverified.gguf",
             },
         ):
-            metadata = _inference_metadata("summarize", 0, "completed")
+            metadata = _inference_metadata("summarize-map", 0, "completed")
 
         self.assertNotIn("effectiveAdapter", metadata["inference"])
         self.assertEqual(

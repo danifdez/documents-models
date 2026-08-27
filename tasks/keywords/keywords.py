@@ -24,18 +24,13 @@ def _truncate_words(item: str, max_words: int) -> str:
     return " ".join(item.split()[:max_words]).strip()
 
 
-def _merge_candidates(
-    candidate_lists: List[List[str]],
-    max_items: int,
-    max_words: int,
-) -> List[str]:
-    counts: Dict[str, int] = {}
-    first_form: Dict[str, str] = {}
-    first_seen: Dict[str, int] = {}
-    order = 0
-    for candidates in candidate_lists:
+def _candidate_statistics(
+    candidate_lists: List[List[str]], leaf_start: int, max_words: int
+) -> List[Dict[str, Any]]:
+    statistics: Dict[str, Dict[str, Any]] = {}
+    for partial_index, candidates in enumerate(candidate_lists):
         chunk_seen = set()
-        for raw in candidates:
+        for candidate_index, raw in enumerate(candidates):
             item = _truncate_words(raw, max_words)
             if not item:
                 continue
@@ -43,15 +38,81 @@ def _merge_candidates(
             if key in chunk_seen:
                 continue
             chunk_seen.add(key)
-            if key not in counts:
-                counts[key] = 0
-                first_form[key] = item
-                first_seen[key] = order
-                order += 1
-            counts[key] += 1
+            if key not in statistics:
+                statistics[key] = {
+                    "value": item,
+                    "count": 0,
+                    "firstChunk": leaf_start + partial_index,
+                    "firstCandidate": candidate_index,
+                }
+            statistics[key]["count"] += 1
+    return list(statistics.values())
 
-    ranked = sorted(counts, key=lambda key: (-counts[key], first_seen[key]))
-    return [first_form[key] for key in ranked[:max_items]]
+
+def _merge_statistics(
+    partials: List[List[Dict[str, Any]]], max_words: int
+) -> List[Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    for partial in partials:
+        for raw in partial:
+            statistic = _validate_statistic(raw, max_words)
+            key = statistic["value"].casefold()
+            if key not in merged:
+                merged[key] = statistic
+                continue
+            merged[key]["count"] += statistic["count"]
+            current_order = (
+                merged[key]["firstChunk"],
+                merged[key]["firstCandidate"],
+            )
+            candidate_order = (
+                statistic["firstChunk"],
+                statistic["firstCandidate"],
+            )
+            if candidate_order < current_order:
+                merged[key].update(
+                    value=statistic["value"],
+                    firstChunk=statistic["firstChunk"],
+                    firstCandidate=statistic["firstCandidate"],
+                )
+    return list(merged.values())
+
+
+def _validate_statistic(raw: Any, max_words: int) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ValueError("keywords-reduce statistics must be objects")
+    value = raw.get("value")
+    count = raw.get("count")
+    first_chunk = raw.get("firstChunk")
+    first_candidate = raw.get("firstCandidate")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("keywords-reduce statistic value is invalid")
+    if _truncate_words(value, max_words) != value.strip():
+        raise ValueError("keywords-reduce statistic value exceeds its word limit")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+        raise ValueError("keywords-reduce statistic count is invalid")
+    if (
+        not isinstance(first_chunk, int)
+        or isinstance(first_chunk, bool)
+        or first_chunk < 0
+        or not isinstance(first_candidate, int)
+        or isinstance(first_candidate, bool)
+        or first_candidate < 0
+    ):
+        raise ValueError("keywords-reduce statistic order is invalid")
+    return {
+        "value": value.strip(),
+        "count": count,
+        "firstChunk": first_chunk,
+        "firstCandidate": first_candidate,
+    }
+
+
+def _ordered_statistics(statistics: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        statistics,
+        key=lambda item: (item["firstChunk"], item["firstCandidate"]),
+    )
 
 
 def _extract_candidates(
@@ -106,20 +167,50 @@ def keywords_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(partials, list) or not partials:
         raise ValueError("keywords-reduce requires partials")
 
-    candidate_lists: List[List[str]] = []
-    for partial in partials:
-        if not isinstance(partial, list) or not partial or any(
-            not isinstance(candidate, str) for candidate in partial
-        ):
-            raise ValueError("keywords-reduce partials must be string arrays")
-        candidate_lists.append(partial)
-
     config = get_task_config("keywords-reduce")
-    keywords = _merge_candidates(
-        candidate_lists,
-        max_items=int(config.get("max_items", 10)),
-        max_words=int(config.get("max_words_per_item", 3)),
+    max_words = int(config.get("max_words_per_item", 3))
+    input_kind = payload.get("inputKind")
+    if input_kind == "candidates":
+        candidate_lists: List[List[str]] = []
+        for partial in partials:
+            if not isinstance(partial, list) or not partial or any(
+                not isinstance(candidate, str) for candidate in partial
+            ):
+                raise ValueError("keywords-reduce partials must be string arrays")
+            candidate_lists.append(partial)
+        leaf_start = payload.get("leafStartIndex")
+        if (
+            not isinstance(leaf_start, int)
+            or isinstance(leaf_start, bool)
+            or leaf_start < 0
+        ):
+            raise ValueError("keywords-reduce leafStartIndex is invalid")
+        statistics = _candidate_statistics(candidate_lists, leaf_start, max_words)
+    elif input_kind == "statistics":
+        statistic_lists: List[List[Dict[str, Any]]] = []
+        for partial in partials:
+            if not isinstance(partial, list) or not partial:
+                raise ValueError("keywords-reduce partials must be statistic arrays")
+            statistic_lists.append(partial)
+        statistics = _merge_statistics(statistic_lists, max_words)
+    else:
+        raise ValueError("keywords-reduce inputKind is invalid")
+
+    statistics = _ordered_statistics(statistics)
+    if payload.get("final") is not True:
+        return {"keyword_statistics": statistics}
+
+    ranked = sorted(
+        statistics,
+        key=lambda item: (
+            -item["count"],
+            item["firstChunk"],
+            item["firstCandidate"],
+        ),
     )
+    keywords = [
+        item["value"] for item in ranked[: int(config.get("max_items", 10))]
+    ]
     if not keywords:
         raise ValueError("keywords-reduce received no candidates")
     return {"keywords": keywords}
