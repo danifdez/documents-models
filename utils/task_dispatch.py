@@ -21,6 +21,8 @@ TASK_MODULES = {
     "ingest-content": "tasks.ingest.ingest",
     "key-point-map": "tasks.key_points.key_points",
     "key-point-reduce": "tasks.key_points.key_points",
+    "translate-map": "tasks.translate.translate",
+    "translate-reduce": "tasks.translate.translate",
     "assistant-chat": "tasks.assistant_chat.assistant_chat",
     "agent-chat": "tasks.assistant_chat.assistant_chat",
     "context-input-map": "tasks.context_input_map.context_input_map",

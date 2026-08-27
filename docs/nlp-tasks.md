@@ -12,7 +12,7 @@ The feature fails explicitly when its local language model is unavailable or doe
 
 ## Translation
 
-Documents translates one or more texts from a source language to a target language. Results preserve the original order and keep any reference associated with each text.
+Documents translates one or more texts from a source language to a target language. Entity retranslation can target several languages in one durable workflow. Results preserve document and requested-language order and keep any reference associated with each text.
 
 Translation uses a separate model for each language pair. If the requested pair is unavailable, the action returns an error rather than substituting another language.
 

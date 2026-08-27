@@ -1,9 +1,11 @@
-from typing import List, Dict, Any, Optional, Tuple
 from threading import Lock
+from typing import Any, Dict, List
+
 from transformers import pipeline as hf_pipeline
+
 from common.execution_registry import execution_handler
 from utils.device import get_device
-from services.text import chunk_units
+
 
 _translation_pipelines: Dict[str, Any] = {}
 _translation_pipeline_lock = Lock()
@@ -17,117 +19,174 @@ def _get_translation_pipeline(source: str, target: str):
             if key not in _translation_pipelines:
                 from lib.llm.config import get_task_config
 
-                prefix = get_task_config("translate").get(
+                prefix = get_task_config("translate-map").get(
                     "model_prefix", "Helsinki-NLP/opus-mt"
                 )
                 model_name = f"{prefix}-{source}-{target}"
-                device = get_device()
                 _translation_pipelines[key] = hf_pipeline(
-                    "translation", model=model_name, device=device
+                    "translation", model=model_name, device=get_device()
                 )
     return _translation_pipelines[key]
 
 
-def _normalize_text_items(texts: List[Any]) -> List[str]:
-    """Return canonical text strings from string or {text, path?} items."""
-    normalized = []
-    for item in texts:
-        if isinstance(item, dict):
-            if not isinstance(item.get("text"), str):
-                raise ValueError(
-                    "Translation text items must contain a string text field"
-                )
-            normalized.append(item["text"])
-        elif isinstance(item, str):
-            normalized.append(item)
-        else:
-            raise ValueError("Translation text items must be strings or objects")
-    return normalized
-
-
-def _split_long_item(item: str, max_words: int) -> List[str]:
-    """Split a single item into translatable sub-pieces if it exceeds max_words.
-    Uses chunk_units (which respects paragraph/sentence boundaries via _recursive_split)."""
-    if not item:
-        return [item]
-    if len(item.split()) <= max_words:
-        return [item]
-    return chunk_units([item], max_size=max_words) or [item]
-
-
-@execution_handler("translate")
-def translate(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Translate texts from source language to target language(s).
-
-    Expected payload:
-    - sourceLanguage: 'en' (optional, defaults to 'en')
-    - targetLanguage: 'es' (single target) OR
-    - targetLanguages: ['es', ...] (list of targets)
-    - texts: list of strings or list of {text, path?} objects
-
-    Returns: { response: [ { translation_text, original_text, path? }, ... ] }
-    Invalid assignments raise so the protocol records a failed step.
-    """
+@execution_handler("translate-map")
+def translate_map(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
-        raise ValueError("Translation payload must be an object")
+        raise ValueError("Translation map payload must be an object")
+    source = payload.get("sourceLanguage") or "en"
+    target = payload.get("targetLanguage")
+    units = payload.get("units")
+    if not isinstance(target, str) or not target:
+        raise ValueError("Translation map targetLanguage is required")
+    if not isinstance(source, str) or not source:
+        raise ValueError("Translation map sourceLanguage is invalid")
+    if not isinstance(units, list) or not units or len(units) > 32:
+        raise ValueError("Translation map units must contain between 1 and 32 items")
 
-    source = payload.get('sourceLanguage') or 'en'
-
-    target = None
-    if 'targetLanguage' in payload and payload.get('targetLanguage'):
-        target = payload.get('targetLanguage')
-    elif 'targetLanguages' in payload and isinstance(payload.get('targetLanguages'), list) and payload.get('targetLanguages'):
-        target = payload.get('targetLanguages')[0]
-    else:
-        target = 'es'
-
-    texts = payload.get('texts') or []
-    if not isinstance(texts, list) or len(texts) == 0:
-        raise ValueError("Translation texts must be a non-empty list")
-
-    translation = _get_translation_pipeline(source, target)
-
-    from lib.llm.config import get_task_config
-    task_config = get_task_config("translate")
-    batch_size = task_config.get("chunk_size", 32)
-    max_words_per_piece = task_config.get("max_words_per_item", 400)
-
-    normalized_texts = _normalize_text_items(texts)
-
-    # Flatten items into translation pieces, tracking origin item index.
-    flat_pieces: List[Tuple[int, str]] = []
-    for idx, item in enumerate(normalized_texts):
-        for piece in _split_long_item(item, max_words_per_piece):
-            flat_pieces.append((idx, piece))
-
-    # Batch-translate the flat list, separating empty pieces (the pipeline can mishandle empty input).
-    piece_translations: List[str] = [""] * len(flat_pieces)
-    non_empty = [(i, p) for i, (_, p) in enumerate(flat_pieces) if p]
-
-    for start in range(0, len(non_empty), batch_size):
-        batch = non_empty[start:start + batch_size]
-        batch_texts = [p for _, p in batch]
+    normalized = [_validate_unit(unit) for unit in units]
+    non_empty = [
+        (index, unit["text"])
+        for index, unit in enumerate(normalized)
+        if unit["text"]
+    ]
+    translated = [""] * len(normalized)
+    if non_empty:
+        translation = _get_translation_pipeline(source, target)
         with _translation_inference_lock:
-            output = translation(batch_texts)
-        for j, item in enumerate(output):
-            tx = item.get('translation_text') if isinstance(item, dict) else str(item)
-            piece_translations[batch[j][0]] = tx or ""
+            output = translation([text for _, text in non_empty])
+        if not isinstance(output, list) or len(output) != len(non_empty):
+            raise ValueError("Translation pipeline returned an invalid batch")
+        for output_index, item in enumerate(output):
+            value = (
+                item.get("translation_text")
+                if isinstance(item, dict)
+                else str(item)
+            )
+            translated[non_empty[output_index][0]] = value or ""
 
-    # Reassemble per original item.
-    per_item: Dict[int, List[str]] = {}
-    for (item_idx, _), tx in zip(flat_pieces, piece_translations):
-        per_item.setdefault(item_idx, []).append(tx)
+    return {
+        "translations": [
+            {
+                "targetLanguage": target,
+                "itemIndex": unit["itemIndex"],
+                "pieceIndex": unit["pieceIndex"],
+                "translationText": translated[index],
+                "originalText": unit["originalText"],
+                **({"path": unit["path"]} if "path" in unit else {}),
+            }
+            for index, unit in enumerate(normalized)
+        ]
+    }
 
-    translated_texts: List[Dict[str, Optional[str]]] = []
-    for idx in range(len(normalized_texts)):
-        joined = " ".join(p for p in per_item.get(idx, []) if p)
-        raw_item = texts[idx]
-        original_text = raw_item["text"] if isinstance(raw_item, dict) else raw_item
-        path = raw_item.get('path') if isinstance(raw_item, dict) else None
-        translated_texts.append({
-            "translation_text": joined,
-            "original_text": original_text,
-            "path": path,
-        })
 
-    return {"response": translated_texts}
+@execution_handler("translate-reduce")
+def translate_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("Translation reduce payload must be an object")
+    partials = payload.get("partials")
+    if not isinstance(partials, list):
+        raise ValueError("Translation reduce partials must be an array")
+
+    translations: List[Dict[str, Any]] = []
+    for partial in partials:
+        if not isinstance(partial, list):
+            raise ValueError("Translation reduce partial must be an array")
+        translations.extend(_validate_translation(item) for item in partial)
+
+    if payload.get("final") is not True:
+        return {"translations": translations}
+
+    response_mode = payload.get("responseMode")
+    item_count = payload.get("itemCount")
+    target_languages = payload.get("targetLanguages")
+    if response_mode not in ("items", "targets"):
+        raise ValueError("Translation reduce responseMode is invalid")
+    if not isinstance(item_count, int) or item_count < 1:
+        raise ValueError("Translation reduce itemCount is invalid")
+    if not isinstance(target_languages, list) or not target_languages:
+        raise ValueError("Translation reduce targetLanguages is invalid")
+    if any(
+        not isinstance(language, str) or not language
+        for language in target_languages
+    ):
+        raise ValueError("Translation reduce target language is invalid")
+    if len(set(target_languages)) != len(target_languages):
+        raise ValueError("Translation reduce target languages must be unique")
+
+    if response_mode == "items":
+        if len(target_languages) != 1:
+            raise ValueError("Item translation requires one target language")
+        response = [
+            _assemble_translation(translations, target_languages[0], item_index)
+            for item_index in range(item_count)
+        ]
+    else:
+        if item_count != 1:
+            raise ValueError("Target translation requires one text item")
+        response = [
+            _assemble_translation(translations, target_language, 0)
+            for target_language in target_languages
+        ]
+
+    return {"translations": translations, "response": response}
+
+
+def _validate_unit(unit: Any) -> Dict[str, Any]:
+    if not isinstance(unit, dict):
+        raise ValueError("Translation unit must be an object")
+    if not isinstance(unit.get("text"), str):
+        raise ValueError("Translation unit text must be a string")
+    if len(unit["text"].split()) > 400:
+        raise ValueError("Translation unit exceeds the word limit")
+    for key in ("itemIndex", "pieceIndex"):
+        if not isinstance(unit.get(key), int) or unit[key] < 0:
+            raise ValueError(f"Translation unit {key} is invalid")
+    if not isinstance(unit.get("originalText"), str):
+        raise ValueError("Translation unit originalText must be a string")
+    if "path" in unit and not isinstance(unit["path"], str):
+        raise ValueError("Translation unit path must be a string")
+    return unit
+
+
+def _validate_translation(item: Any) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError("Translation result item must be an object")
+    for key in ("targetLanguage", "translationText", "originalText"):
+        if not isinstance(item.get(key), str):
+            raise ValueError(f"Translation result {key} must be a string")
+    for key in ("itemIndex", "pieceIndex"):
+        if not isinstance(item.get(key), int) or item[key] < 0:
+            raise ValueError(f"Translation result {key} is invalid")
+    if "path" in item and not isinstance(item["path"], str):
+        raise ValueError("Translation result path must be a string")
+    return item
+
+
+def _assemble_translation(
+    translations: List[Dict[str, Any]], target_language: str, item_index: int
+) -> Dict[str, Any]:
+    pieces = sorted(
+        (
+            item
+            for item in translations
+            if item["targetLanguage"] == target_language
+            and item["itemIndex"] == item_index
+        ),
+        key=lambda item: item["pieceIndex"],
+    )
+    if not pieces:
+        raise ValueError("Translation reduce is missing an expected item")
+    expected_indexes = list(range(len(pieces)))
+    if [piece["pieceIndex"] for piece in pieces] != expected_indexes:
+        raise ValueError("Translation reduce has missing or duplicate pieces")
+    result = {
+        "translation_text": " ".join(
+            piece["translationText"]
+            for piece in pieces
+            if piece["translationText"]
+        ),
+        "original_text": pieces[0]["originalText"],
+    }
+    if "path" in pieces[0]:
+        result["path"] = pieces[0]["path"]
+    return result

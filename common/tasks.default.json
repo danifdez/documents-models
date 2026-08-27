@@ -94,13 +94,16 @@
     "merge_max_tokens": 800,
     "n_ctx": 32768
   },
-  "translate": {
+  "translate-map": {
     "enabled": true,
     "type": "translation",
     "model_prefix": "Helsinki-NLP/opus-mt",
-    "capabilities": [],
-    "chunk_size": 32,
-    "max_words_per_item": 400
+    "capabilities": []
+  },
+  "translate-reduce": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
   },
   "entity-extraction-map": {
     "enabled": true,
