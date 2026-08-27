@@ -39,7 +39,7 @@ compatible steps.
 - **Hardware detection** — At startup each worker detects CPU cores, RAM, GPU and VRAM, and registers
   its capabilities. Workers without a GPU or LLM skip executions that require them.
 - **Fenced attempts** — Every assignment carries a lease-bound attempt identity; Backend rejects stale results.
-- **Preemptible handlers** — Each active handler runs in an isolated process that is terminated and replaced when its action is cancelled or its lease is lost.
+- **Preemptible handlers** — Each active handler runs in an isolated process tree that is terminated and replaced when its action is cancelled or its lease is lost. Its assignment-scoped temporary workspace is removed when processing ends.
 - **Heartbeat & recovery** — Workers heartbeat through Backend, persist undelivered results locally and resend them until a terminal ACK.
 
 ## Models used

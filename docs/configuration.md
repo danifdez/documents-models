@@ -10,7 +10,7 @@ The rest of Documents remains usable when optional AI capabilities are disabled.
 
 ## Processing capacity
 
-The service runs a limited number of assignments at the same time. The default is two. Each slot has an isolated handler process so a cancelled calculation can be terminated without stopping other work. Increasing the limit can process more work concurrently, but can also keep more model state in processor or GPU memory. Documents will leave additional work queued until a slot becomes available.
+The service runs a limited number of assignments at the same time. The default is two. Each slot has an isolated handler process tree so a cancelled calculation and any child processes it started can be terminated without stopping other work. Every assignment also has a temporary workspace that is removed when processing ends. Increasing the limit can process more work concurrently, but can also keep more model state in processor or GPU memory. Documents will leave additional work queued until a slot becomes available.
 
 ## Language-model options
 

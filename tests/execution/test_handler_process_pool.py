@@ -1,14 +1,18 @@
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from lib.execution.handler_process_pool import (
     HandlerPreempted,
     HandlerProcessFailed,
     HandlerProcessPool,
+    _terminate_process_tree,
 )
 
 _PROCESS_EXECUTIONS = 0
@@ -37,6 +41,38 @@ def _process_executor(
             time.sleep(0.01)
     if mode == "crash":
         os._exit(7)
+    if mode == "temporary":
+        descriptor, path = tempfile.mkstemp()
+        os.close(descriptor)
+        Path(path).write_text("temporary", encoding="utf-8")
+        return {"pid": os.getpid(), "temporaryPath": path}
+    if mode == "temporary-block":
+        descriptor, path = tempfile.mkstemp()
+        os.close(descriptor)
+        Path(path).write_text("temporary", encoding="utf-8")
+        Path(assignment["markerPath"]).write_text(path, encoding="utf-8")
+        while True:
+            time.sleep(0.1)
+    if mode == "descendant":
+        heartbeat = assignment["heartbeatPath"]
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib,sys,time\n"
+                    "p = pathlib.Path(sys.argv[1])\n"
+                    "while True:\n"
+                    "    p.write_text(str(time.monotonic_ns()))\n"
+                    "    time.sleep(0.02)\n"
+                ),
+                heartbeat,
+            ]
+        )
+        Path(assignment["markerPath"]).write_text(
+            str(child.pid), encoding="utf-8"
+        )
+        child.wait()
     return {
         "pid": os.getpid(),
         "executionCount": _PROCESS_EXECUTIONS,
@@ -45,6 +81,25 @@ def _process_executor(
 
 
 class HandlerProcessPoolTest(unittest.TestCase):
+    def test_uses_taskkill_for_the_process_tree_on_windows(self):
+        process = Mock()
+        process.pid = 321
+        with patch(
+            "lib.execution.handler_process_pool.os.name",
+            "nt",
+        ), patch(
+            "lib.execution.handler_process_pool.subprocess.run"
+        ) as run:
+            _terminate_process_tree(process, force=False)
+
+        run.assert_called_once_with(
+            ["taskkill", "/PID", "321", "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.0,
+        )
+
     def test_executes_a_registered_handler_in_the_isolated_process(self):
         pool = HandlerProcessPool(1)
         assignment = {
@@ -94,6 +149,39 @@ class HandlerProcessPoolTest(unittest.TestCase):
             self.assertEqual(first["executionCount"], 1)
             self.assertEqual(second["executionCount"], 2)
             self.assertEqual(second["artifact"], "second")
+        finally:
+            pool.close()
+
+    def test_removes_the_handler_temporary_directory_after_success(self):
+        pool = HandlerProcessPool(1, executor=_process_executor)
+        try:
+            result, _ = pool.execute(
+                {"mode": "temporary"},
+                {},
+                threading.Event(),
+            )
+
+            temporary_path = Path(result["temporaryPath"])
+            self.assertFalse(temporary_path.exists())
+            self.assertFalse(temporary_path.parent.exists())
+        finally:
+            pool.close()
+
+    def test_releases_the_slot_when_temporary_directory_creation_fails(self):
+        pool = HandlerProcessPool(1, executor=_process_executor)
+        try:
+            with patch(
+                "lib.execution.handler_process_pool.tempfile.mkdtemp",
+                side_effect=OSError("no temporary storage"),
+            ):
+                with self.assertRaisesRegex(
+                    HandlerProcessFailed,
+                    "Could not create handler temporary directory",
+                ):
+                    pool.execute({}, {}, threading.Event())
+
+            result, _ = pool.execute({}, {}, threading.Event())
+            self.assertIn("pid", result)
         finally:
             pool.close()
 
@@ -192,6 +280,99 @@ class HandlerProcessPoolTest(unittest.TestCase):
                 )
                 self.assertNotEqual(replacement["pid"], cancelled_pid)
                 self.assertEqual(replacement["executionCount"], 1)
+            finally:
+                cancellation.set()
+                thread.join(timeout=3)
+                pool.close()
+
+    def test_removes_temporary_files_after_preemption(self):
+        pool = HandlerProcessPool(1, executor=_process_executor)
+        cancellation = threading.Event()
+        outcome = {}
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "temporary-path.txt"
+
+            def execute_blocking_handler():
+                try:
+                    pool.execute(
+                        {
+                            "mode": "temporary-block",
+                            "markerPath": str(marker),
+                        },
+                        {},
+                        cancellation,
+                    )
+                except Exception as error:
+                    outcome["error"] = error
+
+            thread = threading.Thread(target=execute_blocking_handler)
+            thread.start()
+            try:
+                deadline = time.monotonic() + 3
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(marker.exists())
+                temporary_path = Path(marker.read_text(encoding="utf-8"))
+                self.assertTrue(temporary_path.exists())
+
+                cancellation.set()
+                thread.join(timeout=3)
+
+                self.assertFalse(thread.is_alive())
+                self.assertIsInstance(outcome.get("error"), HandlerPreempted)
+                self.assertFalse(temporary_path.exists())
+                self.assertFalse(temporary_path.parent.exists())
+            finally:
+                cancellation.set()
+                thread.join(timeout=3)
+                pool.close()
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_preemption_terminates_descendant_processes(self):
+        pool = HandlerProcessPool(1, executor=_process_executor)
+        cancellation = threading.Event()
+        outcome = {}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "descendant.pid"
+            heartbeat = root / "heartbeat"
+
+            def execute_with_descendant():
+                try:
+                    pool.execute(
+                        {
+                            "mode": "descendant",
+                            "markerPath": str(marker),
+                            "heartbeatPath": str(heartbeat),
+                        },
+                        {},
+                        cancellation,
+                    )
+                except Exception as error:
+                    outcome["error"] = error
+
+            thread = threading.Thread(target=execute_with_descendant)
+            thread.start()
+            try:
+                deadline = time.monotonic() + 3
+                while (
+                    (not marker.exists() or not heartbeat.exists())
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                self.assertTrue(marker.exists())
+                self.assertTrue(heartbeat.exists())
+
+                cancellation.set()
+                thread.join(timeout=3)
+                self.assertFalse(thread.is_alive())
+                self.assertIsInstance(outcome.get("error"), HandlerPreempted)
+                stopped_heartbeat = heartbeat.read_text(encoding="utf-8")
+                time.sleep(0.15)
+                self.assertEqual(
+                    heartbeat.read_text(encoding="utf-8"),
+                    stopped_heartbeat,
+                )
             finally:
                 cancellation.set()
                 thread.join(timeout=3)

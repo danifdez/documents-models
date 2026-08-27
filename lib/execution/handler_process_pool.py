@@ -1,6 +1,13 @@
+import logging
 import multiprocessing
+import os
 import queue
+import shutil
+import signal
+import subprocess
+import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
@@ -8,6 +15,8 @@ from typing import Callable
 from uuid import uuid4
 
 from lib.execution.step_executor import execute_assignment
+
+logger = logging.getLogger(__name__)
 
 PROCESS_POLL_SECONDS = 0.05
 PROCESS_STOP_GRACE_SECONDS = 1.0
@@ -60,14 +69,27 @@ class HandlerProcessPool:
     ) -> tuple[dict, list[dict]]:
         slot = self._acquire(cancellation)
         command_id = str(uuid4())
+        temporary_directory = None
         released = False
         try:
+            try:
+                temporary_directory = tempfile.mkdtemp(
+                    prefix=(
+                        "documents-handler-"
+                        f"{assignment.get('attemptId', 'unknown')}-"
+                    )
+                )
+            except OSError as error:
+                raise HandlerProcessFailed(
+                    "Could not create handler temporary directory"
+                ) from error
             slot.connection.send(
                 {
                     "kind": "execute",
                     "commandId": command_id,
                     "assignment": assignment,
                     "artifacts": artifacts,
+                    "temporaryDirectory": temporary_directory,
                 }
             )
             while True:
@@ -133,6 +155,8 @@ class HandlerProcessPool:
                 "Handler process communication failed"
             ) from error
         finally:
+            if temporary_directory is not None:
+                _remove_temporary_directory(temporary_directory)
             if not released:
                 self._available.put(slot)
 
@@ -194,6 +218,7 @@ def _handler_slot_main(
     connection: Connection,
     executor: HandlerExecutor,
 ) -> None:
+    _isolate_process_tree()
     try:
         while True:
             command = connection.recv()
@@ -203,12 +228,26 @@ def _handler_slot_main(
                 raise RuntimeError("Unknown handler process command")
             command_id = command.get("commandId")
             output_artifacts: list[dict] = []
+            temporary_directory = command.get("temporaryDirectory")
             try:
-                result = executor(
-                    command["assignment"],
-                    command.get("artifacts") or {},
-                    output_artifacts=output_artifacts,
+                if not isinstance(temporary_directory, str):
+                    raise RuntimeError(
+                        "Handler command has no temporary directory"
+                    )
+                previous_environment, previous_tempdir = _use_temp_directory(
+                    temporary_directory
                 )
+                try:
+                    result = executor(
+                        command["assignment"],
+                        command.get("artifacts") or {},
+                        output_artifacts=output_artifacts,
+                    )
+                finally:
+                    _restore_temp_directory(
+                        previous_environment,
+                        previous_tempdir,
+                    )
                 response = {
                     "kind": "result",
                     "commandId": command_id,
@@ -231,10 +270,84 @@ def _handler_slot_main(
 
 def _stop_process(process: BaseProcess) -> None:
     if process.is_alive():
-        process.terminate()
+        _terminate_process_tree(process, force=False)
         process.join(PROCESS_STOP_GRACE_SECONDS)
+    _terminate_process_tree(process, force=True)
     if process.is_alive():
-        process.kill()
         process.join(PROCESS_STOP_GRACE_SECONDS)
     else:
         process.join(timeout=0)
+
+
+def _isolate_process_tree() -> None:
+    if os.name != "posix":
+        return
+    if os.getpgrp() != os.getpid():
+        os.setsid()
+
+
+def _terminate_process_tree(process: BaseProcess, force: bool) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(
+                process.pid,
+                signal.SIGKILL if force else signal.SIGTERM,
+            )
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    elif os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=PROCESS_STOP_GRACE_SECONDS,
+            )
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if not process.is_alive():
+        return
+    if force:
+        process.kill()
+    else:
+        process.terminate()
+
+
+def _use_temp_directory(
+    directory: str,
+) -> tuple[dict[str, str | None], str | None]:
+    previous = {name: os.environ.get(name) for name in ("TMPDIR", "TEMP", "TMP")}
+    for name in previous:
+        os.environ[name] = directory
+    previous_tempdir = tempfile.tempdir
+    tempfile.tempdir = None
+    return previous, previous_tempdir
+
+
+def _restore_temp_directory(
+    previous: dict[str, str | None],
+    previous_tempdir: str | None,
+) -> None:
+    for name, value in previous.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    tempfile.tempdir = previous_tempdir
+
+
+def _remove_temporary_directory(directory: str) -> None:
+    for _ in range(5):
+        try:
+            shutil.rmtree(directory)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(PROCESS_POLL_SECONDS)
+    logger.warning("Could not remove handler temporary directory %s", directory)
