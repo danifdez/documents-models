@@ -1,13 +1,18 @@
 import hashlib
+import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.code_identity import code_fingerprint
-from lib.execution.protocol_client import ExecutionProtocolClient
+from lib.execution.protocol_client import (
+    ExecutionProtocolClient,
+    ProtocolRejectionError,
+)
 from lib.execution.result_outbox import ResultOutbox
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
@@ -179,6 +184,29 @@ class StepProtocolTest(unittest.TestCase):
             },
         )
         self.assertEqual(timeout, 25)
+
+    def test_exposes_a_typed_lease_rejection(self):
+        body = io.BytesIO(b'{"message":"lease_expired"}')
+        rejection = urllib.error.HTTPError(
+            "http://localhost:3000/models-work/attempts/a/lease",
+            409,
+            "Conflict",
+            {},
+            body,
+        )
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "lib.execution.protocol_client.worker_data_dir",
+            return_value=directory,
+        ), patch("urllib.request.urlopen", side_effect=rejection):
+            credential = Path(directory) / ".worker_credential"
+            credential.write_text("worker-secret", encoding="utf-8")
+            client = ExecutionProtocolClient()
+
+            with self.assertRaises(ProtocolRejectionError) as raised:
+                client.renew_lease("a", 30_000)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.error_code, "lease_expired")
 
     def test_executes_a_deterministic_assignment_without_database_context(self):
         task_type = "protocol-test-task"

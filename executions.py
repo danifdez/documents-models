@@ -1,7 +1,11 @@
 import logging
+import multiprocessing
 import signal
 import sys
 import time
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
 
 from lib.execution.result_outbox import ResultOutbox
 from lib.execution.protocol_client import (

@@ -16,6 +16,22 @@ class WorkerAuthenticationError(ProtocolTransportError):
     pass
 
 
+class ProtocolRejectionError(ProtocolTransportError):
+    def __init__(
+        self,
+        path: str,
+        status_code: int,
+        error_code: str | None,
+        detail: str,
+    ) -> None:
+        self.path = path
+        self.status_code = status_code
+        self.error_code = error_code
+        super().__init__(
+            f"Backend rejected {path}: HTTP {status_code} {detail}"
+        )
+
+
 class ExecutionProtocolClient:
     def __init__(self) -> None:
         self.base_url = os.environ.get(
@@ -144,9 +160,7 @@ class ExecutionProtocolClient:
                     "Backend rejected worker credential for artifact download"
                 ) from error
             detail = error.read().decode("utf-8", errors="replace")
-            raise ProtocolTransportError(
-                f"Backend rejected {path}: HTTP {error.code} {detail}"
-            ) from error
+            raise _rejection(path, error.code, detail) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise ProtocolTransportError(
                 f"Backend artifact download failed: {error}"
@@ -170,9 +184,7 @@ class ExecutionProtocolClient:
                     f"Backend rejected worker credential for {path}"
                 ) from error
             detail = error.read().decode("utf-8", errors="replace")
-            raise ProtocolTransportError(
-                f"Backend rejected {path}: HTTP {error.code} {detail}"
-            ) from error
+            raise _rejection(path, error.code, detail) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise ProtocolTransportError(
                 f"Backend request failed for {path}: {error}"
@@ -233,9 +245,7 @@ class ExecutionProtocolClient:
                 raise WorkerAuthenticationError(
                     f"Backend rejected worker credential for {path}"
                 ) from error
-            raise ProtocolTransportError(
-                f"Backend rejected {path}: HTTP {error.code} {detail}"
-            ) from error
+            raise _rejection(path, error.code, detail) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise ProtocolTransportError(
                 f"Backend request failed for {path}: {error}"
@@ -261,3 +271,27 @@ class ExecutionProtocolClient:
             return self.credential_path.read_text(encoding="utf-8").strip()
         except FileNotFoundError:
             return ""
+
+
+def _rejection(
+    path: str, status_code: int, detail: str
+) -> ProtocolRejectionError:
+    error_code = None
+    try:
+        payload = json.loads(detail)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        if isinstance(message, str):
+            error_code = message
+        elif isinstance(message, list):
+            error_code = next(
+                (item for item in message if isinstance(item, str)), None
+            )
+    return ProtocolRejectionError(
+        path,
+        status_code,
+        error_code,
+        detail,
+    )

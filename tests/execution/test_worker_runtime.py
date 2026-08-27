@@ -1,15 +1,38 @@
+import os
+import tempfile
 import threading
+import time
 import unittest
+from pathlib import Path
 from unittest.mock import ANY, Mock
 
 from lib.execution.assignment_runner import run_assignment
-from lib.execution.protocol_client import ProtocolTransportError
+from lib.execution.handler_process_pool import (
+    HandlerProcessFailed,
+    HandlerProcessPool,
+)
+from lib.execution.protocol_client import (
+    ProtocolRejectionError,
+    ProtocolTransportError,
+)
 from lib.execution.result_outbox import ResultOutbox
 from lib.execution.worker_runtime import WorkerRuntime
 
 
 FIRST_ATTEMPT_ID = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"
 SECOND_ATTEMPT_ID = "018f1d8a-54d7-7d63-a1ee-5e9a6adca705"
+
+
+def _blocking_process_executor(
+    assignment,
+    _artifacts,
+    output_artifacts=None,
+):
+    Path(assignment["markerPath"]).write_text(
+        str(os.getpid()), encoding="utf-8"
+    )
+    while True:
+        time.sleep(0.1)
 
 
 class WorkerRuntimeTest(unittest.TestCase):
@@ -119,6 +142,31 @@ class WorkerRuntimeTest(unittest.TestCase):
 
         outbox.store.assert_not_called()
 
+    def test_leaves_a_crashed_handler_attempt_to_lease_recovery(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "service",
+        }
+
+        def crashed_handler(*_args):
+            raise HandlerProcessFailed("process exited")
+
+        run_assignment(
+            client,
+            outbox,
+            assignment,
+            threading.Event(),
+            handler_executor=crashed_handler,
+        )
+
+        outbox.store.assert_not_called()
+
     def test_runs_two_assignments_in_independent_slots(self):
         both_running = threading.Event()
         release = threading.Event()
@@ -193,6 +241,157 @@ class WorkerRuntimeTest(unittest.TestCase):
         finally:
             release.set()
             runtime.close()
+
+    def test_polls_control_and_preempts_between_lease_renewals(self):
+        release = threading.Event()
+        client = Mock()
+        client.read_control.return_value = {"cancelled": True}
+        runtime = WorkerRuntime(
+            client,
+            Mock(),
+            1,
+            30_000,
+            runner=lambda *_args: release.wait(timeout=2),
+        )
+        try:
+            runtime.submit({"attemptId": FIRST_ATTEMPT_ID})
+            active = runtime.active[FIRST_ATTEMPT_ID]
+
+            runtime.maintain_leases(active.next_control_poll)
+
+            self.assertTrue(active.cancellation.is_set())
+            client.read_control.assert_called_once_with(FIRST_ATTEMPT_ID)
+            client.renew_lease.assert_not_called()
+        finally:
+            release.set()
+            runtime.close()
+
+    def test_preempts_after_a_terminal_lease_rejection(self):
+        release = threading.Event()
+        client = Mock()
+        client.renew_lease.side_effect = ProtocolRejectionError(
+            "/models-work/attempts/attempt/lease",
+            409,
+            "lease_expired",
+            '{"message":"lease_expired"}',
+        )
+        runtime = WorkerRuntime(
+            client,
+            Mock(),
+            1,
+            30_000,
+            runner=lambda *_args: release.wait(timeout=2),
+        )
+        try:
+            runtime.submit({"attemptId": FIRST_ATTEMPT_ID})
+            active = runtime.active[FIRST_ATTEMPT_ID]
+            active.next_control_poll = active.next_lease_renewal + 1
+
+            runtime.maintain_leases(active.next_lease_renewal)
+
+            self.assertTrue(active.cancellation.is_set())
+            client.renew_lease.assert_called_once()
+        finally:
+            release.set()
+            runtime.close()
+
+    def test_preempts_when_the_local_lease_window_elapses(self):
+        release = threading.Event()
+        client = Mock()
+        runtime = WorkerRuntime(
+            client,
+            Mock(),
+            1,
+            30_000,
+            runner=lambda *_args: release.wait(timeout=2),
+        )
+        try:
+            runtime.submit({"attemptId": FIRST_ATTEMPT_ID})
+            active = runtime.active[FIRST_ATTEMPT_ID]
+
+            runtime.maintain_leases(active.lease_expires_at)
+
+            self.assertTrue(active.cancellation.is_set())
+            client.read_control.assert_not_called()
+            client.renew_lease.assert_not_called()
+        finally:
+            release.set()
+            runtime.close()
+
+    def test_preempts_the_running_process_and_stores_cancellation(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        pool = HandlerProcessPool(1, executor=_blocking_process_executor)
+        runtime = WorkerRuntime(
+            client,
+            outbox,
+            1,
+            30_000,
+            handler_pool=pool,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "handler.pid"
+            assignment = {
+                "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+                "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+                "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+                "attemptId": FIRST_ATTEMPT_ID,
+                "stepKind": "service",
+                "markerPath": str(marker),
+            }
+            try:
+                runtime.submit(assignment)
+                deadline = time.monotonic() + 3
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(marker.exists())
+                active = runtime.active[FIRST_ATTEMPT_ID]
+                client.read_control.return_value = {"cancelled": True}
+
+                runtime.maintain_leases(active.next_control_poll)
+                active.future.result(timeout=3)
+                runtime.collect_completed()
+
+                stored = outbox.store.call_args.args[0]
+                self.assertEqual(stored["status"], "cancelled")
+                self.assertEqual(runtime.available_slots, 1)
+            finally:
+                runtime.close()
+
+    def test_shutdown_preempts_a_running_handler_process(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": False}
+        outbox = Mock(spec=ResultOutbox)
+        pool = HandlerProcessPool(1, executor=_blocking_process_executor)
+        runtime = WorkerRuntime(
+            client,
+            outbox,
+            1,
+            30_000,
+            handler_pool=pool,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "handler.pid"
+            assignment = {
+                "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+                "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+                "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+                "attemptId": FIRST_ATTEMPT_ID,
+                "stepKind": "service",
+                "markerPath": str(marker),
+            }
+            runtime.submit(assignment)
+            deadline = time.monotonic() + 3
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists())
+
+            started = time.monotonic()
+            runtime.close()
+
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertEqual(outbox.store.call_args.args[0]["status"], "cancelled")
 
 
 if __name__ == "__main__":

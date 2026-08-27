@@ -30,6 +30,6 @@ Translation uses a separate model for each language pair. A pair that has not be
 - **Queued**: a compatible processor is busy or not currently online.
 - **Failed immediately**: required content, a supported format, permission, or model may be missing.
 - **Failed after processing**: the processor could not produce a valid result.
-- **Cancelled**: the result will not be applied, even if an already-running local calculation finishes.
+- **Cancelled**: an active local calculation is stopped and its result is not applied.
 
 The rest of the project remains usable when an optional AI action is unavailable.

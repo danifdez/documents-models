@@ -1,16 +1,25 @@
 import logging
 from threading import Event
+from typing import Callable
 
 from lib.execution.code_identity import code_fingerprint
+from lib.execution.handler_process_pool import (
+    HandlerPreempted,
+    HandlerProcessFailed,
+    HandlerProcessPool,
+)
 from lib.execution.protocol_client import (
     ExecutionProtocolClient,
     ProtocolTransportError,
 )
 from lib.execution.result_outbox import ResultOutbox
 from lib.execution.runtime_identity import runtime_fingerprint
-from lib.execution.step_executor import execute_assignment
 
 logger = logging.getLogger(__name__)
+
+HandlerExecutor = Callable[
+    [dict, dict[str, bytes], Event], tuple[dict, list[dict]]
+]
 
 
 def run_assignment(
@@ -18,6 +27,7 @@ def run_assignment(
     outbox: ResultOutbox,
     assignment: dict,
     cancellation: Event,
+    handler_executor: HandlerExecutor | None = None,
 ) -> None:
     attempt_id = assignment["attemptId"]
     control = client.read_control(attempt_id)
@@ -49,12 +59,29 @@ def run_assignment(
         outbox.store(_cancelled_result(assignment))
         return
 
-    output_artifacts = []
-    result = execute_assignment(
-        assignment,
-        artifacts,
-        output_artifacts=output_artifacts,
-    )
+    try:
+        if handler_executor is None:
+            result, output_artifacts = _execute_in_temporary_process(
+                assignment,
+                artifacts,
+                cancellation,
+            )
+        else:
+            result, output_artifacts = handler_executor(
+                assignment,
+                artifacts,
+                cancellation,
+            )
+    except HandlerPreempted:
+        outbox.store(_cancelled_result(assignment))
+        return
+    except HandlerProcessFailed as error:
+        logger.error(
+            "Handler process failed for attempt %s: %s",
+            attempt_id,
+            error,
+        )
+        return
     try:
         if client.read_control(attempt_id).get("cancelled"):
             cancellation.set()
@@ -68,6 +95,18 @@ def run_assignment(
         result = _cancelled_result(assignment)
         output_artifacts = []
     outbox.store(result, output_artifacts)
+
+
+def _execute_in_temporary_process(
+    assignment: dict,
+    artifacts: dict[str, bytes],
+    cancellation: Event,
+) -> tuple[dict, list[dict]]:
+    pool = HandlerProcessPool(1)
+    try:
+        return pool.execute(assignment, artifacts, cancellation)
+    finally:
+        pool.close()
 
 
 def _cancelled_result(assignment: dict) -> dict:

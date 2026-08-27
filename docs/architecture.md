@@ -28,4 +28,4 @@ Calculated results return to Documents, which decides whether and where to save 
 
 Documents keeps the authoritative action state. If processing is interrupted, unfinished work can be retried. A result from an expired attempt is ignored, and delivering the same accepted result twice does not apply it twice.
 
-Cancellation is checked before and after calculation. A model already running may need to finish its local calculation, but its output is discarded when cancellation has been observed.
+Each processing slot owns an isolated, reusable handler process. Models polls control while work is active and terminates that process when Documents reports cancellation, the lease is rejected or the local lease window expires. The slot starts a clean replacement process before accepting more work. A healthy process stays alive between assignments so loaded handler state can be reused.
