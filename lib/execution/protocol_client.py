@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from worker.identity import WORKER_ID, WORKER_NAME, worker_data_dir
+from lib.execution.private_storage import (
+    secure_existing_file,
+    write_private_text,
+)
 
 
 class ProtocolTransportError(RuntimeError):
@@ -68,9 +72,7 @@ class ExecutionProtocolClient:
         credential = response.get("credential")
         if not isinstance(credential, str) or not credential:
             raise ProtocolTransportError("Registration omitted worker credential")
-        self.credential_path.parent.mkdir(parents=True, exist_ok=True)
-        self.credential_path.write_text(credential, encoding="utf-8")
-        self.credential_path.chmod(0o600)
+        write_private_text(self.credential_path, credential)
         self.credential = credential
 
     def heartbeat(
@@ -268,6 +270,7 @@ class ExecutionProtocolClient:
 
     def _read_credential(self) -> str:
         try:
+            secure_existing_file(self.credential_path)
             return self.credential_path.read_text(encoding="utf-8").strip()
         except FileNotFoundError:
             return ""

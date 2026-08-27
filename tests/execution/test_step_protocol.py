@@ -149,6 +149,12 @@ class StepProtocolTest(unittest.TestCase):
                 ),
                 "worker-secret",
             )
+            self.assertEqual(
+                (Path(directory) / ".worker_credential").stat().st_mode
+                & 0o777,
+                0o600,
+            )
+            self.assertEqual(Path(directory).stat().st_mode & 0o777, 0o700)
 
     def test_claim_requests_a_bounded_wait(self):
         requests = []
@@ -452,6 +458,18 @@ class StepProtocolTest(unittest.TestCase):
             outbox = ResultOutbox(directory)
             outbox.store(first, [artifact])
             outbox.store(second)
+
+            outbox_directory = Path(directory) / ".pending_step_results"
+            self.assertEqual(
+                outbox_directory.stat().st_mode & 0o777,
+                0o700,
+            )
+            self.assertTrue(
+                all(
+                    path.stat().st_mode & 0o777 == 0o600
+                    for path in outbox_directory.glob("*.json")
+                )
+            )
 
             self.assertEqual(
                 outbox.pending_attempt_ids(),

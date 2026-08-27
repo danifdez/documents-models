@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Iterable
 from uuid import UUID
@@ -8,6 +7,11 @@ from uuid import UUID
 from lib.execution.protocol_client import (
     ExecutionProtocolClient,
     ProtocolTransportError,
+)
+from lib.execution.private_storage import (
+    ensure_private_directory,
+    secure_existing_file,
+    write_private_text,
 )
 
 ACK_CODES = {
@@ -30,19 +34,14 @@ class ResultOutbox:
         self, result: dict, artifacts: list[dict] | None = None
     ) -> None:
         attempt_id = self._attempt_id(result)
-        self.directory.mkdir(parents=True, exist_ok=True)
+        ensure_private_directory(self.directory)
         path = self.directory / f"{attempt_id}.json"
-        temporary = self.directory / f"{attempt_id}.tmp"
         encoded = json.dumps(
             {"result": result, "artifacts": artifacts or []},
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        with temporary.open("w", encoding="utf-8") as handle:
-            handle.write(encoded)
-            handle.flush()
-            os.fsync(handle.fileno())
-        temporary.replace(path)
+        write_private_text(path, encoded)
 
     def deliver_all(
         self,
@@ -65,6 +64,7 @@ class ResultOutbox:
         return [path.stem for path in sorted(self.directory.glob("*.json"))]
 
     def _load(self, path: Path) -> dict:
+        secure_existing_file(path)
         value = json.loads(path.read_text(encoding="utf-8"))
         if (
             not isinstance(value, dict)
