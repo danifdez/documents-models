@@ -1,20 +1,9 @@
-"""Text generation against the shared llama-server.
+"""Text generation client for the Models llama-server.
 
-This used to load the .gguf into this process with llama-cpp-python. It no
-longer does: the model is loaded once, by one llama-server, and everything on
-the machine — every worker plus the embedded browser — generates through it. See
-`services.llama_server` for how that server is found or started.
-
-The public surface is unchanged on purpose (`generate`, `chat`,
-`chat_with_tools`, `chat_stream`, `get_llm_service`), so the fifteen-odd task
-modules that call it did not have to change. What changed underneath:
-
-  - `n_ctx`, `n_threads`, `n_batch` and `n_gpu_layers` no longer decide anything
-    here — the server was started with its own. They are kept in the signature
-    because callers pass them from the task config, and `n_ctx` is still worth
-    comparing against what the server actually serves.
-  - LoRA adapters are not applied. The server loads what it was told to load; a
-    task asking for one gets a warning and the base model.
+`services.llama_server` resolves or starts the configured endpoint. The public
+surface (`generate`, `chat`, `chat_with_tools`, `chat_stream`,
+`get_llm_service`) is used by task handlers. Runtime sizing belongs to the
+server; request-level sampling and the model expected by each task remain here.
 """
 
 import json
@@ -82,7 +71,7 @@ def _error_detail(e: urllib.error.HTTPError) -> str:
 
 
 class LLMService:
-    """Client for one model served by the shared engine."""
+    """Client for one model served by the configured Models engine."""
 
     def __init__(
         self,
@@ -140,7 +129,7 @@ class LLMService:
     def _warn_on_mismatch(self) -> None:
         """Say so when the engine isn't serving what this task asked for.
 
-        Not an error: sharing one engine means whoever started it chose the
+        Not an error: the Documents engine may already have a model loaded, so
         model, and a task that wanted another one still gets an answer — just
         not from the model its config names.
         """
@@ -148,7 +137,7 @@ class LLMService:
         wanted = os.path.basename(self.model_path)
         if served and wanted and served != wanted:
             logger.warning(
-                "Shared engine serves %s, this task asked for %s. Using %s.",
+                "Documents engine serves %s, this task asked for %s. Using %s.",
                 served, wanted, served,
             )
         data = llama_server.props(self.url)
@@ -156,7 +145,7 @@ class LLMService:
         served_ctx = settings.get("n_ctx") if isinstance(settings, dict) else None
         if isinstance(served_ctx, int) and self.n_ctx and served_ctx < self.n_ctx:
             logger.warning(
-                "Shared engine has a %d-token context, this task asked for %d. "
+                "Documents engine has a %d-token context, this task asked for %d. "
                 "Long prompts will be truncated.",
                 served_ctx, self.n_ctx,
             )
@@ -250,6 +239,8 @@ class LLMService:
         allow_thinking: bool = False,
         inference_name: str = "chat",
         trace_metadata: Optional[Dict[str, Any]] = None,
+        sampling_overrides: Optional[Dict[str, Any]] = None,
+        chat_template_kwargs: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Chat completion. Returns the assistant message content.
 
@@ -274,12 +265,19 @@ class LLMService:
             "stream": False,
             "cache_prompt": True,
         }
-        body.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
+        overrides = dict(sampling_overrides or {})
+        if temperature is not None:
+            overrides["temperature"] = temperature
+        if seed is not None:
+            overrides["seed"] = seed
+        body.update(self._sampling_kwargs(overrides))
         body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
         if response_format is not None:
             body["response_format"] = response_format
+        if chat_template_kwargs is not None:
+            body["chat_template_kwargs"] = chat_template_kwargs
         resp = _post(f"{self.url}/v1/chat/completions", body)
         text = _content_of(resp)
         return text if allow_thinking else strip_thinking(text)

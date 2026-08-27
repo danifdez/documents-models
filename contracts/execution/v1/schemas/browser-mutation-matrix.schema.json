@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://documents.local/contracts/execution/v1/browser-mutation-matrix.schema.json",
+  "title": "Canonical Backend to IA Browser mutation matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cases"],
+  "properties": {
+    "schemaVersion": {
+      "const": "browser-mutation-matrix/1"
+    },
+    "cases": {
+      "const": [
+        {
+          "toolName": "browser.navigate",
+          "descriptorVersion": "browser.navigate/1",
+          "capability": "tool.browser.navigate/1",
+          "effectClass": "external_reversible",
+          "target": "https://example.test/next",
+          "arguments": {
+            "url": "https://example.test/next",
+            "expectedCurrentUrl": "https://example.test/current"
+          }
+        },
+        {
+          "toolName": "browser.go_back",
+          "descriptorVersion": "browser.go_back/1",
+          "capability": "tool.browser.go_back/1",
+          "effectClass": "external_reversible",
+          "target": "history:-1",
+          "arguments": {
+            "expectedCurrentUrl": "https://example.test/current"
+          }
+        },
+        {
+          "toolName": "browser.click",
+          "descriptorVersion": "browser.click/1",
+          "capability": "tool.browser.click/1",
+          "effectClass": "external_irreversible",
+          "target": "element:2",
+          "arguments": {
+            "expectedCurrentUrl": "https://example.test/current",
+            "elementIndex": 2,
+            "expectedKind": "button",
+            "expectedLabel": "Continue"
+          }
+        },
+        {
+          "toolName": "browser.type_text",
+          "descriptorVersion": "browser.type_text/1",
+          "capability": "tool.browser.type_text/1",
+          "effectClass": "external_irreversible",
+          "target": "element:3:text:harness",
+          "arguments": {
+            "expectedCurrentUrl": "https://example.test/current",
+            "elementIndex": 3,
+            "expectedLabel": "Search",
+            "expectedCurrentValue": "",
+            "expectedCurrentValueTruncated": false,
+            "text": "harness"
+          }
+        },
+        {
+          "toolName": "browser.select_option",
+          "descriptorVersion": "browser.select_option/1",
+          "capability": "tool.browser.select_option/1",
+          "effectClass": "external_irreversible",
+          "target": "element:4:option:prod",
+          "arguments": {
+            "expectedCurrentUrl": "https://example.test/current",
+            "elementIndex": 4,
+            "expectedLabel": "Environment",
+            "expectedCurrentValue": "dev",
+            "expectedCurrentValueTruncated": false,
+            "optionValue": "prod",
+            "expectedOptionLabel": "Production"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -52,6 +52,7 @@ SUPPORTED_TASK_TYPES = (
     "context-input-map",
     "context-input-reduce",
     "ask",
+    "browser-inference",
     "detect-language",
     "document-extraction",
     "data-source-sync",

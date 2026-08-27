@@ -1,26 +1,10 @@
-"""The inference engine, which no longer lives inside this process.
+"""Lifecycle and configuration for the Models llama-server process.
 
-Every worker used to load its own .gguf through llama-cpp-python, and the
-embedded browser started a llama-server of its own: two copies of the same model
-fighting over the RAM and VRAM of one machine. Now there is a single
-llama-server, it belongs to documents-dev, and everything on the machine — every
-execution in this worker plus the embedded browser — generates through it over HTTP.
-
-Who starts it:
-
-  - `manage llama start` (the normal way): documents-dev runs the engine as one
-    more of its services, from `python -m services.llama_server`, which execs the
-    binary in the foreground so the service manager owns the process.
-  - a execution, as a last resort: if nothing answers when the first execution needs the LLM,
-    it starts the same engine with the same settings rather than failing. See
-    `ensure_server`.
-
-Whoever gets there first wins: if the server already answers /health we use it as
-it is, whatever model it has loaded. That is the point of sharing one — one copy
-of the weights, one queue, and the chat no longer competes with the indexer.
-
-The engine is defined in exactly one place, `engine_defaults()`, so however it
-came up it is the same server: same model, same context, same slots.
+Models executions generate over HTTP through this endpoint. `manage llama
+start` normally owns the process; `ensure_server` can start the same configured
+binary when an execution needs it and no server answers. An explicitly
+configured local or remote endpoint is reused without starting another process.
+`engine_defaults()` remains the source of truth for model, context and slots.
 """
 
 import atexit
@@ -51,9 +35,7 @@ logger = logging.getLogger(__name__)
 # quant off a cold page cache takes its time.
 STARTUP_TIMEOUT_S = float(os.environ.get("LLAMA_SERVER_STARTUP_TIMEOUT", "300"))
 
-# Where the engine answers when nobody said otherwise. Unlike the backend — which
-# refuses to guess, because announcing a URL makes clients kill their own engine —
-# the worker needs a default: a execution that can't find the engine can't run at all.
+# The worker needs a deterministic default when no endpoint is configured.
 DEFAULT_URL = "http://127.0.0.1:18080"
 
 _lock = threading.Lock()
@@ -62,7 +44,7 @@ _ready_url: Optional[str] = None
 
 
 def server_url() -> str:
-    """Where the shared engine answers. Env wins over config, config over default."""
+    """Resolve the Models inference endpoint. Env wins over config and default."""
     url = (
         os.environ.get("LLAMA_SERVER_URL")
         or get_llm_defaults().get("server_url")
@@ -97,9 +79,8 @@ def server_binary() -> str:
     """The llama-server to run, or '' when there is none to be found.
 
     An explicit `LLAMA_SERVER_BIN` (or `llm_defaults.server_bin`) is taken as
-    given — that is how you point the engine at a build with CUDA, or at one
-    shared with another app. Otherwise documents-dev's own copy is used, and only
-    then whatever `llama-server` is on PATH.
+    given — that is how you point the engine at a CUDA build or remote runtime.
+    Otherwise the Models copy is used, and only then `llama-server` on PATH.
     """
     explicit = (
         os.environ.get("LLAMA_SERVER_BIN")
@@ -282,8 +263,8 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
     context and long prompts would start getting truncated.
     """
     host, port = _split_host_port(url)
-    # One slot per concurrent caller: the browser's chat and this worker's executions
-    # land on the same server and would otherwise queue behind each other. Each
+    # One slot per concurrent assignment: independent worker executions would
+    # otherwise queue behind each other. Each
     # slot keeps its own KV cache, which is what makes `cache_prompt` worth
     # anything.
     slots = max(1, int(os.environ.get("LLAMA_SERVER_SLOTS", "2")))
@@ -325,7 +306,7 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
 
 
 def ensure_server(model_path: str = "") -> str:
-    """Return the URL of a live shared engine, starting one if we have to.
+    """Return the URL of a live Models engine, starting one if needed.
 
     `model_path` is what the calling task wanted, and it is only a fallback: the
     engine is documents-dev's, and `engine_defaults()` decides what it serves. A
@@ -381,7 +362,7 @@ def _spawn(url: str, task_model_path: str) -> None:
         "No engine answering at %s — starting one for this worker. It should be a "
         "documents-dev service (`manage llama start`).", url,
     )
-    logger.info("Starting shared llama-server: %s (log: %s)", " ".join(cmd), log_path)
+    logger.info("Starting Documents llama-server: %s (log: %s)", " ".join(cmd), log_path)
     log = open(log_path, "ab")
     global _child
     # Its own process group, so a Ctrl-C in the worker's terminal doesn't reach
@@ -413,7 +394,7 @@ def stop() -> None:
     child, _child = _child, None
     if child.poll() is not None:
         return
-    logger.info("Stopping shared llama-server (pid %s)", child.pid)
+    logger.info("Stopping Documents llama-server (pid %s)", child.pid)
     try:
         child.send_signal(signal.SIGTERM)
         child.wait(timeout=15)

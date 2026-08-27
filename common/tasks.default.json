@@ -40,6 +40,12 @@
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm", "embeddings"]
   },
+  "browser-inference": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"]
+  },
   "assistant-chat": {
     "enabled": true,
     "type": "llm",
