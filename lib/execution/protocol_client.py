@@ -125,8 +125,6 @@ class ExecutionProtocolClient:
         )
 
     def read_control(self, attempt_id: str) -> Dict[str, Any]:
-        if not self.credential:
-            raise RuntimeError("Worker is not registered")
         return self._authenticated_get(
             f"/models-work/attempts/{attempt_id}/control"
         )
@@ -142,66 +140,38 @@ class ExecutionProtocolClient:
         )
 
     def download_artifact(self, attempt_id: str, artifact_id: str) -> bytes:
-        if not self.credential:
-            raise RuntimeError("Worker is not registered")
         path = f"/models-work/attempts/{attempt_id}/artifacts/{artifact_id}"
         request = urllib.request.Request(
             f"{self.base_url}{path}",
-            headers={
-                "x-worker-id": WORKER_ID,
-                "x-worker-credential": self.credential,
-            },
+            headers=self._worker_headers(),
             method="GET",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return response.read()
-        except urllib.error.HTTPError as error:
-            if error.code == 401:
-                raise WorkerAuthenticationError(
-                    "Backend rejected worker credential for artifact download"
-                ) from error
-            detail = error.read().decode("utf-8", errors="replace")
-            raise _rejection(path, error.code, detail) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise ProtocolTransportError(
-                f"Backend artifact download failed: {error}"
-            ) from error
+        return self._exchange(
+            request,
+            path=path,
+            timeout=60,
+            authentication_error=(
+                "Backend rejected worker credential for artifact download"
+            ),
+            transport_error="Backend artifact download failed",
+        )
 
     def _authenticated_get(self, path: str) -> Dict[str, Any]:
         request = urllib.request.Request(
             f"{self.base_url}{path}",
-            headers={
-                "x-worker-id": WORKER_ID,
-                "x-worker-credential": self.credential,
-            },
+            headers=self._worker_headers(),
             method="GET",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                payload = response.read()
-        except urllib.error.HTTPError as error:
-            if error.code == 401:
-                raise WorkerAuthenticationError(
-                    f"Backend rejected worker credential for {path}"
-                ) from error
-            detail = error.read().decode("utf-8", errors="replace")
-            raise _rejection(path, error.code, detail) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise ProtocolTransportError(
-                f"Backend request failed for {path}: {error}"
-            ) from error
-        try:
-            decoded = json.loads(payload)
-        except json.JSONDecodeError as error:
-            raise ProtocolTransportError(
-                f"Backend returned invalid JSON for {path}"
-            ) from error
-        if not isinstance(decoded, dict):
-            raise ProtocolTransportError(
-                f"Backend returned an invalid response for {path}"
-            )
-        return decoded
+        payload = self._exchange(
+            request,
+            path=path,
+            timeout=15,
+            authentication_error=(
+                f"Backend rejected worker credential for {path}"
+            ),
+            transport_error=f"Backend request failed for {path}",
+        )
+        return self._decode_json_response(payload, path)
 
     def reset_credential(self) -> None:
         self.credential_path.unlink(missing_ok=True)
@@ -213,15 +183,10 @@ class ExecutionProtocolClient:
         body: Dict[str, Any],
         timeout: float = 15,
     ) -> Dict[str, Any]:
-        if not self.credential:
-            raise RuntimeError("Worker is not registered")
         return self._request(
             path,
             body,
-            {
-                "x-worker-id": WORKER_ID,
-                "x-worker-credential": self.credential,
-            },
+            self._worker_headers(),
             timeout,
         )
 
@@ -238,29 +203,72 @@ class ExecutionProtocolClient:
             headers={"content-type": "application/json", **headers},
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = response.read()
-        except urllib.error.HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")
-            if error.code == 401 and path != "/models-work/register":
-                raise WorkerAuthenticationError(
-                    f"Backend rejected worker credential for {path}"
-                ) from error
-            raise _rejection(path, error.code, detail) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise ProtocolTransportError(
-                f"Backend request failed for {path}: {error}"
-            ) from error
+        authentication_error = None
+        if path != "/models-work/register":
+            authentication_error = (
+                f"Backend rejected worker credential for {path}"
+            )
+        payload = self._exchange(
+            request,
+            path=path,
+            timeout=timeout,
+            authentication_error=authentication_error,
+            transport_error=f"Backend request failed for {path}",
+            read_error_body_before_auth=True,
+        )
         if not payload:
             return {}
+        return self._decode_json_response(payload, path, allow_none=True)
+
+    def _worker_headers(self) -> Dict[str, str]:
+        if not self.credential:
+            raise RuntimeError("Worker is not registered")
+        return {
+            "x-worker-id": WORKER_ID,
+            "x-worker-credential": self.credential,
+        }
+
+    def _exchange(
+        self,
+        request: urllib.request.Request,
+        *,
+        path: str,
+        timeout: float,
+        authentication_error: str | None,
+        transport_error: str,
+        read_error_body_before_auth: bool = False,
+    ) -> bytes:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if (
+                error.code == 401
+                and authentication_error is not None
+                and not read_error_body_before_auth
+            ):
+                raise WorkerAuthenticationError(authentication_error) from error
+            detail = error.read().decode("utf-8", errors="replace")
+            if error.code == 401 and authentication_error is not None:
+                raise WorkerAuthenticationError(authentication_error) from error
+            raise _rejection(path, error.code, detail) from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise ProtocolTransportError(f"{transport_error}: {error}") from error
+
+    @staticmethod
+    def _decode_json_response(
+        payload: bytes,
+        path: str,
+        *,
+        allow_none: bool = False,
+    ) -> Dict[str, Any]:
         try:
             decoded = json.loads(payload)
         except json.JSONDecodeError as error:
             raise ProtocolTransportError(
                 f"Backend returned invalid JSON for {path}"
             ) from error
-        if decoded is None:
+        if decoded is None and allow_none:
             return None
         if not isinstance(decoded, dict):
             raise ProtocolTransportError(
