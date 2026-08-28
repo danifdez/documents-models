@@ -7,10 +7,9 @@ from typing import Any, Dict
 
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.active_context import effective_payload_from_active_context
-from lib.execution.code_identity import code_fingerprint
 from lib.execution.outcome import InferenceOutcome
 from lib.execution.output_artifact import HandlerOutput, prepare_output_artifacts
-from lib.execution.runtime_identity import runtime_fingerprint
+from lib.execution.step_result import step_result_base
 from lib.llm.config import get_task_config
 from lib.llm.prompts import prompt_package_fingerprint
 from utils.task_dispatch import call_handler, ensure_task_handler
@@ -26,17 +25,7 @@ def execute_assignment(
     work = assignment.get("work") or {}
     task_type = work.get("taskType")
     step_kind = assignment.get("stepKind")
-    base = {
-        "schemaVersion": "step-result/1",
-        "executionId": assignment["executionId"],
-        "stepId": assignment["stepId"],
-        "operationId": assignment["operationId"],
-        "attemptId": assignment["attemptId"],
-        "stepKind": step_kind,
-        "codeFingerprint": code_fingerprint(),
-        "runtimeFingerprint": runtime_fingerprint(),
-        "artifactRefs": [],
-    }
+    base = step_result_base(assignment)
     if not isinstance(task_type, str) or not ensure_task_handler(task_type):
         return {
             **base,

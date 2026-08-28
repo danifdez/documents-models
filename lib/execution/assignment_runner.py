@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from threading import Event
 from typing import Callable
 
-from lib.execution.code_identity import code_fingerprint
 from lib.execution.handler_process_pool import (
     HandlerPreempted,
     HandlerProcessFailed,
@@ -14,7 +13,7 @@ from lib.execution.protocol_client import (
     ProtocolTransportError,
 )
 from lib.execution.result_outbox import ResultOutbox
-from lib.execution.runtime_identity import runtime_fingerprint
+from lib.execution.step_result import step_result_base
 
 logger = logging.getLogger(__name__)
 
@@ -117,16 +116,8 @@ def _execute_in_temporary_process(
 
 def _cancelled_result(assignment: dict) -> dict:
     return {
-        "schemaVersion": "step-result/1",
-        "executionId": assignment["executionId"],
-        "stepId": assignment["stepId"],
-        "operationId": assignment["operationId"],
-        "attemptId": assignment["attemptId"],
-        "stepKind": assignment["stepKind"],
+        **step_result_base(assignment),
         "status": "cancelled",
-        "codeFingerprint": code_fingerprint(),
-        "runtimeFingerprint": runtime_fingerprint(),
-        "artifactRefs": [],
         "error": None,
     }
 
@@ -212,16 +203,8 @@ def _policy_rejected_result(
 ) -> dict:
     code, message = policy_error
     result = {
-        "schemaVersion": "step-result/1",
-        "executionId": assignment["executionId"],
-        "stepId": assignment["stepId"],
-        "operationId": assignment["operationId"],
-        "attemptId": assignment["attemptId"],
-        "stepKind": assignment["stepKind"],
+        **step_result_base(assignment),
         "status": "failed",
-        "codeFingerprint": code_fingerprint(),
-        "runtimeFingerprint": runtime_fingerprint(),
-        "artifactRefs": [],
         "error": {
             "code": code,
             "message": message,
