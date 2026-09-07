@@ -1,5 +1,5 @@
 from common.execution_registry import execution_handler
-from common.dataset import load_dataset, safe_float, resolve_fk_labels, normalize_fk_value
+from common.dataset import load_dataset, safe_float, dataset_labels
 import pandas as pd
 
 
@@ -32,8 +32,7 @@ def group_by(payload) -> dict:
         grouped = sub.groupby(group_field)[value_field].agg(fn).sort_values(ascending=False)
 
         raw_labels = grouped.index.tolist()
-        fk_map = resolve_fk_labels(schema, group_field, raw_labels)
-        labels = [fk_map.get(normalize_fk_value(v), str(v)) for v in raw_labels]
+        labels = dataset_labels(schema, group_field, raw_labels)
         values = [safe_float(v) for v in grouped.values]
 
         return {

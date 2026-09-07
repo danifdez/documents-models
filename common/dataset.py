@@ -140,6 +140,14 @@ def resolve_fk_labels(schema, field_key, raw_values):
     }
 
 
+def dataset_labels(schema, field_key, raw_values):
+    labels = resolve_fk_labels(schema, field_key, raw_values)
+    return [
+        labels.get(normalize_fk_value(value), str(value))
+        for value in raw_values
+    ]
+
+
 def _dataset_bundle(payload):
     cached = payload.get("_dataset_bundle")
     if isinstance(cached, dict):

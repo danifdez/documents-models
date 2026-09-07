@@ -1,5 +1,5 @@
 from common.execution_registry import execution_handler
-from common.dataset import load_dataset, safe_float, resolve_fk_labels, normalize_fk_value
+from common.dataset import load_dataset, safe_float, dataset_labels
 import numpy as np
 
 
@@ -53,8 +53,7 @@ def distribution(payload) -> dict:
         else:
             freq = col.value_counts().head(30)
             raw_labels = freq.index.tolist()
-            fk_map = resolve_fk_labels(schema, field_key, raw_labels)
-            labels = [fk_map.get(normalize_fk_value(v), str(v)) for v in raw_labels]
+            labels = dataset_labels(schema, field_key, raw_labels)
             result["chartType"] = "bar"
             result["chartData"] = {
                 "labels": labels,
