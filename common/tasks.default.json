@@ -98,8 +98,10 @@
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
-    "merge_target_tokens": 600,
-    "merge_max_tokens": 800,
+    "intermediate_target_tokens": 400,
+    "intermediate_max_tokens": 800,
+    "final_merge_target_tokens": 1200,
+    "final_merge_max_tokens": 1800,
     "n_ctx": 32768
   },
   "translate-map": {

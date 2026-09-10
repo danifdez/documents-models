@@ -19,5 +19,6 @@ def summarize_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
             partials,
             _target_language(payload),
             get_task_config("summarize-reduce"),
+            final=payload.get("final", True) is True,
         )
     }

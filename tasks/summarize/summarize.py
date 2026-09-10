@@ -57,14 +57,24 @@ def _summarize_chunk(text: str, target_language: str, cfg: Dict[str, Any]) -> st
     ).strip()
 
 
-def _merge_summaries(partials: List[str], target_language: str, cfg: Dict[str, Any]) -> str:
+def _merge_summaries(
+    partials: List[str],
+    target_language: str,
+    cfg: Dict[str, Any],
+    *,
+    final: bool = True,
+) -> str:
     llm = get_llm_service(**get_llm_params("summarize-reduce"))
+    target_key = (
+        "final_merge_target_tokens" if final else "intermediate_target_tokens"
+    )
+    max_key = "final_merge_max_tokens" if final else "intermediate_max_tokens"
     target_tokens, max_tokens = _output_limits(
         cfg,
-        target_key="merge_target_tokens",
-        max_key="merge_max_tokens",
-        target_default=600,
-        max_default=800,
+        target_key=target_key,
+        max_key=max_key,
+        target_default=1200 if final else 400,
+        max_default=1800 if final else 800,
     )
     joined = "\n\n---\n\n".join(
         f"[part {i + 1}]\n{p}" for i, p in enumerate(partials) if p
@@ -72,8 +82,8 @@ def _merge_summaries(partials: List[str], target_language: str, cfg: Dict[str, A
     joined = truncate_for_llm(
         joined,
         cfg,
-        tokens_key="merge_max_tokens",
-        default_tokens=800,
+        tokens_key=max_key,
+        default_tokens=1800 if final else 800,
     )
     messages = [
         {"role": "system", "content": _MERGE_SYSTEM},

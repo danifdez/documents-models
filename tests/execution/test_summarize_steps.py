@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from common.execution_registry import TASK_HANDLERS
 from tasks.summarize import summarize as summarize_task
@@ -31,11 +31,28 @@ class SummarizeStepTest(unittest.TestCase):
     )
     def test_reduce_merges_materialized_partials(self, merge_summaries):
         result = summarize_reduce(
-            {"partials": ["first", "second"], "targetLanguage": "en"}
+            {
+                "partials": ["first", "second"],
+                "targetLanguage": "en",
+            }
         )
 
         self.assertEqual(result, {"response": "merged"})
-        merge_summaries.assert_called_once()
+        merge_summaries.assert_called_once_with(
+            ["first", "second"],
+            "en",
+            ANY,
+            final=True,
+        )
+
+    @patch(
+        "tasks.summarize_reduce.summarize_reduce._merge_summaries",
+        return_value="merged",
+    )
+    def test_reduce_marks_intermediate_stages(self, merge_summaries):
+        summarize_reduce({"partials": ["first"], "final": False})
+
+        self.assertFalse(merge_summaries.call_args.kwargs["final"])
 
     def test_reduce_rejects_missing_partials(self):
         with self.assertRaisesRegex(ValueError, "requires string partials"):
@@ -76,7 +93,31 @@ class SummarizeStepTest(unittest.TestCase):
 
         self.assertEqual(result, "summary")
         messages = llm.chat.call_args.args[0]
-        self.assertIn("under 600 tokens", messages[1]["content"])
+        self.assertIn("under 1200 tokens", messages[1]["content"])
+        self.assertEqual(llm.chat.call_args.kwargs, {
+            "max_tokens": 1800,
+            "temperature": 0.0,
+            "seed": 0,
+        })
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_intermediate_reduce_compresses_before_the_final_merge(
+        self, get_llm_service, _get_llm_params,
+    ):
+        llm = get_llm_service.return_value
+        llm.chat.return_value = "summary"
+
+        result = summarize_task._merge_summaries(
+            ["first", "second", "third"],
+            "en",
+            {"input_char_budget": 1000},
+            final=False,
+        )
+
+        self.assertEqual(result, "summary")
+        messages = llm.chat.call_args.args[0]
+        self.assertIn("under 400 tokens", messages[1]["content"])
         self.assertEqual(llm.chat.call_args.kwargs, {
             "max_tokens": 800,
             "temperature": 0.0,
