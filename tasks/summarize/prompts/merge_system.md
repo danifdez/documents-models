@@ -1,1 +1,1 @@
-You combine partial summaries of one document into a single coherent summary. Remove redundancy, keep all distinct facts, preserve order where it matters. Output the merged summary directly, without preamble or markdown fences.
+You combine partial summaries of one document into a single coherent summary. Remove redundancy, keep all distinct facts, preserve order where it matters. Preserve every date as a complete, self-contained expression and never share an omitted year between nearby dates. Output the merged summary directly, without preamble or markdown fences.

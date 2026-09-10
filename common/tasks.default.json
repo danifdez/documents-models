@@ -90,6 +90,7 @@
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
+    "chunk_target_tokens": 250,
     "chunk_max_tokens": 400
   },
   "summarize-reduce": {
@@ -97,6 +98,7 @@
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
+    "merge_target_tokens": 600,
     "merge_max_tokens": 800,
     "n_ctx": 32768
   },
