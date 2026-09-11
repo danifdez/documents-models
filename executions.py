@@ -82,6 +82,8 @@ SUPPORTED_TASK_TYPES = (
     "translate-reduce",
     "summarize-map",
     "summarize-reduce",
+    "summarize-compose",
+    "summarize-finalize",
     "search",
     "ingest-content",
     "indexed-file-extraction",

@@ -92,7 +92,7 @@
     "capabilities": ["llm"],
     "output_min_ideas": 4,
     "output_max_ideas": 12,
-    "information_units_per_idea": 5,
+    "information_units_per_idea": 4,
     "idea_max_chars": 240,
     "output_min_tokens": 384,
     "output_max_tokens": 1400,
@@ -101,8 +101,26 @@
   "summarize-reduce": {
     "enabled": true,
     "type": "utility",
-    "capabilities": [],
+    "capabilities": []
+  },
+  "summarize-compose": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "input_max_ideas": 36,
+    "input_max_chars": 9000,
+    "paragraph_max_chars": 2400,
+    "output_max_char_ratio": 1.1,
+    "output_min_tokens": 256,
+    "output_max_tokens": 2800,
+    "output_tokens_per_idea": 64,
     "final_ideas_per_paragraph": 4
+  },
+  "summarize-finalize": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
   },
   "translate-map": {
     "enabled": true,

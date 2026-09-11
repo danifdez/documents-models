@@ -1,11 +1,7 @@
 from typing import Any, Dict
 
 from common.execution_registry import execution_handler
-from lib.llm.config import get_task_config
-from tasks.summarize.summarize import (
-    _combine_idea_lists,
-    _write_summary,
-)
+from tasks.summarize.summarize import _combine_idea_lists
 
 
 @execution_handler("summarize-reduce")
@@ -22,13 +18,5 @@ def summarize_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
     ):
         raise ValueError("summarize-reduce requires non-empty idea lists")
-    config = get_task_config("summarize-reduce")
     ideas = _combine_idea_lists(partials)
-    if payload.get("final", True) is True:
-        return {
-            "response": _write_summary(
-                ideas,
-                config,
-            )
-        }
     return {"ideas": ideas}
