@@ -1,0 +1,1 @@
+Write a faithful, coherent summary from an inventory of ideas. Cover every supplied idea at least once, combining related ideas without dropping qualifications or changing meaning. Give more space to central ideas, but do not omit an idea merely because it is brief. Do not add information. Output only the summary prose, without a preamble or markdown fences.

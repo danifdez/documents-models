@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import ANY, patch
 
@@ -14,128 +15,146 @@ class SummarizeStepTest(unittest.TestCase):
         self.assertNotIn("summarize", TASK_HANDLERS)
 
     @patch(
-        "tasks.summarize_map.summarize_map._summarize_chunk",
-        return_value="partial",
+        "tasks.summarize_map.summarize_map._extract_ideas",
+        return_value=["first idea", "second idea"],
     )
-    def test_map_summarizes_one_self_contained_chunk(self, summarize_chunk):
+    def test_map_extracts_an_idea_inventory(self, extract_ideas):
         result = summarize_map(
             {"content": "source chunk", "targetLanguage": "en"}
         )
 
-        self.assertEqual(result, {"response": "partial"})
-        summarize_chunk.assert_called_once()
+        self.assertEqual(result, {"ideas": ["first idea", "second idea"]})
+        extract_ideas.assert_called_once()
 
     @patch(
-        "tasks.summarize_reduce.summarize_reduce._merge_summaries",
+        "tasks.summarize_reduce.summarize_reduce._write_summary",
         return_value="merged",
     )
-    def test_reduce_merges_materialized_partials(self, merge_summaries):
+    def test_final_reduce_turns_all_materialized_ideas_into_prose(self, write_summary):
         result = summarize_reduce(
             {
-                "partials": ["first", "second"],
+                "partials": [["first"], ["second"]],
                 "targetLanguage": "en",
+                "final": True,
             }
         )
 
         self.assertEqual(result, {"response": "merged"})
-        merge_summaries.assert_called_once_with(
-            ["first", "second"],
-            "en",
-            ANY,
-            final=True,
-        )
+        write_summary.assert_called_once_with(["first", "second"], "en", ANY)
 
     @patch(
-        "tasks.summarize_reduce.summarize_reduce._merge_summaries",
-        return_value="merged",
+        "tasks.summarize_reduce.summarize_reduce._merge_idea_lists",
+        return_value=["first", "second"],
     )
-    def test_reduce_marks_intermediate_stages(self, merge_summaries):
-        summarize_reduce({"partials": ["first"], "final": False})
+    def test_intermediate_reduce_keeps_a_structured_inventory(self, merge_ideas):
+        result = summarize_reduce(
+            {"partials": [["first"], ["second"]], "final": False}
+        )
 
-        self.assertFalse(merge_summaries.call_args.kwargs["final"])
+        self.assertEqual(result, {"ideas": ["first", "second"]})
+        merge_ideas.assert_called_once_with(
+            [["first"], ["second"]], "en", ANY,
+        )
 
     def test_reduce_rejects_missing_partials(self):
-        with self.assertRaisesRegex(ValueError, "requires string partials"):
+        with self.assertRaisesRegex(ValueError, "requires idea partials"):
             summarize_reduce({"partials": []})
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
-    def test_map_keeps_headroom_and_uses_a_deterministic_seed(
+    def test_map_returns_constrained_ideas_with_a_dynamic_maximum(
         self, get_llm_service, _get_llm_params,
     ):
         llm = get_llm_service.return_value
-        llm.chat.return_value = "summary"
+        llm.chat.return_value = json.dumps({"ideas": ["An idea."]})
 
-        result = summarize_task._summarize_chunk(
-            "source", "en", {"input_char_budget": 1000}
-        )
-
-        self.assertEqual(result, "summary")
-        messages = llm.chat.call_args.args[0]
-        self.assertIn("under 250 tokens", messages[1]["content"])
-        self.assertEqual(llm.chat.call_args.kwargs, {
-            "max_tokens": 400,
-            "temperature": 0.0,
-            "seed": 0,
-        })
-
-    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
-    @patch("tasks.summarize.summarize.get_llm_service")
-    def test_reduce_keeps_headroom_and_uses_a_deterministic_seed(
-        self, get_llm_service, _get_llm_params,
-    ):
-        llm = get_llm_service.return_value
-        llm.chat.return_value = "summary"
-
-        result = summarize_task._merge_summaries(
-            ["partial"], "en", {"input_char_budget": 1000}
-        )
-
-        self.assertEqual(result, "summary")
-        messages = llm.chat.call_args.args[0]
-        self.assertIn("under 1200 tokens", messages[1]["content"])
-        self.assertEqual(llm.chat.call_args.kwargs, {
-            "max_tokens": 1800,
-            "temperature": 0.0,
-            "seed": 0,
-        })
-
-    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
-    @patch("tasks.summarize.summarize.get_llm_service")
-    def test_intermediate_reduce_compresses_before_the_final_merge(
-        self, get_llm_service, _get_llm_params,
-    ):
-        llm = get_llm_service.return_value
-        llm.chat.return_value = "summary"
-
-        result = summarize_task._merge_summaries(
-            ["first", "second", "third"],
+        result = summarize_task._extract_ideas(
+            "First fact. Second fact; third fact.",
             "en",
             {"input_char_budget": 1000},
-            final=False,
         )
 
-        self.assertEqual(result, "summary")
-        messages = llm.chat.call_args.args[0]
-        self.assertIn("under 400 tokens", messages[1]["content"])
-        self.assertEqual(llm.chat.call_args.kwargs, {
-            "max_tokens": 800,
-            "temperature": 0.0,
-            "seed": 0,
-        })
+        self.assertEqual(result, ["An idea."])
+        self.assertIn("important ideas", llm.chat.call_args.args[0][1]["content"])
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 384)
+        self.assertEqual(
+            llm.chat.call_args.kwargs["response_format"],
+            summarize_task._IDEAS_RESPONSE_FORMAT,
+        )
+        self.assertEqual(llm.chat.call_args.kwargs["temperature"], 0.0)
+        self.assertEqual(llm.chat.call_args.kwargs["seed"], 0)
 
-    def test_output_target_must_leave_generation_headroom(self):
-        with self.assertRaisesRegex(ValueError, "chunk_target_tokens"):
-            summarize_task._output_limits(
-                {
-                    "chunk_target_tokens": 400,
-                    "chunk_max_tokens": 400,
-                },
-                target_key="chunk_target_tokens",
-                max_key="chunk_max_tokens",
-                target_default=250,
-                max_default=400,
-            )
+    def test_dense_chunks_receive_more_headroom_up_to_the_configured_cap(self):
+        sparse = summarize_task._dynamic_max_tokens(
+            1,
+            {},
+            min_key="min",
+            max_key="max",
+            per_unit_key="per",
+            min_default=200,
+            max_default=1000,
+            per_unit_default=30,
+        )
+        dense = summarize_task._dynamic_max_tokens(
+            20,
+            {},
+            min_key="min",
+            max_key="max",
+            per_unit_key="per",
+            min_default=200,
+            max_default=1000,
+            per_unit_default=30,
+        )
+        capped = summarize_task._dynamic_max_tokens(
+            100,
+            {},
+            min_key="min",
+            max_key="max",
+            per_unit_key="per",
+            min_default=200,
+            max_default=1000,
+            per_unit_default=30,
+        )
+
+        self.assertGreater(dense, sparse)
+        self.assertEqual(capped, 1000)
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_intermediate_reduce_semantically_deduplicates_ideas(
+        self, get_llm_service, _get_llm_params,
+    ):
+        llm = get_llm_service.return_value
+        llm.chat.return_value = json.dumps({"ideas": ["one", "two"]})
+
+        result = summarize_task._merge_idea_lists(
+            [["one"], ["one paraphrased", "two"]],
+            "en",
+            {},
+        )
+
+        self.assertEqual(result, ["one", "two"])
+        self.assertIn("semantically deduplicate", llm.chat.call_args.args[0][1]["content"])
+        self.assertIn("response_format", llm.chat.call_args.kwargs)
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_final_reduce_writes_prose_from_every_idea(
+        self, get_llm_service, _get_llm_params,
+    ):
+        llm = get_llm_service.return_value
+        llm.chat.return_value = "summary"
+
+        result = summarize_task._write_summary(["one", "two"], "en", {})
+
+        self.assertEqual(result, "summary")
+        self.assertIn("complete inventory", llm.chat.call_args.args[0][1]["content"])
+        self.assertNotIn("response_format", llm.chat.call_args.kwargs)
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 600)
+
+    def test_invalid_idea_json_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "invalid idea JSON"):
+            summarize_task._parse_ideas("not-json")
 
 
 if __name__ == "__main__":

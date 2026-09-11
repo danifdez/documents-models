@@ -90,19 +90,22 @@
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
-    "chunk_target_tokens": 250,
-    "chunk_max_tokens": 400
+    "output_min_tokens": 384,
+    "output_max_tokens": 1200,
+    "tokens_per_information_unit": 32
   },
   "summarize-reduce": {
     "enabled": true,
     "type": "llm",
     "model": "Qwen3-8B-Q5_K_M.gguf",
     "capabilities": ["llm"],
-    "intermediate_target_tokens": 400,
-    "intermediate_max_tokens": 800,
-    "final_merge_target_tokens": 1200,
-    "final_merge_max_tokens": 1800,
-    "n_ctx": 32768
+    "intermediate_min_tokens": 384,
+    "intermediate_max_tokens": 1600,
+    "intermediate_tokens_per_idea": 36,
+    "final_min_tokens": 600,
+    "final_max_tokens": 2200,
+    "final_tokens_per_idea": 40,
+    "n_ctx": 8192
   },
   "translate-map": {
     "enabled": true,
