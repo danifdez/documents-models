@@ -76,13 +76,50 @@ class SummarizeStepTest(unittest.TestCase):
 
         self.assertEqual(result, ["An idea."])
         self.assertIn("important ideas", llm.chat.call_args.args[0][1]["content"])
-        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 384)
-        self.assertEqual(
-            llm.chat.call_args.kwargs["response_format"],
-            summarize_task._IDEAS_RESPONSE_FORMAT,
-        )
+        self.assertIn("at most 4 ideas", llm.chat.call_args.args[0][1]["content"])
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 480)
+        schema = llm.chat.call_args.kwargs["response_format"]["schema"]
+        ideas_schema = schema["properties"]["ideas"]
+        self.assertEqual(ideas_schema["maxItems"], 4)
+        self.assertEqual(ideas_schema["items"]["maxLength"], 240)
         self.assertEqual(llm.chat.call_args.kwargs["temperature"], 0.0)
         self.assertEqual(llm.chat.call_args.kwargs["seed"], 0)
+
+    def test_dense_chunks_allow_more_ideas_up_to_the_configured_cap(self):
+        sparse = summarize_task._dynamic_idea_limit(
+            1,
+            {},
+            min_key="min",
+            max_key="max",
+            units_per_idea_key="per",
+            min_default=4,
+            max_default=14,
+            units_per_idea_default=3,
+        )
+        dense = summarize_task._dynamic_idea_limit(
+            18,
+            {},
+            min_key="min",
+            max_key="max",
+            units_per_idea_key="per",
+            min_default=4,
+            max_default=14,
+            units_per_idea_default=3,
+        )
+        capped = summarize_task._dynamic_idea_limit(
+            100,
+            {},
+            min_key="min",
+            max_key="max",
+            units_per_idea_key="per",
+            min_default=4,
+            max_default=14,
+            units_per_idea_default=3,
+        )
+
+        self.assertEqual(sparse, 4)
+        self.assertEqual(dense, 6)
+        self.assertEqual(capped, 14)
 
     def test_dense_chunks_receive_more_headroom_up_to_the_configured_cap(self):
         sparse = summarize_task._dynamic_max_tokens(
@@ -135,7 +172,11 @@ class SummarizeStepTest(unittest.TestCase):
 
         self.assertEqual(result, ["one", "two"])
         self.assertIn("semantically deduplicate", llm.chat.call_args.args[0][1]["content"])
-        self.assertIn("response_format", llm.chat.call_args.kwargs)
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 512)
+        schema = llm.chat.call_args.kwargs["response_format"]["schema"]
+        ideas_schema = schema["properties"]["ideas"]
+        self.assertEqual(ideas_schema["maxItems"], 3)
+        self.assertEqual(ideas_schema["items"]["maxLength"], 240)
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
@@ -155,6 +196,18 @@ class SummarizeStepTest(unittest.TestCase):
     def test_invalid_idea_json_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "invalid idea JSON"):
             summarize_task._parse_ideas("not-json")
+
+    def test_idea_parser_enforces_the_generation_contract(self):
+        with self.assertRaisesRegex(ValueError, "too many ideas"):
+            summarize_task._parse_ideas(
+                json.dumps({"ideas": ["one", "two"]}),
+                max_ideas=1,
+            )
+        with self.assertRaisesRegex(ValueError, "oversized idea"):
+            summarize_task._parse_ideas(
+                json.dumps({"ideas": ["too long"]}),
+                max_idea_chars=3,
+            )
 
 
 if __name__ == "__main__":
