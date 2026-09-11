@@ -194,7 +194,7 @@ class SummarizeStepTest(unittest.TestCase):
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
-    def test_large_intermediate_reduce_must_shrink_its_candidate_inventory(
+    def test_intermediate_reduce_does_not_force_distinct_candidates_to_half(
         self, get_llm_service, _get_llm_params,
     ):
         llm = get_llm_service.return_value
@@ -205,10 +205,36 @@ class SummarizeStepTest(unittest.TestCase):
 
         self.assertEqual(result, ["combined thesis"])
         prompt = llm.chat.call_args.args[0][1]["content"]
-        self.assertIn("at most 20 central theses", prompt)
-        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 1696)
+        self.assertIn("at most 42 central theses", prompt)
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 2600)
         schema = llm.chat.call_args.kwargs["response_format"]["schema"]
-        self.assertEqual(schema["properties"]["ideas"]["maxItems"], 20)
+        self.assertEqual(schema["properties"]["ideas"]["maxItems"], 42)
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_intermediate_reduce_interleaves_partials_before_a_hard_cap(
+        self, get_llm_service, _get_llm_params,
+    ):
+        llm = get_llm_service.return_value
+        llm.chat.return_value = json.dumps({"ideas": ["combined thesis"]})
+        partials = [
+            ["first-1", "first-2"],
+            ["second-1", "second-2"],
+            ["third-1", "third-2"],
+        ]
+
+        summarize_task._merge_idea_lists(
+            partials,
+            "en",
+            {"intermediate_max_ideas": 4},
+        )
+
+        prompt = llm.chat.call_args.args[0][1]["content"]
+        self.assertLess(prompt.index("first-1"), prompt.index("second-1"))
+        self.assertLess(prompt.index("second-1"), prompt.index("third-1"))
+        self.assertLess(prompt.index("third-1"), prompt.index("first-2"))
+        schema = llm.chat.call_args.kwargs["response_format"]["schema"]
+        self.assertEqual(schema["properties"]["ideas"]["maxItems"], 4)
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
@@ -223,7 +249,7 @@ class SummarizeStepTest(unittest.TestCase):
         self.assertEqual(result, "summary")
         self.assertIn(
             "do not mechanically restate",
-            llm.chat.call_args.args[0][0]["content"],
+            llm.chat.call_args.args[0][0]["content"].lower(),
         )
         self.assertIn("complete inventory", llm.chat.call_args.args[0][1]["content"])
         self.assertNotIn("response_format", llm.chat.call_args.kwargs)

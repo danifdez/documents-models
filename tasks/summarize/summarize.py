@@ -97,6 +97,19 @@ def _idea_information_units(ideas: List[str]) -> int:
     return max(1, len(ideas), word_blocks)
 
 
+def _interleave_partials(partials: List[List[str]]) -> List[str]:
+    normalized = [
+        [idea.strip() for idea in partial if idea.strip()]
+        for partial in partials
+    ]
+    return [
+        partial[index]
+        for index in range(max((len(partial) for partial in normalized), default=0))
+        for partial in normalized
+        if index < len(partial)
+    ]
+
+
 def _parse_ideas(
     raw: str,
     *,
@@ -142,7 +155,7 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         max_key="output_max_ideas",
         units_per_idea_key="information_units_per_idea",
         min_default=4,
-        max_default=12,
+        max_default=14,
         units_per_idea_default=4,
     )
     max_idea_chars = int(cfg.get("idea_max_chars", 240))
@@ -153,7 +166,7 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         max_key="output_max_tokens",
         per_unit_key="output_tokens_per_idea",
         min_default=384,
-        max_default=1400,
+        max_default=1600,
         per_unit_default=96,
     )
     safe_text = truncate_for_llm(
@@ -193,23 +206,14 @@ def _merge_idea_lists(
     target_language: str,
     cfg: Dict[str, Any],
 ) -> List[str]:
-    ideas = [idea.strip() for partial in partials for idea in partial if idea.strip()]
+    ideas = _interleave_partials(partials)
     if not ideas:
         raise ValueError("summarize-reduce received no ideas")
     llm = get_llm_service(**get_llm_params("summarize-reduce"))
-    max_ideas = min(
-        len(ideas),
-        _dynamic_idea_limit(
-            len(ideas),
-            cfg,
-            min_key="intermediate_min_ideas",
-            max_key="intermediate_max_ideas",
-            units_per_idea_key="input_ideas_per_output_idea",
-            min_default=8,
-            max_default=20,
-            units_per_idea_default=2,
-        ),
-    )
+    intermediate_max_ideas = int(cfg.get("intermediate_max_ideas", 48))
+    if intermediate_max_ideas <= 0:
+        raise ValueError("dynamic summarization idea limits are invalid")
+    max_ideas = min(len(ideas), intermediate_max_ideas)
     max_idea_chars = int(cfg.get("idea_max_chars", 240))
     max_tokens = _dynamic_max_tokens(
         max_ideas,
@@ -218,8 +222,8 @@ def _merge_idea_lists(
         max_key="intermediate_max_tokens",
         per_unit_key="intermediate_tokens_per_idea",
         min_default=512,
-        max_default=1800,
-        per_unit_default=80,
+        max_default=2600,
+        per_unit_default=64,
     )
     messages = [
         {"role": "system", "content": _MERGE_SYSTEM},
@@ -262,7 +266,7 @@ def _write_summary(
         max_key="final_max_tokens",
         per_unit_key="final_tokens_per_idea",
         min_default=600,
-        max_default=2200,
+        max_default=3000,
         per_unit_default=40,
     )
     messages = [
