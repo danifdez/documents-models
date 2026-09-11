@@ -75,8 +75,15 @@ class SummarizeStepTest(unittest.TestCase):
         )
 
         self.assertEqual(result, ["An idea."])
-        self.assertIn("important ideas", llm.chat.call_args.args[0][1]["content"])
-        self.assertIn("at most 4 ideas", llm.chat.call_args.args[0][1]["content"])
+        self.assertIn(
+            "complete proposition",
+            llm.chat.call_args.args[0][0]["content"],
+        )
+        self.assertIn("central theses", llm.chat.call_args.args[0][1]["content"])
+        self.assertIn(
+            "at most 4 complete theses",
+            llm.chat.call_args.args[0][1]["content"],
+        )
         self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 480)
         schema = llm.chat.call_args.kwargs["response_format"]["schema"]
         ideas_schema = schema["properties"]["ideas"]
@@ -93,18 +100,18 @@ class SummarizeStepTest(unittest.TestCase):
             max_key="max",
             units_per_idea_key="per",
             min_default=4,
-            max_default=14,
-            units_per_idea_default=3,
+            max_default=12,
+            units_per_idea_default=4,
         )
         dense = summarize_task._dynamic_idea_limit(
-            18,
+            20,
             {},
             min_key="min",
             max_key="max",
             units_per_idea_key="per",
             min_default=4,
-            max_default=14,
-            units_per_idea_default=3,
+            max_default=12,
+            units_per_idea_default=4,
         )
         capped = summarize_task._dynamic_idea_limit(
             100,
@@ -113,13 +120,13 @@ class SummarizeStepTest(unittest.TestCase):
             max_key="max",
             units_per_idea_key="per",
             min_default=4,
-            max_default=14,
-            units_per_idea_default=3,
+            max_default=12,
+            units_per_idea_default=4,
         )
 
         self.assertEqual(sparse, 4)
-        self.assertEqual(dense, 6)
-        self.assertEqual(capped, 14)
+        self.assertEqual(dense, 5)
+        self.assertEqual(capped, 12)
 
     def test_dense_chunks_receive_more_headroom_up_to_the_configured_cap(self):
         sparse = summarize_task._dynamic_max_tokens(
@@ -158,7 +165,7 @@ class SummarizeStepTest(unittest.TestCase):
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
-    def test_intermediate_reduce_semantically_deduplicates_ideas(
+    def test_intermediate_reduce_synthesizes_ideas_under_a_dynamic_ceiling(
         self, get_llm_service, _get_llm_params,
     ):
         llm = get_llm_service.return_value
@@ -171,12 +178,37 @@ class SummarizeStepTest(unittest.TestCase):
         )
 
         self.assertEqual(result, ["one", "two"])
-        self.assertIn("semantically deduplicate", llm.chat.call_args.args[0][1]["content"])
+        self.assertIn(
+            "smaller synthesis",
+            llm.chat.call_args.args[0][0]["content"],
+        )
+        self.assertIn(
+            "at most 3 central theses",
+            llm.chat.call_args.args[0][1]["content"],
+        )
         self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 512)
         schema = llm.chat.call_args.kwargs["response_format"]["schema"]
         ideas_schema = schema["properties"]["ideas"]
         self.assertEqual(ideas_schema["maxItems"], 3)
         self.assertEqual(ideas_schema["items"]["maxLength"], 240)
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_large_intermediate_reduce_must_shrink_its_candidate_inventory(
+        self, get_llm_service, _get_llm_params,
+    ):
+        llm = get_llm_service.return_value
+        llm.chat.return_value = json.dumps({"ideas": ["combined thesis"]})
+        candidates = [f"candidate {index}" for index in range(42)]
+
+        result = summarize_task._merge_idea_lists([candidates], "en", {})
+
+        self.assertEqual(result, ["combined thesis"])
+        prompt = llm.chat.call_args.args[0][1]["content"]
+        self.assertIn("at most 20 central theses", prompt)
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 1696)
+        schema = llm.chat.call_args.kwargs["response_format"]["schema"]
+        self.assertEqual(schema["properties"]["ideas"]["maxItems"], 20)
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
@@ -189,6 +221,10 @@ class SummarizeStepTest(unittest.TestCase):
         result = summarize_task._write_summary(["one", "two"], "en", {})
 
         self.assertEqual(result, "summary")
+        self.assertIn(
+            "do not mechanically restate",
+            llm.chat.call_args.args[0][0]["content"],
+        )
         self.assertIn("complete inventory", llm.chat.call_args.args[0][1]["content"])
         self.assertNotIn("response_format", llm.chat.call_args.kwargs)
         self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 600)

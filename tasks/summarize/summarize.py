@@ -142,8 +142,8 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         max_key="output_max_ideas",
         units_per_idea_key="information_units_per_idea",
         min_default=4,
-        max_default=14,
-        units_per_idea_default=3,
+        max_default=12,
+        units_per_idea_default=4,
     )
     max_idea_chars = int(cfg.get("idea_max_chars", 240))
     max_tokens = _dynamic_max_tokens(
@@ -153,7 +153,7 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         max_key="output_max_tokens",
         per_unit_key="output_tokens_per_idea",
         min_default=384,
-        max_default=1600,
+        max_default=1400,
         per_unit_default=96,
     )
     safe_text = truncate_for_llm(
@@ -197,7 +197,19 @@ def _merge_idea_lists(
     if not ideas:
         raise ValueError("summarize-reduce received no ideas")
     llm = get_llm_service(**get_llm_params("summarize-reduce"))
-    max_ideas = len(ideas)
+    max_ideas = min(
+        len(ideas),
+        _dynamic_idea_limit(
+            len(ideas),
+            cfg,
+            min_key="intermediate_min_ideas",
+            max_key="intermediate_max_ideas",
+            units_per_idea_key="input_ideas_per_output_idea",
+            min_default=8,
+            max_default=20,
+            units_per_idea_default=2,
+        ),
+    )
     max_idea_chars = int(cfg.get("idea_max_chars", 240))
     max_tokens = _dynamic_max_tokens(
         max_ideas,
@@ -206,7 +218,7 @@ def _merge_idea_lists(
         max_key="intermediate_max_tokens",
         per_unit_key="intermediate_tokens_per_idea",
         min_default=512,
-        max_default=3600,
+        max_default=1800,
         per_unit_default=80,
     )
     messages = [
