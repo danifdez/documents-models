@@ -12,10 +12,6 @@ from services.llm_service import get_llm_service
 
 _SUMMARY_SYSTEM = get_prompt("summarize", "prompts/summary_system.md").strip()
 _SUMMARY_USER = get_prompt("summarize", "prompts/summary_user.md")
-_MERGE_SYSTEM = get_prompt("summarize", "prompts/merge_system.md").strip()
-_MERGE_USER = get_prompt("summarize", "prompts/merge_user.md")
-_FINAL_SYSTEM = get_prompt("summarize", "prompts/final_system.md").strip()
-_FINAL_USER = get_prompt("summarize", "prompts/final_user.md")
 
 def _target_language(payload: Dict[str, Any]) -> str:
     return payload.get("targetLanguage") or "en"
@@ -90,24 +86,6 @@ def _ideas_response_format(max_ideas: int, max_idea_chars: int) -> Dict[str, Any
             "additionalProperties": False,
         },
     }
-
-
-def _idea_information_units(ideas: List[str]) -> int:
-    word_blocks = math.ceil(sum(len(idea.split()) for idea in ideas) / 25)
-    return max(1, len(ideas), word_blocks)
-
-
-def _interleave_partials(partials: List[List[str]]) -> List[str]:
-    normalized = [
-        [idea.strip() for idea in partial if idea.strip()]
-        for partial in partials
-    ]
-    return [
-        partial[index]
-        for index in range(max((len(partial) for partial in normalized), default=0))
-        for partial in normalized
-        if index < len(partial)
-    ]
 
 
 def _parse_ideas(
@@ -201,87 +179,37 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
     )
 
 
-def _merge_idea_lists(
-    partials: List[List[str]],
-    target_language: str,
-    cfg: Dict[str, Any],
-) -> List[str]:
-    ideas = _interleave_partials(partials)
+def _combine_idea_lists(partials: List[List[str]]) -> List[str]:
+    ideas = [idea.strip() for partial in partials for idea in partial if idea.strip()]
     if not ideas:
         raise ValueError("summarize-reduce received no ideas")
-    llm = get_llm_service(**get_llm_params("summarize-reduce"))
-    intermediate_max_ideas = int(cfg.get("intermediate_max_ideas", 48))
-    if intermediate_max_ideas <= 0:
-        raise ValueError("dynamic summarization idea limits are invalid")
-    max_ideas = min(len(ideas), intermediate_max_ideas)
-    max_idea_chars = int(cfg.get("idea_max_chars", 240))
-    max_tokens = _dynamic_max_tokens(
-        max_ideas,
-        cfg,
-        min_key="intermediate_min_tokens",
-        max_key="intermediate_max_tokens",
-        per_unit_key="intermediate_tokens_per_idea",
-        min_default=512,
-        max_default=2600,
-        per_unit_default=64,
-    )
-    messages = [
-        {"role": "system", "content": _MERGE_SYSTEM},
-        {
-            "role": "user",
-            "content": _MERGE_USER.format(
-                target_language=target_language,
-                max_ideas=max_ideas,
-                max_idea_chars=max_idea_chars,
-                ideas=json.dumps(ideas, ensure_ascii=False),
-            ),
-        },
-    ]
-    raw = llm.chat(
-        messages,
-        max_tokens=max_tokens,
-        response_format=_ideas_response_format(max_ideas, max_idea_chars),
-        temperature=0.0,
-        seed=int(cfg.get("seed", 0)),
-    )
-    return _parse_ideas(
-        raw,
-        max_ideas=max_ideas,
-        max_idea_chars=max_idea_chars,
-    )
+    unique = []
+    seen = set()
+    for idea in ideas:
+        normalized = re.sub(r"\s+", " ", idea).strip()
+        key = normalized.casefold().rstrip(".!?")
+        if key not in seen:
+            seen.add(key)
+            unique.append(normalized)
+    return unique
 
 
 def _write_summary(
     ideas: List[str],
-    target_language: str,
     cfg: Dict[str, Any],
 ) -> str:
     if not ideas:
         raise ValueError("summarize-reduce received no ideas")
-    llm = get_llm_service(**get_llm_params("summarize-reduce"))
-    max_tokens = _dynamic_max_tokens(
-        _idea_information_units(ideas),
-        cfg,
-        min_key="final_min_tokens",
-        max_key="final_max_tokens",
-        per_unit_key="final_tokens_per_idea",
-        min_default=600,
-        max_default=3000,
-        per_unit_default=40,
+    ideas_per_paragraph = int(cfg.get("final_ideas_per_paragraph", 4))
+    if ideas_per_paragraph <= 0:
+        raise ValueError("final summary paragraph size is invalid")
+    sentences = []
+    for idea in ideas:
+        sentence = re.sub(r"\s+", " ", idea).strip()
+        sentences.append(
+            sentence if sentence.endswith((".", "!", "?")) else sentence + "."
+        )
+    return "\n\n".join(
+        " ".join(sentences[index:index + ideas_per_paragraph])
+        for index in range(0, len(sentences), ideas_per_paragraph)
     )
-    messages = [
-        {"role": "system", "content": _FINAL_SYSTEM},
-        {
-            "role": "user",
-            "content": _FINAL_USER.format(
-                target_language=target_language,
-                ideas=json.dumps(ideas, ensure_ascii=False),
-            ),
-        },
-    ]
-    return llm.chat(
-        messages,
-        max_tokens=max_tokens,
-        temperature=0.0,
-        seed=int(cfg.get("seed", 0)),
-    ).strip()

@@ -69,6 +69,9 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("translate-map", executions.CAPABILITIES)
         self.assertIn("translate-reduce", executions.CAPABILITIES)
         self.assertNotIn("translate", executions.CAPABILITIES)
+        self.assertIn("summarize-map", executions.CAPABILITIES)
+        self.assertIn("summarize-reduce", executions.CAPABILITIES)
+        self.assertNotIn("summarize", executions.CAPABILITIES)
         self.assertIn("ingest-content", executions.CAPABILITIES)
         self.assertIn("indexed-file-ingest", executions.CAPABILITIES)
         self.assertIn("relationship-extraction-reduce", executions.CAPABILITIES)
@@ -100,6 +103,7 @@ class StepProtocolTest(unittest.TestCase):
                     "transcribe",
                     "translate-map",
                     "translate-reduce",
+                    "summarize-reduce",
                     "indexed-file-extraction",
                     "relationship-extraction-reduce",
                 ],
