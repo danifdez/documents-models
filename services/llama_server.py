@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 
@@ -108,21 +109,28 @@ def is_alive(url: str, timeout: float = 2.0) -> bool:
         return False
 
 
-def props(url: str, timeout: float = 5.0) -> Dict[str, Any]:
+def props(
+    url: str, timeout: float = 5.0, model_id: str | None = None,
+) -> Dict[str, Any]:
     """What the server is serving: model path, context size, sampling defaults.
 
     Empty dict when it can't be asked — callers use this to warn, never to
     decide whether to run.
     """
     try:
-        with urllib.request.urlopen(f"{url}/props", timeout=timeout) as resp:
+        suffix = ""
+        if model_id:
+            suffix = "?" + urllib.parse.urlencode({"model": model_id})
+        with urllib.request.urlopen(f"{url}/props{suffix}", timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8")) or {}
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
             json.JSONDecodeError):
         return {}
 
 
-def lora_adapters(url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
+def lora_adapters(
+    url: str, timeout: float = 5.0, model_id: str | None = None,
+) -> List[Dict[str, Any]]:
     """The adapters the server has loaded: `[{"id", "path", "scale"}, …]`.
 
     Adapters can only be attached when the server starts (`--lora`), so this is
@@ -131,7 +139,10 @@ def lora_adapters(url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
     whether to run.
     """
     try:
-        with urllib.request.urlopen(f"{url.rstrip('/')}/lora-adapters",
+        suffix = ""
+        if model_id:
+            suffix = "?" + urllib.parse.urlencode({"model": model_id})
+        with urllib.request.urlopen(f"{url.rstrip('/')}/lora-adapters{suffix}",
                                     timeout=timeout) as resp:
             loaded = json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
@@ -140,7 +151,9 @@ def lora_adapters(url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
     return loaded if isinstance(loaded, list) else []
 
 
-def lora_adapter_id(url: str, path: str) -> Optional[int]:
+def lora_adapter_id(
+    url: str, path: str, model_id: str | None = None,
+) -> Optional[int]:
     """The id the server gave an adapter, or None if it hasn't got it loaded.
 
     Matches on the absolute path and, failing that, on the filename: the trainer
@@ -150,7 +163,7 @@ def lora_adapter_id(url: str, path: str) -> Optional[int]:
     if not path:
         return None
     wanted = os.path.basename(path)
-    for adapter in lora_adapters(url):
+    for adapter in lora_adapters(url, model_id=model_id):
         if not isinstance(adapter, dict):
             continue
         loaded = str(adapter.get("path") or "")
@@ -161,6 +174,20 @@ def lora_adapter_id(url: str, path: str) -> Optional[int]:
 
 def loaded_model(url: str) -> str:
     """Basename of the .gguf the server has loaded, or '' if unknown."""
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/v1/models", timeout=5) as resp:
+            models = json.loads(resp.read().decode("utf-8")).get("data") or []
+        loaded = [
+            model.get("id") for model in models
+            if isinstance(model, dict)
+            and isinstance(model.get("status"), dict)
+            and model["status"].get("value") == "loaded"
+        ]
+        if loaded:
+            return str(loaded[0])
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
+            json.JSONDecodeError, AttributeError):
+        pass
     data = props(url)
     path = data.get("model_path") or data.get("model") or ""
     if not path and isinstance(data.get("default_generation_settings"), dict):
@@ -223,11 +250,23 @@ def engine_defaults() -> Dict[str, Any]:
         except (TypeError, ValueError):
             return int(fallback)
 
+    models_dir = os.environ.get("LLAMA_SERVER_MODELS_DIR", "").strip()
+
+    def _gpu_layers(name: str, fallback: Any) -> int | str:
+        raw = os.environ.get(name, "").strip()
+        if raw in {"auto", "all"}:
+            return raw
+        return _int(name, fallback)
+
     return {
         "model_path": params["model_path"],
+        "models_dir": models_dir or None,
+        "models_max": max(1, _int("LLAMA_SERVER_MODELS_MAX", 1)),
         "n_ctx": _int("LLAMA_SERVER_CTX", params["n_ctx"]),
         "n_threads": _int("LLAMA_SERVER_THREADS", params["n_threads"]),
-        "n_gpu_layers": _int("LLAMA_SERVER_GPU_LAYERS", params["n_gpu_layers"]),
+        "n_gpu_layers": _gpu_layers(
+            "LLAMA_SERVER_GPU_LAYERS", params["n_gpu_layers"],
+        ),
         # Every adapter deployed on a task, loaded once even if several tasks
         # share it. They have to be here because llama-server only attaches
         # adapters at startup: a task whose LoRA didn't make it into the command
@@ -272,7 +311,6 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
         binary,
         "--host", host,
         "--port", str(port),
-        "--model", engine["model_path"],
         "--ctx-size", str(engine["n_ctx"] * slots),
         "--n-gpu-layers", str(engine["n_gpu_layers"]),
         "--parallel", str(slots),
@@ -289,6 +327,13 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
         # can be seen at all.
         "--metrics",
     ]
+    if engine.get("models_dir"):
+        cmd += [
+            "--models-dir", str(engine["models_dir"]),
+            "--models-max", str(engine["models_max"]),
+        ]
+    else:
+        cmd += ["--model", engine["model_path"]]
     if engine["n_threads"]:
         cmd += ["--threads", str(engine["n_threads"])]
     for adapter in engine.get("lora_paths") or []:
@@ -308,10 +353,8 @@ def engine_cmd(binary: str, url: str, engine: Dict[str, Any]) -> List[str]:
 def ensure_server(model_path: str = "") -> str:
     """Return the URL of a live Models engine, starting one if needed.
 
-    `model_path` is what the calling task wanted, and it is only a fallback: the
-    engine is documents-dev's, and `engine_defaults()` decides what it serves. A
-    task that wanted another model still gets an answer — `LLMService` says so in
-    the log.
+    `model_path` is what the calling task wants. A router selects it per request;
+    on a legacy single-model engine it remains only a startup fallback.
 
     Raises RuntimeError when there is no engine and no way to start one, which is
     a configuration problem: start it with `manage llama start`, or point
@@ -344,7 +387,7 @@ def _spawn(url: str, task_model_path: str) -> None:
         )
 
     engine = engine_defaults()
-    if not os.path.isfile(engine["model_path"]):
+    if not engine.get("models_dir") and not os.path.isfile(engine["model_path"]):
         # The installation's model is missing but the execution's is there: serve that
         # rather than refuse to run.
         if task_model_path and os.path.isfile(task_model_path):
@@ -446,7 +489,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if "--print-cmd" in argv:
         print(" ".join(shlex.quote(part) for part in cmd))
         return 0
-    if not os.path.isfile(engine["model_path"]):
+    if engine.get("models_dir"):
+        if not os.path.isdir(engine["models_dir"]):
+            logger.error("Model directory not found: %s", engine["models_dir"])
+            return 2
+    elif not os.path.isfile(engine["model_path"]):
         logger.error(
             "Model file not found: %s. Download it with `python setup_models.py`.",
             engine["model_path"],

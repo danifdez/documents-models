@@ -84,6 +84,7 @@ class LLMService:
         lora_scale: float = 1.0,
     ):
         self.model_path = model_path
+        self.model_id = os.path.splitext(os.path.basename(model_path))[0]
         self.n_ctx = n_ctx
         self.lora_path = lora_path
         self.lora_scale = lora_scale
@@ -103,7 +104,9 @@ class LLMService:
         # is really the base model.
         self._lora_id = None
         if lora_path:
-            self._lora_id = llama_server.lora_adapter_id(self.url, lora_path)
+            self._lora_id = llama_server.lora_adapter_id(
+                self.url, lora_path, self.model_id,
+            )
             if self._lora_id is None:
                 raise RuntimeError(
                     f"LoRA {os.path.basename(lora_path)} is not loaded by the "
@@ -126,21 +129,26 @@ class LLMService:
             return {}
         return {"lora": [{"id": self._lora_id, "scale": self.lora_scale}]}
 
+    def _model_field(self) -> Dict[str, Any]:
+        return {"model": self.model_id}
+
     def _warn_on_mismatch(self) -> None:
         """Say so when the engine isn't serving what this task asked for.
 
-        Not an error: the Documents engine may already have a model loaded, so
-        model, and a task that wanted another one still gets an answer — just
-        not from the model its config names.
+        Asking props for this model also selects it when the engine is a router.
+        A legacy single-model server ignores the selector, so the mismatch
+        warning remains useful there.
         """
-        served = llama_server.loaded_model(self.url)
-        wanted = os.path.basename(self.model_path)
-        if served and wanted and served != wanted:
+        data = llama_server.props(self.url, model_id=self.model_id)
+        path = data.get("model_path") or data.get("model") or ""
+        if not path and isinstance(data.get("default_generation_settings"), dict):
+            path = data["default_generation_settings"].get("model") or ""
+        served = os.path.splitext(os.path.basename(str(path)))[0]
+        if served and served != self.model_id:
             logger.warning(
-                "Documents engine serves %s, this task asked for %s. Using %s.",
-                served, wanted, served,
+                "Documents engine serves %s, this task asked for %s.",
+                served, self.model_id,
             )
-        data = llama_server.props(self.url)
         settings = data.get("default_generation_settings")
         served_ctx = settings.get("n_ctx") if isinstance(settings, dict) else None
         if isinstance(served_ctx, int) and self.n_ctx and served_ctx < self.n_ctx:
@@ -197,6 +205,7 @@ class LLMService:
             # loop over one document hit this on every call.
             "cache_prompt": True,
         }
+        body.update(self._model_field())
         body.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
         body.update(self._lora_field())
         if grammar is not None:
@@ -244,11 +253,9 @@ class LLMService:
     ) -> str:
         """Chat completion. Returns the assistant message content.
 
-        Thinking is suppressed by default: a `/no_think` system message is
-        appended (Qwen3 soft switch) and any <think> blocks are stripped, so
-        the reasoning budget isn't spent inside `max_tokens`. Callers that
-        want the model to reason (and handle stripping themselves) pass
-        `allow_thinking=True`.
+        Thinking is suppressed by default through the model chat template and
+        any <think> blocks are stripped. This works for Qwen3 and Qwen3.8,
+        whose template rejects system messages placed after the user message.
 
         `response_format` follows the OpenAI convention
         ({"type": "json_object", "schema": {...}}): the server compiles the
@@ -257,14 +264,13 @@ class LLMService:
         NOT shown to the model — callers must describe the expected output in
         the prompt themselves.
         """
-        if not allow_thinking:
-            messages = list(messages) + [{"role": "system", "content": "/no_think"}]
         body: Dict[str, Any] = {
             "messages": messages,
             "max_tokens": max_tokens,
             "stream": False,
             "cache_prompt": True,
         }
+        body.update(self._model_field())
         overrides = dict(sampling_overrides or {})
         if temperature is not None:
             overrides["temperature"] = temperature
@@ -276,8 +282,12 @@ class LLMService:
             body["grammar"] = grammar
         if response_format is not None:
             body["response_format"] = response_format
-        if chat_template_kwargs is not None:
-            body["chat_template_kwargs"] = chat_template_kwargs
+        template_kwargs = dict(chat_template_kwargs or {})
+        if not allow_thinking:
+            template_kwargs.setdefault("enable_thinking", False)
+            template_kwargs.setdefault("preserve_thinking", False)
+        if template_kwargs:
+            body["chat_template_kwargs"] = template_kwargs
         resp = _post(f"{self.url}/v1/chat/completions", body)
         text = _content_of(resp)
         return text if allow_thinking else strip_thinking(text)
@@ -316,6 +326,7 @@ class LLMService:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        body.update(self._model_field())
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
         resp = _post(f"{self.url}/v1/chat/completions", body)
@@ -350,6 +361,7 @@ class LLMService:
             "stream": True,
             "cache_prompt": True,
         }
+        body.update(self._model_field())
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
         resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)

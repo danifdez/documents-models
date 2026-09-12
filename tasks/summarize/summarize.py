@@ -1,10 +1,8 @@
-"""Self-contained map and reduce steps for durable summarization workflows."""
+"""Idea extraction and global composition for durable summarization workflows."""
 
 import json
-import logging
 import math
 import re
-from collections import Counter
 from typing import Any, Dict, List
 
 from lib.llm.config import get_llm_params
@@ -14,10 +12,9 @@ from services.llm_service import get_llm_service
 
 _SUMMARY_SYSTEM = get_prompt("summarize", "prompts/summary_system.md").strip()
 _SUMMARY_USER = get_prompt("summarize", "prompts/summary_user.md")
-_FINAL_SYSTEM = get_prompt("summarize", "prompts/final_system.md").strip()
-_FINAL_USER = get_prompt("summarize", "prompts/final_user.md")
+_MERGE_SYSTEM = get_prompt("summarize", "prompts/merge_system.md").strip()
+_MERGE_USER = get_prompt("summarize", "prompts/merge_user.md")
 
-logger = logging.getLogger(__name__)
 
 def _target_language(payload: Dict[str, Any]) -> str:
     return payload.get("targetLanguage") or "en"
@@ -63,7 +60,7 @@ def _dynamic_idea_limit(
     minimum = int(cfg.get(min_key, min_default))
     maximum = int(cfg.get(max_key, max_default))
     units_per_idea = int(cfg.get(units_per_idea_key, units_per_idea_default))
-    if minimum <= 0 or maximum < minimum or units_per_idea <= 0:
+    if minimum < 0 or maximum <= 0 or maximum < minimum or units_per_idea <= 0:
         raise ValueError("dynamic summarization idea limits are invalid")
     estimated = math.ceil(max(1, units) / units_per_idea)
     return min(maximum, max(minimum, estimated))
@@ -77,9 +74,14 @@ def _ideas_response_format(max_ideas: int, max_idea_chars: int) -> Dict[str, Any
         "schema": {
             "type": "object",
             "properties": {
+                "material_idea_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": max_ideas,
+                },
                 "ideas": {
                     "type": "array",
-                    "minItems": 1,
+                    "minItems": 0,
                     "maxItems": max_ideas,
                     "items": {
                         "type": "string",
@@ -88,7 +90,7 @@ def _ideas_response_format(max_ideas: int, max_idea_chars: int) -> Dict[str, Any
                     },
                 },
             },
-            "required": ["ideas"],
+            "required": ["material_idea_count", "ideas"],
             "additionalProperties": False,
         },
     }
@@ -105,10 +107,14 @@ def _parse_ideas(
     except json.JSONDecodeError as error:
         raise ValueError("summarization returned invalid idea JSON") from error
     ideas = payload.get("ideas") if isinstance(payload, dict) else None
+    declared_count = (
+        payload.get("material_idea_count") if isinstance(payload, dict) else None
+    )
     if (
         not isinstance(ideas, list)
-        or not ideas
         or any(not isinstance(idea, str) or not idea.strip() for idea in ideas)
+        or not isinstance(declared_count, int)
+        or declared_count != len(ideas)
     ):
         raise ValueError("summarization returned invalid ideas")
     unique = []
@@ -119,12 +125,16 @@ def _parse_ideas(
         if key not in seen:
             seen.add(key)
             unique.append(normalized)
+    if len(unique) != declared_count:
+        raise ValueError("summarization returned duplicate ideas")
     if max_ideas is not None and len(unique) > max_ideas:
         raise ValueError("summarization returned too many ideas")
     if max_idea_chars is not None and any(
         len(idea) > max_idea_chars for idea in unique
     ):
         raise ValueError("summarization returned an oversized idea")
+    if any(idea[-1] not in '.!?…"\'»)]' for idea in unique):
+        raise ValueError("summarization returned an incomplete idea")
     return unique
 
 
@@ -138,11 +148,14 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         min_key="output_min_ideas",
         max_key="output_max_ideas",
         units_per_idea_key="information_units_per_idea",
-        min_default=4,
-        max_default=14,
-        units_per_idea_default=4,
+        min_default=0,
+        max_default=12,
+        units_per_idea_default=8,
     )
+    target_idea_chars = int(cfg.get("idea_target_chars", 180))
     max_idea_chars = int(cfg.get("idea_max_chars", 240))
+    if target_idea_chars <= 0 or target_idea_chars > max_idea_chars:
+        raise ValueError("summarization idea length limits are invalid")
     max_tokens = _dynamic_max_tokens(
         max_ideas,
         cfg,
@@ -150,8 +163,8 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
         max_key="output_max_tokens",
         per_unit_key="output_tokens_per_idea",
         min_default=384,
-        max_default=1600,
-        per_unit_default=96,
+        max_default=900,
+        per_unit_default=64,
     )
     safe_text = truncate_for_llm(
         cleaned,
@@ -166,6 +179,7 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
             "content": _SUMMARY_USER.format(
                 target_language=target_language,
                 max_ideas=max_ideas,
+                target_idea_chars=target_idea_chars,
                 max_idea_chars=max_idea_chars,
                 safe_text=safe_text,
             ),
@@ -186,9 +200,12 @@ def _extract_ideas(text: str, target_language: str, cfg: Dict[str, Any]) -> List
 
 
 def _combine_idea_lists(partials: List[List[str]]) -> List[str]:
-    ideas = [idea.strip() for partial in partials for idea in partial if idea.strip()]
-    if not ideas:
-        raise ValueError("summarize-reduce received no ideas")
+    ideas = [
+        idea.strip()
+        for partial in partials
+        for idea in partial
+        if idea.strip()
+    ]
     unique = []
     seen = set()
     for idea in ideas:
@@ -200,64 +217,35 @@ def _combine_idea_lists(partials: List[List[str]]) -> List[str]:
     return unique
 
 
-def _write_summary(
-    ideas: List[str],
-    cfg: Dict[str, Any],
-) -> str:
-    if not ideas:
-        raise ValueError("summarize-reduce received no ideas")
-    ideas_per_paragraph = int(cfg.get("final_ideas_per_paragraph", 4))
-    if ideas_per_paragraph <= 0:
-        raise ValueError("final summary paragraph size is invalid")
-    sentences = []
-    for idea in ideas:
-        sentence = re.sub(r"\s+", " ", idea).strip()
-        sentences.append(
-            sentence if sentence.endswith((".", "!", "?")) else sentence + "."
-        )
-    return "\n\n".join(
-        " ".join(sentences[index:index + ideas_per_paragraph])
-        for index in range(0, len(sentences), ideas_per_paragraph)
-    )
+def _dynamic_output_word_limit(idea_count: int, cfg: Dict[str, Any]) -> int:
+    minimum = int(cfg.get("output_min_words", 60))
+    maximum = int(cfg.get("output_max_words", 110))
+    per_idea = int(cfg.get("output_words_per_idea", 7))
+    if minimum <= 0 or maximum < minimum or per_idea <= 0:
+        raise ValueError("summary word limits are invalid")
+    return min(maximum, max(minimum, idea_count * per_idea))
 
 
-def _idea_batches(ideas: List[str], cfg: Dict[str, Any]) -> List[List[str]]:
-    max_ideas = int(cfg.get("input_max_ideas", 24))
-    max_chars = int(cfg.get("input_max_chars", 6000))
-    if max_ideas <= 0 or max_chars <= 0:
-        raise ValueError("final composition input limits are invalid")
-
-    batches: List[List[str]] = []
-    current: List[str] = []
-    current_chars = 0
-    for idea in ideas:
-        normalized = re.sub(r"\s+", " ", idea).strip()
-        if not normalized:
-            continue
-        if len(normalized) > max_chars:
-            raise ValueError("final composition received an oversized idea")
-        if current and (
-            len(current) >= max_ideas
-            or current_chars + len(normalized) > max_chars
-        ):
-            batches.append(current)
-            current = []
-            current_chars = 0
-        current.append(normalized)
-        current_chars += len(normalized)
-    if current:
-        batches.append(current)
-    if not batches:
-        raise ValueError("final composition received no ideas")
-    return batches
+def _dynamic_paragraph_count(idea_count: int, cfg: Dict[str, Any]) -> int:
+    minimum = int(cfg.get("output_min_paragraphs", 1))
+    maximum = int(cfg.get("output_max_paragraphs", 6))
+    ideas_per_paragraph = int(cfg.get("input_ideas_per_paragraph", 9))
+    if (
+        idea_count <= 0
+        or minimum <= 0
+        or maximum < minimum
+        or ideas_per_paragraph <= 0
+    ):
+        raise ValueError("summary paragraph limits are invalid")
+    return min(maximum, max(minimum, math.ceil(idea_count / ideas_per_paragraph)))
 
 
-def _composition_response_format(
-    idea_ids: List[str],
-    max_paragraph_chars: int,
+def _summary_response_format(
+    paragraph_count: int,
+    max_sentences_per_paragraph: int,
 ) -> Dict[str, Any]:
-    if not idea_ids or max_paragraph_chars <= 0:
-        raise ValueError("final composition schema limits are invalid")
+    if paragraph_count <= 0 or max_sentences_per_paragraph <= 0:
+        raise ValueError("summary schema limits are invalid")
     return {
         "type": "json_object",
         "schema": {
@@ -265,27 +253,13 @@ def _composition_response_format(
             "properties": {
                 "paragraphs": {
                     "type": "array",
-                    "minItems": 1,
-                    "maxItems": len(idea_ids),
+                    "minItems": paragraph_count,
+                    "maxItems": paragraph_count,
                     "items": {
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "minLength": 1,
-                            },
-                            "idea_ids": {
-                                "type": "array",
-                                "minItems": 1,
-                                "maxItems": len(idea_ids),
-                                "items": {
-                                    "type": "string",
-                                    "enum": idea_ids,
-                                },
-                            },
-                        },
-                        "required": ["text", "idea_ids"],
-                        "additionalProperties": False,
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": max_sentences_per_paragraph,
+                        "items": {"type": "string", "minLength": 1},
                     },
                 },
             },
@@ -295,92 +269,85 @@ def _composition_response_format(
     }
 
 
-def _parse_composition(
-    raw: str,
-    idea_ids: List[str],
-    *,
-    max_paragraph_chars: int,
-    max_output_chars: int,
-) -> List[str]:
+def _parse_summary(raw: str, paragraph_count: int) -> str:
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise ValueError("final composition returned invalid JSON") from error
+        raise ValueError("summary returned invalid JSON") from error
     paragraphs = payload.get("paragraphs") if isinstance(payload, dict) else None
-    if not isinstance(paragraphs, list) or not paragraphs:
-        raise ValueError("final composition returned invalid paragraphs")
-
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"paragraphs"}
+        or not isinstance(paragraphs, list)
+        or len(paragraphs) != paragraph_count
+    ):
+        raise ValueError("summary returned invalid paragraphs")
     texts: List[str] = []
-    covered_ids: List[str] = []
-    expected_ids = set(idea_ids)
     for paragraph in paragraphs:
-        if not isinstance(paragraph, dict):
-            raise ValueError("final composition returned invalid paragraphs")
-        text = paragraph.get("text")
-        paragraph_ids = paragraph.get("idea_ids")
-        if (
-            not isinstance(text, str)
-            or not text.strip()
-            or len(text.strip()) > max_paragraph_chars
-            or not isinstance(paragraph_ids, list)
-            or not paragraph_ids
-            or any(
-                not isinstance(idea_id, str) or idea_id not in expected_ids
-                for idea_id in paragraph_ids
-            )
-        ):
-            raise ValueError("final composition returned invalid paragraphs")
-        texts.append(re.sub(r"\s+", " ", text).strip())
-        covered_ids.extend(paragraph_ids)
-
-    counts = Counter(covered_ids)
-    if set(counts) != expected_ids or any(count != 1 for count in counts.values()):
-        raise ValueError("final composition did not cover every idea exactly once")
-    if sum(len(text) for text in texts) > max_output_chars:
-        raise ValueError("final composition expanded beyond its source inventory")
-    return texts
+        if not isinstance(paragraph, list) or not paragraph:
+            raise ValueError("summary returned invalid paragraphs")
+        sentences = []
+        for text in paragraph:
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("summary returned invalid paragraphs")
+            normalized = re.sub(r"\s+", " ", text).strip()
+            if normalized[-1] not in '.!?…"\'»)]':
+                raise ValueError("summary returned an incomplete sentence")
+            sentences.append(normalized)
+        texts.append(" ".join(sentences))
+    return "\n\n".join(texts)
 
 
-def _compose_batch(
+def _write_summary(
     ideas: List[str],
     target_language: str,
     cfg: Dict[str, Any],
-    llm,
 ) -> str:
-    idea_ids = [f"idea-{index}" for index in range(1, len(ideas) + 1)]
-    max_paragraph_chars = int(cfg.get("paragraph_max_chars", 2400))
-    max_char_ratio = float(cfg.get("output_max_char_ratio", 1.1))
-    if max_char_ratio <= 0:
-        raise ValueError("final composition output ratio is invalid")
-    max_output_chars = max(
-        80,
-        int(sum(len(idea) for idea in ideas) * max_char_ratio),
+    max_ideas = int(cfg.get("input_max_ideas", 64))
+    max_chars = int(cfg.get("input_max_chars", 20000))
+    if (
+        not ideas
+        or len(ideas) > max_ideas
+        or sum(len(idea) for idea in ideas) > max_chars
+    ):
+        raise ValueError("summary input exceeds configured limits")
+    max_words = _dynamic_output_word_limit(len(ideas), cfg)
+    paragraph_count = _dynamic_paragraph_count(len(ideas), cfg)
+    max_paragraph_words = math.ceil(max_words / paragraph_count)
+    max_paragraph_sentences = int(
+        cfg.get("output_max_sentences_per_paragraph", 3)
+    )
+    if max_paragraph_sentences <= 0:
+        raise ValueError("summary sentence limits are invalid")
+    max_sentence_words = math.ceil(
+        max_words / (paragraph_count * max_paragraph_sentences)
     )
     max_tokens = _dynamic_max_tokens(
-        len(ideas),
+        max_words,
         cfg,
         min_key="output_min_tokens",
         max_key="output_max_tokens",
-        per_unit_key="output_tokens_per_idea",
-        min_default=256,
-        max_default=2000,
-        per_unit_default=64,
+        per_unit_key="output_tokens_per_word",
+        min_default=384,
+        max_default=3000,
+        per_unit_default=4,
     )
-    inventory = [
-        {"id": idea_id, "text": idea}
-        for idea_id, idea in zip(idea_ids, ideas)
-    ]
+    llm = get_llm_service(**get_llm_params("summarize-compose"))
     raw = llm.chat(
         [
-            {"role": "system", "content": _FINAL_SYSTEM},
+            {"role": "system", "content": _MERGE_SYSTEM},
             {
                 "role": "user",
-                "content": _FINAL_USER.format(
+                "content": _MERGE_USER.format(
                     target_language=target_language,
-                    max_paragraph_chars=max_paragraph_chars,
-                    max_output_chars=max_output_chars,
+                    idea_count=len(ideas),
+                    paragraph_count=paragraph_count,
+                    max_output_words=max_words,
+                    max_paragraph_words=max_paragraph_words,
+                    max_paragraph_sentences=max_paragraph_sentences,
+                    max_sentence_words=max_sentence_words,
                     ideas=json.dumps(
-                        inventory,
+                        ideas,
                         ensure_ascii=False,
                         separators=(",", ":"),
                     ),
@@ -388,55 +355,23 @@ def _compose_batch(
             },
         ],
         max_tokens=max_tokens,
-        response_format=_composition_response_format(
-            idea_ids,
-            max_paragraph_chars,
+        response_format=_summary_response_format(
+            paragraph_count,
+            max_paragraph_sentences,
         ),
         temperature=0.0,
         seed=int(cfg.get("seed", 0)),
     )
-    paragraphs = _parse_composition(
-        raw,
-        idea_ids,
-        max_paragraph_chars=max_paragraph_chars,
-        max_output_chars=max_output_chars,
-    )
-    return "\n\n".join(paragraphs)
-
-
-def _compose_summary(
-    ideas: List[str],
-    target_language: str,
-    cfg: Dict[str, Any],
-) -> str:
-    llm = get_llm_service(**get_llm_params("summarize-compose"))
-    summaries = []
-    for batch in _idea_batches(ideas, cfg):
-        try:
-            summaries.append(_compose_batch(batch, target_language, cfg, llm))
-        except ValueError as error:
-            logger.warning(
-                "Final composition failed its coverage contract; preserving the "
-                "complete batch without rewriting: %s",
-                error,
-            )
-            summaries.append(_write_summary(batch, cfg))
-    return "\n\n".join(summaries)
+    return _parse_summary(raw, paragraph_count)
 
 
 def _combine_summary_lists(partials: List[List[str]]) -> List[str]:
     summaries = [
-        summary.strip()
+        re.sub(r"\s+", " ", summary).strip()
         for partial in partials
         for summary in partial
         if summary.strip()
     ]
     if not summaries:
-        raise ValueError("summarize-finalize received no summaries")
+        raise ValueError("summarize-finalize received no summary sections")
     return summaries
-
-
-def _finish_summary(summaries: List[str]) -> str:
-    if not summaries:
-        raise ValueError("summarize-finalize received no summaries")
-    return "\n\n".join(summary.strip() for summary in summaries if summary.strip())

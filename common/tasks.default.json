@@ -88,15 +88,16 @@
   "summarize-map": {
     "enabled": true,
     "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "model": "Qwen3.8-27B-Q4_K_M.gguf",
     "capabilities": ["llm"],
-    "output_min_ideas": 4,
-    "output_max_ideas": 12,
-    "information_units_per_idea": 4,
-    "idea_max_chars": 240,
+    "output_min_ideas": 0,
+    "output_max_ideas": 16,
+    "information_units_per_idea": 5,
+    "idea_target_chars": 150,
+    "idea_max_chars": 210,
     "output_min_tokens": 384,
-    "output_max_tokens": 1400,
-    "output_tokens_per_idea": 96
+    "output_max_tokens": 1150,
+    "output_tokens_per_idea": 64
   },
   "summarize-reduce": {
     "enabled": true,
@@ -106,16 +107,20 @@
   "summarize-compose": {
     "enabled": true,
     "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "model": "Qwen3.8-27B-Q4_K_M.gguf",
     "capabilities": ["llm"],
-    "input_max_ideas": 36,
-    "input_max_chars": 9000,
-    "paragraph_max_chars": 2400,
-    "output_max_char_ratio": 1.1,
-    "output_min_tokens": 256,
-    "output_max_tokens": 2800,
-    "output_tokens_per_idea": 64,
-    "final_ideas_per_paragraph": 4
+    "input_max_ideas": 64,
+    "input_max_chars": 20000,
+    "output_min_words": 80,
+    "output_max_words": 400,
+    "output_words_per_idea": 12,
+    "output_max_sentences_per_paragraph": 6,
+    "input_ideas_per_paragraph": 12,
+    "output_min_paragraphs": 1,
+    "output_max_paragraphs": 4,
+    "output_min_tokens": 512,
+    "output_max_tokens": 1600,
+    "output_tokens_per_word": 4
   },
   "summarize-finalize": {
     "enabled": true,

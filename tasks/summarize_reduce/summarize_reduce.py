@@ -10,7 +10,7 @@ def summarize_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(partials, list) or not partials:
         raise ValueError("summarize-reduce requires idea partials")
     if (
-        any(not isinstance(partial, list) or not partial for partial in partials)
+        any(not isinstance(partial, list) for partial in partials)
         or any(
             not isinstance(idea, str) or not idea.strip()
             for partial in partials
