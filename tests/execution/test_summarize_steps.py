@@ -12,29 +12,25 @@ from tasks.summarize_reduce.summarize_reduce import summarize_reduce
 
 
 class SummarizeStepTest(unittest.TestCase):
-    def test_runtime_configuration_matches_summarization_capacity_contract(self):
+    def test_runtime_configuration_matches_hierarchical_summary_contract(self):
         map_config = get_task_config("summarize-map")
         reduce_config = get_task_config("summarize-reduce")
         compose_config = get_task_config("summarize-compose")
 
         self.assertEqual(map_config["model"], "Qwen3.8-27B-Q4_K_M.gguf")
-        self.assertEqual(map_config["output_min_ideas"], 0)
-        self.assertEqual(map_config["output_max_ideas"], 16)
-        self.assertEqual(map_config["information_units_per_idea"], 5)
-        self.assertEqual(map_config["idea_target_chars"], 150)
-        self.assertEqual(map_config["idea_max_chars"], 210)
-        self.assertEqual(map_config["output_max_tokens"], 1150)
-        self.assertEqual(map_config["output_tokens_per_idea"], 64)
+        self.assertEqual(map_config["output_word_limit_floor"], 80)
+        self.assertEqual(map_config["output_word_limit_ceiling"], 220)
+        self.assertEqual(map_config["output_words_per_information_unit"], 3)
+        self.assertEqual(map_config["output_max_tokens"], 1050)
+        self.assertEqual(map_config["output_tokens_per_word"], 4)
         self.assertEqual(reduce_config["type"], "utility")
         self.assertEqual(reduce_config["capabilities"], [])
         self.assertEqual(compose_config["type"], "llm")
         self.assertEqual(compose_config["model"], "Qwen3.8-27B-Q4_K_M.gguf")
         self.assertEqual(compose_config["capabilities"], ["llm"])
-        self.assertEqual(compose_config["input_max_ideas"], 64)
-        self.assertEqual(compose_config["output_max_words"], 400)
-        self.assertEqual(compose_config["output_words_per_idea"], 12)
-        self.assertEqual(compose_config["output_max_sentences_per_paragraph"], 6)
-        self.assertEqual(compose_config["input_ideas_per_paragraph"], 12)
+        self.assertEqual(compose_config["input_max_sections"], 16)
+        self.assertEqual(compose_config["output_word_limit_ceiling"], 400)
+        self.assertEqual(compose_config["output_input_word_ratio"], 0.55)
         self.assertEqual(compose_config["output_max_paragraphs"], 4)
         self.assertEqual(compose_config["output_max_tokens"], 1600)
         self.assertEqual(compose_config["output_tokens_per_word"], 4)
@@ -50,222 +46,154 @@ class SummarizeStepTest(unittest.TestCase):
         self.assertNotIn("summarize", TASK_HANDLERS)
 
     @patch(
-        "tasks.summarize_map.summarize_map._extract_ideas",
-        return_value=["first idea", "second idea"],
+        "tasks.summarize_map.summarize_map._summarize_chunk",
+        return_value="One cohesive section summary.",
     )
-    def test_map_extracts_an_idea_inventory(self, extract_ideas):
+    def test_map_writes_one_section_summary(self, summarize_chunk):
         result = summarize_map(
             {"content": "source chunk", "targetLanguage": "en"}
         )
 
-        self.assertEqual(result, {"ideas": ["first idea", "second idea"]})
-        extract_ideas.assert_called_once()
+        self.assertEqual(result, {"summary": "One cohesive section summary."})
+        summarize_chunk.assert_called_once_with("source chunk", "en", ANY)
 
-    @patch(
-        "tasks.summarize_reduce.summarize_reduce._combine_idea_lists",
-        return_value=["first", "second"],
-    )
-    def test_reduce_always_keeps_a_structured_inventory(self, combine_ideas):
-        result = summarize_reduce(
-            {
-                "partials": [["first"], ["second"]],
-                "targetLanguage": "en",
-            }
+    def test_reduce_flattens_section_summaries_without_rewriting_them(self):
+        result = summarize_reduce({
+            "partials": ["First summary.", ["Second summary."]],
+        })
+
+        self.assertEqual(
+            result,
+            {"summaries": ["First summary.", "Second summary."]},
         )
-
-        self.assertEqual(result, {"ideas": ["first", "second"]})
-        combine_ideas.assert_called_once_with([["first"], ["second"]])
 
     @patch(
         "tasks.summarize_compose.summarize_compose._write_summary",
-        return_value="First cohesive summary.",
+        return_value="One cohesive global summary.",
     )
-    @patch(
-        "tasks.summarize_compose.summarize_compose._combine_idea_lists",
-        return_value=["first", "second"],
-    )
-    def test_compose_writes_one_global_summary(
-        self, combine_ideas, write_summary,
-    ):
-        result = summarize_compose(
-            {
-                "partials": [["first", "second"]],
-                "targetLanguage": "en",
-            }
+    def test_compose_writes_one_global_summary(self, write_summary):
+        result = summarize_compose({
+            "partials": ["First section.", "Second section."],
+            "targetLanguage": "en",
+        })
+
+        self.assertEqual(result, {"response": "One cohesive global summary."})
+        write_summary.assert_called_once_with(
+            ["First section.", "Second section."], "en", ANY,
         )
 
-        self.assertEqual(result, {"response": "First cohesive summary."})
-        combine_ideas.assert_called_once_with([["first", "second"]])
-        write_summary.assert_called_once_with(["first", "second"], "en", ANY)
-
-    def test_reduce_rejects_missing_partials(self):
-        with self.assertRaisesRegex(ValueError, "requires idea partials"):
+    def test_steps_reject_missing_or_invalid_section_summaries(self):
+        with self.assertRaisesRegex(ValueError, "requires summary partials"):
             summarize_reduce({"partials": []})
-
-    def test_compose_rejects_missing_inventories(self):
-        with self.assertRaisesRegex(ValueError, "requires idea inventories"):
+        with self.assertRaisesRegex(ValueError, "requires section summaries"):
             summarize_compose({"partials": []})
-
-    def test_empty_fragment_inventory_flows_through_reduce_and_compose(self):
-        self.assertEqual(summarize_reduce({"partials": [[]]}), {"ideas": []})
-        with self.assertRaisesRegex(ValueError, "no material ideas"):
-            summarize_compose({"partials": [[]]})
+        with self.assertRaisesRegex(ValueError, "invalid section summary"):
+            summarize_compose({"partials": [["unfinished summary"]]})
 
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
-    def test_map_returns_constrained_ideas_with_a_dynamic_maximum(
+    def test_map_returns_a_constrained_cohesive_summary_with_a_dynamic_ceiling(
         self, get_llm_service, _get_llm_params,
     ):
         llm = get_llm_service.return_value
         llm.chat.return_value = json.dumps({
-            "material_idea_count": 1,
-            "ideas": ["An idea."],
+            "summary": "The causes and proposal form one connected argument.",
         })
 
-        result = summarize_task._extract_ideas(
-            "First fact. Second fact; third fact.",
+        result = summarize_task._summarize_chunk(
+            "First cause. Second consequence; final proposal.",
             "en",
             {"input_char_budget": 1000},
         )
 
-        self.assertEqual(result, ["An idea."])
-        self.assertIn(
-            "complete proposition",
-            llm.chat.call_args.args[0][0]["content"],
+        self.assertEqual(
+            result,
+            "The causes and proposal form one connected argument.",
         )
-        self.assertIn("central theses", llm.chat.call_args.args[0][0]["content"])
-        self.assertIn(
-            "between zero and 1",
-            llm.chat.call_args.args[0][1]["content"],
-        )
-        self.assertIn("in source order", llm.chat.call_args.args[0][0]["content"])
-        self.assertIn("safety ceiling, never a target", llm.chat.call_args.args[0][0]["content"])
-        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 384)
+        system_prompt = llm.chat.call_args.args[0][0]["content"]
+        user_prompt = llm.chat.call_args.args[0][1]["content"]
+        self.assertIn("not an inventory", system_prompt)
+        self.assertIn("essential relationships", system_prompt)
+        self.assertIn("no more than 80 words", user_prompt)
+        self.assertIn("safety ceiling, not a target", user_prompt)
+        self.assertIn("do not return a list", user_prompt)
+        self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 416)
         schema = llm.chat.call_args.kwargs["response_format"]["schema"]
-        ideas_schema = schema["properties"]["ideas"]
-        self.assertEqual(next(iter(schema["properties"])), "material_idea_count")
-        self.assertEqual(ideas_schema["maxItems"], 1)
-        self.assertEqual(ideas_schema["minItems"], 0)
-        self.assertEqual(ideas_schema["items"]["maxLength"], 240)
-        self.assertIn("Aim for at most 180 characters", llm.chat.call_args.args[0][1]["content"])
-        self.assertIn("never cut a word or sentence", llm.chat.call_args.args[0][1]["content"])
+        self.assertEqual(set(schema["properties"]), {"summary"})
+        self.assertEqual(schema["properties"]["summary"]["type"], "string")
         self.assertEqual(llm.chat.call_args.kwargs["temperature"], 0.0)
         self.assertEqual(llm.chat.call_args.kwargs["seed"], 0)
 
-        wider_schema = summarize_task._ideas_response_format(4, 240)
-        wider_ideas_schema = wider_schema["schema"]["properties"]["ideas"]
-        self.assertEqual(wider_ideas_schema["minItems"], 0)
-        self.assertEqual(wider_ideas_schema["maxItems"], 4)
+    def test_dense_sections_receive_a_larger_word_ceiling_up_to_the_cap(self):
+        cfg = {
+            "output_word_limit_floor": 60,
+            "output_word_limit_ceiling": 110,
+            "output_words_per_information_unit": 3,
+        }
 
-    def test_dense_chunks_allow_more_ideas_up_to_the_configured_cap(self):
-        sparse = summarize_task._dynamic_idea_limit(
-            1,
-            {},
-            min_key="min",
-            max_key="max",
-            units_per_idea_key="per",
-            min_default=4,
-            max_default=12,
-            units_per_idea_default=4,
-        )
-        dense = summarize_task._dynamic_idea_limit(
-            20,
-            {},
-            min_key="min",
-            max_key="max",
-            units_per_idea_key="per",
-            min_default=4,
-            max_default=12,
-            units_per_idea_default=4,
-        )
-        capped = summarize_task._dynamic_idea_limit(
-            100,
-            {},
-            min_key="min",
-            max_key="max",
-            units_per_idea_key="per",
-            min_default=4,
-            max_default=12,
-            units_per_idea_default=4,
-        )
+        self.assertEqual(summarize_task._dynamic_section_word_limit(1, cfg), 60)
+        self.assertEqual(summarize_task._dynamic_section_word_limit(20, cfg), 92)
+        self.assertEqual(summarize_task._dynamic_section_word_limit(100, cfg), 110)
 
-        self.assertEqual(sparse, 4)
-        self.assertEqual(dense, 5)
-        self.assertEqual(capped, 12)
-
-    def test_dense_chunks_receive_more_headroom_up_to_the_configured_cap(self):
+    def test_dense_outputs_receive_more_token_headroom_up_to_the_cap(self):
         sparse = summarize_task._dynamic_max_tokens(
-            1,
-            {},
-            min_key="min",
-            max_key="max",
-            per_unit_key="per",
-            min_default=200,
-            max_default=1000,
-            per_unit_default=30,
+            1, {}, min_key="min", max_key="max", per_unit_key="per",
+            min_default=200, max_default=1000, per_unit_default=30,
         )
         dense = summarize_task._dynamic_max_tokens(
-            20,
-            {},
-            min_key="min",
-            max_key="max",
-            per_unit_key="per",
-            min_default=200,
-            max_default=1000,
-            per_unit_default=30,
+            20, {}, min_key="min", max_key="max", per_unit_key="per",
+            min_default=200, max_default=1000, per_unit_default=30,
         )
         capped = summarize_task._dynamic_max_tokens(
-            100,
-            {},
-            min_key="min",
-            max_key="max",
-            per_unit_key="per",
-            min_default=200,
-            max_default=1000,
-            per_unit_default=30,
+            100, {}, min_key="min", max_key="max", per_unit_key="per",
+            min_default=200, max_default=1000, per_unit_default=30,
         )
 
         self.assertGreater(dense, sparse)
         self.assertEqual(capped, 1000)
 
-    def test_reduce_prefilter_preserves_source_order_and_removes_duplicates(self):
+    def test_combining_sections_preserves_source_order_and_relationships(self):
         partials = [
-            ["first-1", "first-2", "Same idea."],
-            ["second-1", "second-2", " same   idea "],
+            "The problem leads to the first response.",
+            ["That response creates a later consequence."],
         ]
 
-        result = summarize_task._combine_idea_lists(partials)
-
         self.assertEqual(
-            result,
-            ["first-1", "first-2", "Same idea.", "second-1", "second-2"],
+            summarize_task._combine_section_summaries(partials),
+            [
+                "The problem leads to the first response.",
+                "That response creates a later consequence.",
+            ],
         )
+
     @patch("tasks.summarize.summarize.get_llm_params", return_value={})
     @patch("tasks.summarize.summarize.get_llm_service")
-    def test_global_writer_plans_paragraphs_from_the_complete_inventory(
+    def test_global_writer_synthesizes_sections_into_adaptive_paragraphs(
         self, get_llm_service, _get_llm_params,
     ):
         llm = get_llm_service.return_value
         llm.chat.return_value = json.dumps({
             "paragraphs": [
-                ["First and second form one theme."],
-                ["Third completes the argument."],
+                "The problem and its causes establish the central argument.",
+                "The proposed response follows from that argument.",
             ],
         })
+        summaries = [
+            "The problem has several causes and creates an urgent consequence.",
+            "The author therefore proposes a response and explains its purpose.",
+        ]
 
         result = summarize_task._write_summary(
-            ["First idea.", "Second idea.", "Third idea."],
+            summaries,
             "en",
             {
-                "input_max_ideas": 3,
+                "input_max_sections": 3,
                 "input_max_chars": 1000,
-                "output_min_words": 30,
-                "output_max_words": 60,
-                "output_words_per_idea": 10,
-                "input_ideas_per_paragraph": 2,
+                "output_word_limit_floor": 30,
+                "output_word_limit_ceiling": 60,
+                "output_input_word_ratio": 0.5,
                 "output_min_paragraphs": 1,
                 "output_max_paragraphs": 3,
-                "output_max_sentences_per_paragraph": 6,
                 "output_min_tokens": 200,
                 "output_max_tokens": 800,
                 "output_tokens_per_word": 3,
@@ -274,36 +202,33 @@ class SummarizeStepTest(unittest.TestCase):
 
         self.assertEqual(
             result,
-            "First and second form one theme.\n\nThird completes the argument.",
+            "The problem and its causes establish the central argument.\n\n"
+            "The proposed response follows from that argument.",
         )
         prompt = llm.chat.call_args.args[0][1]["content"]
-        self.assertIn("exactly 2 connected thematic paragraphs", prompt)
+        self.assertIn("between 1 and 3 complete paragraphs", prompt)
         self.assertIn("no more than 30 words", prompt)
-        self.assertIn("silently organize their distinct meanings into 2 themes", prompt)
-        self.assertIn("Synthesize overlapping or closely related propositions", prompt)
-        self.assertIn("Preserve every distinct claim", prompt)
-        self.assertIn("at most 6 complete sentences", prompt)
-        self.assertIn('"First idea."', prompt)
+        self.assertIn("not a target", prompt)
+        self.assertIn("Do not write one paragraph per section", prompt)
+        self.assertIn("what the whole text is about", prompt)
+        self.assertIn('"The problem has several causes', prompt)
         self.assertEqual(llm.chat.call_args.kwargs["max_tokens"], 200)
-        properties = llm.chat.call_args.kwargs["response_format"]["schema"][
+        paragraphs = llm.chat.call_args.kwargs["response_format"]["schema"][
             "properties"
-        ]
-        paragraphs = properties["paragraphs"]
-        self.assertEqual(paragraphs["minItems"], 2)
-        self.assertEqual(paragraphs["maxItems"], 2)
-        self.assertEqual(paragraphs["items"]["type"], "array")
-        self.assertEqual(paragraphs["items"]["minItems"], 1)
-        self.assertEqual(paragraphs["items"]["maxItems"], 6)
-        self.assertIn("approximately 15 words", prompt)
-        self.assertIn("no more than 3 words per sentence", prompt)
+        ]["paragraphs"]
+        self.assertEqual(paragraphs["minItems"], 1)
+        self.assertEqual(paragraphs["maxItems"], 3)
+        self.assertEqual(paragraphs["items"]["type"], "string")
 
-    def test_global_writer_rejects_the_wrong_paragraph_count(self):
-        raw = json.dumps({
-            "paragraphs": [["Only one paragraph."]],
-        })
-
+    def test_global_writer_accepts_only_complete_paragraphs_within_the_range(self):
         with self.assertRaisesRegex(ValueError, "invalid paragraphs"):
-            summarize_task._parse_summary(raw, 2)
+            summarize_task._parse_summary(
+                json.dumps({"paragraphs": ["One.", "Two."]}), 1, 1,
+            )
+        with self.assertRaisesRegex(ValueError, "invalid paragraphs"):
+            summarize_task._parse_summary(
+                json.dumps({"paragraphs": [["Sentence-shaped item."]]}), 1, 2,
+            )
 
     def test_finalize_joins_sections_only_at_the_terminal_step(self):
         partials = [["First paragraph."], ["Second paragraph."]]
@@ -317,84 +242,40 @@ class SummarizeStepTest(unittest.TestCase):
             {"response": "First paragraph.\n\nSecond paragraph."},
         )
 
-    def test_finalize_rejects_missing_sections(self):
-        with self.assertRaisesRegex(ValueError, "requires summary partials"):
-            summarize_finalize({"partials": []})
+    def test_finalize_rejects_empty_sections(self):
+        with self.assertRaisesRegex(ValueError, "no summary sections"):
+            summarize_finalize({"partials": [[]], "final": True})
 
-    def test_summary_word_maximum_grows_with_information_and_is_capped(self):
+    def test_global_word_ceiling_tracks_partial_summary_size_and_is_capped(self):
         cfg = {
-            "output_min_words": 60,
-            "output_max_words": 110,
-            "output_words_per_idea": 7,
+            "output_word_limit_floor": 60,
+            "output_word_limit_ceiling": 110,
+            "output_input_word_ratio": 0.5,
         }
+        short = ["word " * 20 + "end."]
+        medium = ["word " * 199 + "end."]
+        long = ["word " * 299 + "end."]
 
-        self.assertEqual(summarize_task._dynamic_output_word_limit(3, cfg), 60)
-        self.assertEqual(summarize_task._dynamic_output_word_limit(15, cfg), 105)
-        self.assertEqual(summarize_task._dynamic_output_word_limit(30, cfg), 110)
+        self.assertEqual(summarize_task._dynamic_output_word_limit(short, cfg), 60)
+        self.assertEqual(summarize_task._dynamic_output_word_limit(medium, cfg), 100)
+        self.assertEqual(summarize_task._dynamic_output_word_limit(long, cfg), 110)
 
-    def test_global_writer_rejects_an_inventory_that_cannot_fit(self):
+    def test_global_writer_rejects_sections_that_cannot_fit(self):
         with self.assertRaisesRegex(ValueError, "input exceeds"):
             summarize_task._write_summary(
-                ["First idea", "Second idea", "Third idea"],
+                ["First summary.", "Second summary.", "Third summary."],
                 "en",
-                {"input_max_ideas": 2, "input_max_chars": 1000},
+                {"input_max_sections": 2, "input_max_chars": 1000},
             )
 
-    def test_paragraph_count_grows_but_stays_bounded(self):
-        cfg = {
-            "output_min_paragraphs": 1,
-            "output_max_paragraphs": 4,
-            "input_ideas_per_paragraph": 12,
-        }
-
-        self.assertEqual(summarize_task._dynamic_paragraph_count(5, cfg), 1)
-        self.assertEqual(summarize_task._dynamic_paragraph_count(32, cfg), 3)
-        self.assertEqual(summarize_task._dynamic_paragraph_count(64, cfg), 4)
-
-    def test_invalid_idea_json_fails_closed(self):
-        with self.assertRaisesRegex(ValueError, "invalid idea JSON"):
-            summarize_task._parse_ideas("not-json")
-
-    def test_idea_parser_enforces_the_generation_contract(self):
-        with self.assertRaisesRegex(ValueError, "too many ideas"):
-            summarize_task._parse_ideas(
-                json.dumps({
-                    "material_idea_count": 2,
-                    "ideas": ["one", "two"],
-                }),
-                max_ideas=1,
-            )
-        with self.assertRaisesRegex(ValueError, "oversized idea"):
-            summarize_task._parse_ideas(
-                json.dumps({
-                    "material_idea_count": 1,
-                    "ideas": ["complete idea"],
-                }),
-                max_idea_chars=3,
-            )
-
-    def test_idea_parser_accepts_zero_and_rejects_inconsistent_counts(self):
-        self.assertEqual(
-            summarize_task._parse_ideas(json.dumps({
-                "material_idea_count": 0,
-                "ideas": [],
-            })),
-            [],
-        )
-        with self.assertRaisesRegex(ValueError, "invalid ideas"):
-            summarize_task._parse_ideas(json.dumps({
-                "material_idea_count": 2,
-                "ideas": ["one"],
-            }))
-        with self.assertRaisesRegex(ValueError, "duplicate ideas"):
-            summarize_task._parse_ideas(json.dumps({
-                "material_idea_count": 2,
-                "ideas": ["one", "one"],
+    def test_section_parser_fails_closed_and_rejects_cut_text(self):
+        with self.assertRaisesRegex(ValueError, "invalid section JSON"):
+            summarize_task._parse_section_summary("not-json")
+        with self.assertRaisesRegex(ValueError, "invalid section summary"):
+            summarize_task._parse_section_summary(json.dumps({
+                "summary": "Sentence cut at the lim",
             }))
 
-    def test_idea_parser_rejects_a_cut_sentence(self):
-        with self.assertRaisesRegex(ValueError, "incomplete idea"):
-            summarize_task._parse_ideas(json.dumps({
-                "material_idea_count": 1,
-                "ideas": ["Sentence cut at the lim"],
-            }))
+
+if __name__ == "__main__":
+    unittest.main()
