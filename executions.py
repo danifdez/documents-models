@@ -58,6 +58,8 @@ SUPPORTED_TASK_TYPES = (
     "data-source-sync",
     "embedding",
     "dataset.extract-row",
+    "dataset.extract-row-map",
+    "dataset.extract-row-reduce",
     "dataset.propose-columns",
     "entity-extraction-map",
     "entity-extraction-reduce",

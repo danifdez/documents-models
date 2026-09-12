@@ -44,6 +44,9 @@ _TASK_DIR_MAP = {
     "time-series": "time_series",
     "pivot-table": "pivot_table",
     "relationship-extraction-map": "relationship_extraction",
+    "dataset.extract-row": "dataset_extraction",
+    "dataset.extract-row-map": "dataset_extraction",
+    "dataset.propose-columns": "dataset_extraction",
 }
 
 

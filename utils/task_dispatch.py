@@ -28,6 +28,8 @@ TASK_MODULES = {
     "context-input-map": "tasks.context_input_map.context_input_map",
     "context-input-reduce": "tasks.context_input_reduce.context_input_reduce",
     "dataset.extract-row": "tasks.dataset_extraction.handler",
+    "dataset.extract-row-map": "tasks.dataset_extraction.handler",
+    "dataset.extract-row-reduce": "tasks.dataset_extraction.handler",
     "dataset.propose-columns": "tasks.dataset_extraction.propose_columns",
 }
 

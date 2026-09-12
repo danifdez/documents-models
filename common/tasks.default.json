@@ -288,6 +288,21 @@
     "temperature": 0.1,
     "seed": 42
   },
+  "dataset.extract-row-map": {
+    "enabled": true,
+    "type": "llm",
+    "model": "Qwen3-8B-Q5_K_M.gguf",
+    "capabilities": ["llm"],
+    "n_ctx": 16384,
+    "max_tokens": 2048,
+    "temperature": 0.1,
+    "seed": 42
+  },
+  "dataset.extract-row-reduce": {
+    "enabled": true,
+    "type": "utility",
+    "capabilities": []
+  },
   "dataset.propose-columns": {
     "enabled": true,
     "type": "llm",

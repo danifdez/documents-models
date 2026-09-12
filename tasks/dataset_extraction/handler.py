@@ -1,6 +1,7 @@
 """Dataset extraction worker.
 
-Execution type: `dataset.extract-row`.
+Execution types: `dataset.extract-row-map` and `dataset.extract-row-reduce`.
+`dataset.extract-row` remains available for direct, bounded assignments.
 
 Payload (set by backend `DatasetExtractionService`):
     {
@@ -10,7 +11,8 @@ Payload (set by backend `DatasetExtractionService`):
       "projectId":         int,
       "schema":            list[DatasetField],   # already filtered to fields with description
       "columnsToExtract":  list[str],            # subset of schema keys; [] means "all"
-      "documentText":      str,                  # Resource.content
+      "documentText":      str,                  # bounded document chunk
+      "chunkIndex":        int,                  # map assignments only
       "sourceTitle":       str,
       "isAudio":           bool,                 # mimeType startswith "audio/"
       "model":             str | None            # optional model override
@@ -139,9 +141,14 @@ def _build_result(
     return {"data": data, "cellMetadata": cell_metadata}
 
 
-@execution_handler("dataset.extract-row")
-def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
-    cfg = get_task_config("dataset.extract-row") or {}
+def _extract_dataset_row(
+    payload: Dict[str, Any], task_type: str
+) -> Dict[str, Any]:
+    cfg = (
+        get_task_config(task_type)
+        or get_task_config("dataset.extract-row")
+        or {}
+    )
     schema: List[Dict[str, Any]] = payload.get("schema") or []
     columns_to_extract: List[str] = payload.get("columnsToExtract") or []
     document_text: str = payload.get("documentText") or ""
@@ -176,16 +183,16 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
     safe_text, truncated = _truncate(document_text, budget)
     if truncated:
         logger.warning(
-            "dataset.extract-row: truncated document at %d chars (resourceId=%s)",
-            budget, resource_id,
+            "%s: truncated document at %d chars (resourceId=%s)",
+            task_type,
+            budget,
+            resource_id,
         )
 
     grammar = build_grammar(fields)
     prompt = build_prompt(fields, safe_text, source_title, is_audio=is_audio)
 
-    llm = get_llm_service(
-        **get_llm_params("dataset.extract-row", model_name)
-    )
+    llm = get_llm_service(**get_llm_params(task_type, model_name))
 
     raw = ""
     parsed: Optional[Dict[str, Any]] = None
@@ -236,4 +243,104 @@ def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
         "cellMetadata": built["cellMetadata"],
         "model": model_name,
         "promptVersion": PROMPT_VERSION,
+    }
+
+
+@execution_handler("dataset.extract-row")
+def extract_dataset_row(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return _extract_dataset_row(payload, "dataset.extract-row")
+
+
+@execution_handler("dataset.extract-row-map")
+def extract_dataset_row_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    chunk_index = payload.get("chunkIndex")
+    if not isinstance(chunk_index, int) or chunk_index < 0:
+        raise ValueError("dataset.extract-row-map chunkIndex must be non-negative")
+    result = _extract_dataset_row(payload, "dataset.extract-row-map")
+    return {"candidates": [{"chunkIndex": chunk_index, **result}]}
+
+
+def _candidate(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ValueError("dataset.extract-row-reduce candidate must be an object")
+    chunk_index = raw.get("chunkIndex")
+    data = raw.get("data")
+    metadata = raw.get("cellMetadata")
+    if not isinstance(chunk_index, int) or chunk_index < 0:
+        raise ValueError("dataset.extract-row-reduce candidate index is invalid")
+    if not isinstance(data, dict) or not isinstance(metadata, dict):
+        raise ValueError("dataset.extract-row-reduce candidate data is invalid")
+    return {
+        "chunkIndex": chunk_index,
+        "data": data,
+        "cellMetadata": metadata,
+        "model": str(raw.get("model") or ""),
+        "promptVersion": str(raw.get("promptVersion") or PROMPT_VERSION),
+    }
+
+
+def _grounded(candidate: Dict[str, Any], key: str) -> bool:
+    metadata = candidate["cellMetadata"].get(key)
+    return isinstance(metadata, dict) and bool(
+        str(metadata.get("quote") or "").strip()
+    )
+
+
+def _merge_candidates(candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    ordered = sorted(candidates, key=lambda item: item["chunkIndex"])
+    keys: List[str] = []
+    for candidate in ordered:
+        for key in candidate["data"]:
+            if key not in keys:
+                keys.append(key)
+
+    data: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {}
+    for key in keys:
+        matches = [item for item in ordered if item["data"].get(key) is not None]
+        grounded = [item for item in matches if _grounded(item, key)]
+        selected = grounded or matches
+        if not selected:
+            data[key] = None
+            continue
+        winner = selected[0]
+        data[key] = winner["data"][key]
+        if key in winner["cellMetadata"]:
+            metadata[key] = winner["cellMetadata"][key]
+
+    first = ordered[0]
+    return {
+        "chunkIndex": first["chunkIndex"],
+        "data": data,
+        "cellMetadata": metadata,
+        "model": first["model"],
+        "promptVersion": first["promptVersion"],
+    }
+
+
+@execution_handler("dataset.extract-row-reduce")
+def extract_dataset_row_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
+    partials = payload.get("partials")
+    final = payload.get("final")
+    if not isinstance(partials, list) or not partials:
+        raise ValueError("dataset.extract-row-reduce requires partials")
+    if not isinstance(final, bool):
+        raise ValueError("dataset.extract-row-reduce final must be a boolean")
+
+    candidates: List[Dict[str, Any]] = []
+    for partial in partials:
+        if not isinstance(partial, list) or not partial:
+            raise ValueError(
+                "dataset.extract-row-reduce partials must be candidate arrays"
+            )
+        candidates.extend(_candidate(item) for item in partial)
+
+    merged = _merge_candidates(candidates)
+    if not final:
+        return {"candidates": [merged]}
+    return {
+        "data": merged["data"],
+        "cellMetadata": merged["cellMetadata"],
+        "model": merged["model"],
+        "promptVersion": merged["promptVersion"],
     }

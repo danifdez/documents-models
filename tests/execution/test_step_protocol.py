@@ -50,6 +50,8 @@ class StepProtocolTest(unittest.TestCase):
         self.assertIn("document-extraction", executions.CAPABILITIES)
         self.assertIn("data-source-sync", executions.CAPABILITIES)
         self.assertIn("dataset.extract-row", executions.CAPABILITIES)
+        self.assertIn("dataset.extract-row-map", executions.CAPABILITIES)
+        self.assertIn("dataset.extract-row-reduce", executions.CAPABILITIES)
         self.assertIn("dataset.propose-columns", executions.CAPABILITIES)
         self.assertIn("entity-extraction-map", executions.CAPABILITIES)
         self.assertIn("entity-extraction-reduce", executions.CAPABILITIES)
@@ -89,6 +91,7 @@ class StepProtocolTest(unittest.TestCase):
                     "detect-language",
                     "document-extraction",
                     "data-source-sync",
+                    "dataset.extract-row-reduce",
                     "entity-extraction-reduce",
                     "date-extraction-reduce",
                     "keywords-reduce",
