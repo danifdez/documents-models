@@ -92,6 +92,7 @@ class StepProtocolTest(unittest.TestCase):
                     "document-extraction",
                     "data-source-sync",
                     "dataset.extract-row-reduce",
+                    "entity-extraction-map",
                     "entity-extraction-reduce",
                     "date-extraction-reduce",
                     "keywords-reduce",

@@ -49,7 +49,7 @@ compatible steps.
 | Embeddings | `intfloat/multilingual-e5-small` (384-dim, sentence-transformers) |
 | Summarization | `facebook/mbart-large-50-one-to-many-mmt` |
 | Translation | `Helsinki-NLP/opus-mt-{src}-{tgt}` (per language pair) |
-| NER | Local Qwen LLM (multilingual, GBNF-constrained JSON), model configured in `tasks.json` |
+| NER | `Davlan/xlm-roberta-base-ner-hrl` (multilingual XLM-RoBERTa, CPU by default) |
 | LLM (keywords, key points, Q&A) | GGUF model (configured in `tasks.json`, default: Qwen3-8B) |
 
 All models are downloaded automatically: most from Hugging Face on first use, and the base GGUF LLM

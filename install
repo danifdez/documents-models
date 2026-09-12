@@ -317,6 +317,17 @@ if summarize.get('enabled', False) and summarize.get('type') != 'llm' and not su
     AutoModelForSeq2SeqLM.from_pretrained(summarize_model)
     print(f'  ✓ {summarize_model}', flush=True)
 
+# Entity extraction model
+entity_task = tasks.get('entity-extraction-map', {})
+if entity_task.get('enabled', False) and entity_task.get('type') == 'token-classification':
+    model = entity_task.get('model', 'Davlan/xlm-roberta-base-ner-hrl')
+    revision = entity_task.get('model_revision')
+    print(f'  Downloading entity extraction model: {model}', flush=True)
+    from transformers import AutoModelForTokenClassification, AutoTokenizer
+    AutoTokenizer.from_pretrained(model, revision=revision, fix_mistral_regex=True)
+    AutoModelForTokenClassification.from_pretrained(model, revision=revision)
+    print(f'  ✓ {model}', flush=True)
+
 # Whisper model (transcription)
 if tasks.get('transcribe', {}).get('enabled', False):
     model_size = tasks['transcribe'].get('model', 'base')

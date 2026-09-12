@@ -136,13 +136,14 @@
   },
   "entity-extraction-map": {
     "enabled": true,
-    "type": "llm",
-    "model": "Qwen3-8B-Q5_K_M.gguf",
-    "capabilities": ["llm"],
-    "max_tokens": 2000,
+    "type": "token-classification",
+    "model": "Davlan/xlm-roberta-base-ner-hrl",
+    "model_revision": "253f557bd8249b8515114cfd7f71974fe5fa4d2f",
+    "device": "cpu",
+    "capabilities": [],
     "max_input_words": 1500,
     "max_entities": 200,
-    "max_entity_words": 500
+    "stride": 64
   },
   "entity-extraction-reduce": {
     "enabled": true,

@@ -1,16 +1,12 @@
 """Self-contained steps for the durable entity-extraction workflow."""
 
-import json
-import re
+from threading import Lock
 from typing import Any, Dict, List
 
 from common.execution_registry import execution_handler
-from lib.llm.config import get_llm_params, get_task_config
-from lib.llm.prompts import get_prompt
+from lib.llm.config import get_task_config
 from lib.llm.text import strip_dense_blobs
-from services.llm_service import get_llm_service
 
-_PROMPT = get_prompt("entity-extraction-map")
 _ALLOWED_LABELS = {
     "PERSON",
     "ORG",
@@ -24,11 +20,81 @@ _ALLOWED_LABELS = {
     "LANGUAGE",
     "LAW",
 }
-_PROPER_NAME_LABELS = _ALLOWED_LABELS - {"NORP", "LANGUAGE"}
+_MODEL_LABELS = {
+    "PER": "PERSON",
+    "ORG": "ORG",
+    "LOC": "LOC",
+}
+_entity_pipelines: Dict[tuple, Any] = {}
+_entity_pipeline_lock = Lock()
+_entity_inference_lock = Lock()
 
 
-def _looks_like_proper_name(word: str) -> bool:
-    return any(character.isupper() for character in word)
+def _get_entity_pipeline(config: Dict[str, Any]):
+    model_name = str(
+        config.get("model") or "Davlan/xlm-roberta-base-ner-hrl"
+    )
+    revision = config.get("model_revision")
+    device = str(config.get("device") or "cpu")
+    key = (model_name, revision, device)
+    if key not in _entity_pipelines:
+        with _entity_pipeline_lock:
+            if key not in _entity_pipelines:
+                from transformers import (
+                    AutoModelForTokenClassification,
+                    AutoTokenizer,
+                    pipeline as hf_pipeline,
+                )
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    revision=revision,
+                    fix_mistral_regex=True,
+                )
+                model = AutoModelForTokenClassification.from_pretrained(
+                    model_name,
+                    revision=revision,
+                )
+                _entity_pipelines[key] = hf_pipeline(
+                    "token-classification",
+                    model=model,
+                    tokenizer=tokenizer,
+                    device=device,
+                    aggregation_strategy="simple",
+                )
+    return _entity_pipelines[key]
+
+
+def _text_windows(content: str, tokenizer: Any, stride: int) -> List[tuple]:
+    encoded = tokenizer(
+        content,
+        add_special_tokens=False,
+        return_offsets_mapping=True,
+        truncation=False,
+        verbose=False,
+    )
+    offsets = encoded.get("offset_mapping")
+    if not isinstance(offsets, list) or not offsets:
+        return [(0, content)]
+
+    max_length = int(getattr(tokenizer, "model_max_length", 512))
+    special_tokens = int(tokenizer.num_special_tokens_to_add(pair=False))
+    window_tokens = max_length - special_tokens
+    if window_tokens < 1 or stride < 0 or stride >= window_tokens:
+        raise ValueError("entity-extraction-map stride is invalid")
+    if len(offsets) <= window_tokens:
+        return [(0, content)]
+
+    windows: List[tuple] = []
+    step = window_tokens - stride
+    for token_start in range(0, len(offsets), step):
+        token_end = min(token_start + window_tokens, len(offsets))
+        char_start = int(offsets[token_start][0])
+        char_end = int(offsets[token_end - 1][1])
+        windows.append((char_start, content[char_start:char_end]))
+        if token_end == len(offsets):
+            break
+    return windows
 
 
 def _extract_entities(
@@ -41,41 +107,67 @@ def _extract_entities(
     max_input_words = int(config.get("max_input_words", 1500))
     if len(safe_content.split()) > max_input_words:
         raise ValueError("entity-extraction-map content exceeds its word budget")
-    if not _PROMPT:
-        raise RuntimeError("entity-extraction-map prompt is unavailable")
 
-    response = get_llm_service(
-        **get_llm_params("entity-extraction-map")
-    ).chat(
-        [{"role": "user", "content": _PROMPT.format(text=safe_content)}],
-        max_tokens=int(config.get("max_tokens", 2000)),
-        temperature=0.0,
-    )
-    try:
-        parsed = json.loads(
-            re.sub(
-                r"^\s*```(?:json)?\s*|\s*```\s*$",
-                "",
-                response.strip(),
-            )
-        )
-    except (AttributeError, json.JSONDecodeError) as error:
-        raise ValueError("entity-extraction-map returned invalid JSON") from error
-    if not isinstance(parsed, list):
-        raise ValueError("entity-extraction-map result must be an array")
+    classifier = _get_entity_pipeline(config)
+    parsed: List[Dict[str, Any]] = []
+    with _entity_inference_lock:
+        for window_start, window in _text_windows(
+            safe_content,
+            classifier.tokenizer,
+            int(config.get("stride", 64)),
+        ):
+            window_result = classifier(window)
+            if not isinstance(window_result, list):
+                raise ValueError(
+                    "entity-extraction-map classifier returned an invalid result"
+                )
+            for item in window_result:
+                if not isinstance(item, dict):
+                    continue
+                adjusted = dict(item)
+                if isinstance(adjusted.get("start"), int):
+                    adjusted["start"] += window_start
+                if isinstance(adjusted.get("end"), int):
+                    adjusted["end"] += window_start
+                parsed.append(adjusted)
 
-    ignored = set(config.get("ignored_entity_types", []))
+    ignored = {
+        str(entity_type).strip().upper()
+        for entity_type in config.get("ignored_entity_types", [])
+    }
+    max_entities = int(config.get("max_entities", 200))
     result: List[Dict[str, str]] = []
+    seen_spans = set()
     for item in parsed:
         if not isinstance(item, dict):
             continue
-        word = str(item.get("word") or "").strip()
-        entity = str(item.get("entity") or "").strip().upper()
-        if len(word) <= 1 or entity not in _ALLOWED_LABELS or entity in ignored:
+        model_label = str(
+            item.get("entity_group") or item.get("entity") or ""
+        ).strip().upper()
+        entity = _MODEL_LABELS.get(model_label)
+        if not entity or entity in ignored:
             continue
-        if entity in _PROPER_NAME_LABELS and not _looks_like_proper_name(word):
+
+        start = item.get("start")
+        end = item.get("end")
+        if (
+            isinstance(start, int)
+            and isinstance(end, int)
+            and 0 <= start < end <= len(safe_content)
+        ):
+            word = safe_content[start:end].strip()
+        else:
+            word = str(item.get("word") or "").replace("▁", " ").strip()
+        if not word:
             continue
+        span_key = (start, end, entity)
+        if isinstance(start, int) and isinstance(end, int):
+            if span_key in seen_spans:
+                continue
+            seen_spans.add(span_key)
         result.append({"word": word, "entity": entity})
+        if len(result) >= max_entities:
+            break
     return result
 
 

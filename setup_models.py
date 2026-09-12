@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import threading
+from functools import partial
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -19,6 +20,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # proportion to how long each download really takes. The GGUF LLM dwarfs the rest.
 STEP_WEIGHTS = {
     "embeddings": 0.15,
+    "ner": 0.3,
     "whisper": 0.5,
     "llm": 5.7,
 }
@@ -54,6 +56,18 @@ def setup():
     if embedding_task.get("enabled", False):
         model = embedding_task.get("model", "intfloat/multilingual-e5-small")
         steps.append(("embeddings", model, download_embedding))
+
+    entity_task = tasks.get("entity-extraction-map", {})
+    if (
+        entity_task.get("enabled", False)
+        and entity_task.get("type") == "token-classification"
+    ):
+        model = entity_task.get("model", "Davlan/xlm-roberta-base-ner-hrl")
+        downloader = partial(
+            download_token_classifier,
+            revision=entity_task.get("model_revision"),
+        )
+        steps.append(("ner", model, downloader))
 
     # Whisper (transcription)
     transcribe_task = tasks.get("transcribe", {})
@@ -107,6 +121,18 @@ def download_embedding(model_name, report=None):
     SentenceTransformer(model_name)
 
 
+def download_token_classifier(model_name, report=None, revision=None):
+    from transformers import AutoModelForTokenClassification, AutoTokenizer
+
+    AutoTokenizer.from_pretrained(
+        model_name,
+        revision=revision,
+        fix_mistral_regex=True,
+    )
+    AutoModelForTokenClassification.from_pretrained(
+        model_name,
+        revision=revision,
+    )
 
 
 def download_whisper(model_size, report=None):
