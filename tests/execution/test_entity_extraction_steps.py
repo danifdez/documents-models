@@ -5,6 +5,7 @@ from common.execution_registry import TASK_HANDLERS
 from lib.execution.step_executor import execute_assignment
 from tasks.entities.entities import (
     _extract_entities,
+    _remove_nested_mentions,
     _text_windows,
     entity_extraction_map,
     entity_extraction_reduce,
@@ -12,6 +13,23 @@ from tasks.entities.entities import (
 
 
 class EntityExtractionStepTest(unittest.TestCase):
+    def test_nested_aliases_and_window_fragments_are_removed(self):
+        entities = [
+            {"word": 'Edwin "Buzz" Aldrin', "entity": "PERSON"},
+            {"word": "Armstrong", "entity": "PERSON"},
+            {"word": "Aldri", "entity": "PERSON"},
+            {"word": "n", "entity": "PERSON"},
+            {"word": "Neil Armstrong", "entity": "PERSON"},
+        ]
+
+        self.assertEqual(
+            _remove_nested_mentions(entities),
+            [
+                {"word": 'Edwin "Buzz" Aldrin', "entity": "PERSON"},
+                {"word": "Neil Armstrong", "entity": "PERSON"},
+            ],
+        )
+
     def test_long_inputs_are_split_into_overlapping_token_windows(self):
         class Tokenizer:
             model_max_length = 6

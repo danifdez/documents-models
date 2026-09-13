@@ -135,7 +135,6 @@ def _extract_entities(
         str(entity_type).strip().upper()
         for entity_type in config.get("ignored_entity_types", [])
     }
-    max_entities = int(config.get("max_entities", 200))
     result: List[Dict[str, str]] = []
     seen_spans = set()
     for item in parsed:
@@ -166,8 +165,27 @@ def _extract_entities(
                 continue
             seen_spans.add(span_key)
         result.append({"word": word, "entity": entity})
-        if len(result) >= max_entities:
-            break
+    max_entities = int(config.get("max_entities", 200))
+    return _remove_nested_mentions(result)[:max_entities]
+
+
+def _remove_nested_mentions(
+    entities: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    result: List[Dict[str, str]] = []
+    folded = [entry["word"].casefold() for entry in entities]
+    for index, entry in enumerate(entities):
+        word = folded[index]
+        if len(word) <= 1:
+            continue
+        if any(
+            entry["entity"] == other["entity"]
+            and len(word) < len(folded[other_index])
+            and word in folded[other_index]
+            for other_index, other in enumerate(entities)
+        ):
+            continue
+        result.append(entry)
     return result
 
 
