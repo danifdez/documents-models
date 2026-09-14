@@ -9,7 +9,8 @@ source "$ROOT_DIR/scripts/release/common.sh"
 VERSION=""
 TARGET=""
 VARIANT="cpu"
-LLAMA_SERVER=""
+LLAMA_CPP_REPOSITORY=""
+LLAMA_CPP_REVISION=""
 PYINSTALLER_VERSION=""
 PIP_VERSION=""
 PYTHON_VERSION=""
@@ -21,7 +22,8 @@ while [ "$#" -gt 0 ]; do
     --version) VERSION="$2"; shift 2 ;;
     --target) TARGET="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
-    --llama-server) LLAMA_SERVER="$2"; shift 2 ;;
+    --llama-cpp-repository) LLAMA_CPP_REPOSITORY="$2"; shift 2 ;;
+    --llama-cpp-revision) LLAMA_CPP_REVISION="$2"; shift 2 ;;
     --pyinstaller-version) PYINSTALLER_VERSION="$2"; shift 2 ;;
     --pip-version) PIP_VERSION="$2"; shift 2 ;;
     --python-version) PYTHON_VERSION="$2"; shift 2 ;;
@@ -31,17 +33,17 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$VERSION" ] && [ -n "$TARGET" ] && [ -n "$LLAMA_SERVER" ] &&
+[ -n "$VERSION" ] && [ -n "$TARGET" ] &&
   [ -n "$PYINSTALLER_VERSION" ] && [ -n "$PIP_VERSION" ] && [ -n "$PYTHON_VERSION" ] && [ -n "$STAGING" ] && [ -n "$OUTPUT" ] ||
-  die "Models packaging requires version, target, llama-server, runtime versions, staging and output" 2
+  die "Models packaging requires version, target, runtime versions, staging and output" 2
 validate_semver "$VERSION"
 assert_local_target "$TARGET"
 assert_inside_workspace "$STAGING"
 assert_inside_workspace "$OUTPUT"
 require_command python3
 require_command node
-require_file "$LLAMA_SERVER"
-[ -x "$LLAMA_SERVER" ] || die "llama-server is not executable: $LLAMA_SERVER" 3
+[ -n "$LLAMA_CPP_REPOSITORY" ] && [ -n "$LLAMA_CPP_REVISION" ] ||
+  die "llama-server build requires repository and revision" 2
 ACTIVE_PYTHON="$(python3 -c 'import platform; print(platform.python_version())')"
 [ "$ACTIVE_PYTHON" = "$PYTHON_VERSION" ] || die "Models must be packaged with Python $PYTHON_VERSION (current: $ACTIVE_PYTHON)" 3
 case "$VARIANT" in cpu|cuda|metal) ;; *) die "Unsupported Models variant: $VARIANT" 2 ;; esac
@@ -54,6 +56,11 @@ rm -rf "$STAGING"
 mkdir -p "$STAGING" "$OUTPUT/components" "$OUTPUT/.metadata/$TARGET" "$OUTPUT/logs"
 LOG_FILE="$OUTPUT/logs/models-${VARIANT}.log"
 VENV="$STAGING/venv"
+
+run_logged "$LOG_FILE.llama" "$SERVICE_DIR/scripts/build-llama-server.sh" \
+  --variant "$VARIANT" --repository "$LLAMA_CPP_REPOSITORY" --revision "$LLAMA_CPP_REVISION" \
+  --staging "$STAGING/llama-server"
+LLAMA_SERVER="$STAGING/llama-server/build/bin/llama-server"
 
 log_info "Creating isolated Models environment ($VARIANT)"
 run_logged "$LOG_FILE" python3 -m venv "$VENV"
