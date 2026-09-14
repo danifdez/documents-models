@@ -1,4 +1,3 @@
-import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -29,30 +28,23 @@ class RelationshipExtractionStepTest(unittest.TestCase):
         self.assertNotIn("relationship-modify", TASK_HANDLERS)
 
     @patch(
-        "tasks.relationship_extraction.relationship_extraction.get_llm_params",
-        return_value={},
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
     )
-    @patch(
-        "tasks.relationship_extraction.relationship_extraction.get_llm_service"
-    )
-    def test_map_runs_one_inference_for_one_bounded_chunk(
-        self, get_llm_service, _get_llm_params
-    ):
-        llm = Mock()
-        llm.chat.return_value = json.dumps(
-            [
-                {
-                    "subject": "Ada Lovelace",
-                    "predicate": "Documented",
-                    "object": "Analytical Engine",
-                }
+    def test_map_classifies_only_configured_relationships(self, get_pipeline):
+        classifier = Mock()
+
+        def classify(_context, **kwargs):
+            return [
+                {"labels": ["created"], "scores": [0.94]},
+                {"labels": ["created"], "scores": [0.1]},
             ]
-        )
-        get_llm_service.return_value = llm
+
+        classifier.side_effect = classify
+        get_pipeline.return_value = classifier
 
         result = relationship_extraction_map(
             {
-                "content": "Ada Lovelace documented the Analytical Engine.",
+                "content": "Ada Lovelace created the Analytical Engine.",
                 "entities": [
                     {"id": 1, "name": "Ada Lovelace", "type": "PERSON"},
                     {
@@ -65,10 +57,130 @@ class RelationshipExtractionStepTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            result["relationships"][0]["predicate"], "documented"
+            result["relationships"][0]["predicate"], "created"
         )
-        self.assertEqual(result["relationships"][0]["confidence"], 0.5)
-        llm.chat.assert_called_once()
+        self.assertGreater(result["relationships"][0]["confidence"], 0.99)
+        classifier.assert_called_once()
+
+    @patch(
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
+    )
+    def test_map_rejects_scores_below_the_configured_threshold(self, get_pipeline):
+        classifier = Mock(
+            return_value=[
+                {"labels": ["works for"], "scores": [0.79]},
+                {"labels": ["works for"], "scores": [0.1]},
+            ]
+        )
+        get_pipeline.return_value = classifier
+
+        result = relationship_extraction_map(
+            {
+                "content": "Ada Lovelace worked for Babbage Ltd.",
+                "entities": [
+                    {"name": "Ada Lovelace", "type": "PERSON"},
+                    {"name": "Babbage Ltd", "type": "ORG"},
+                ],
+            }
+        )
+
+        self.assertEqual(result, {"relationships": []})
+
+    @patch(
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
+    )
+    def test_map_rejects_high_prior_scores_without_contextual_evidence(
+        self, get_pipeline
+    ):
+        classifier = Mock(
+            side_effect=[
+                [
+                    {"labels": ["owns"], "scores": [0.9]},
+                    {"labels": ["owns"], "scores": [0.5]},
+                ],
+                [
+                    {"labels": ["is part of"], "scores": [0.9]},
+                    {"labels": ["is part of"], "scores": [0.5]},
+                ],
+            ]
+        )
+        get_pipeline.return_value = classifier
+
+        result = relationship_extraction_map(
+            {
+                "content": "Acme mentioned Globex in its report.",
+                "entities": [
+                    {"name": "Acme", "type": "ORG"},
+                    {"name": "Globex", "type": "ORG"},
+                ],
+            }
+        )
+
+        self.assertEqual(result, {"relationships": []})
+
+    @patch(
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
+    )
+    def test_map_collapses_reverse_symmetric_relationships(self, get_pipeline):
+        classifier = Mock(
+            side_effect=[
+                [
+                    {"labels": ["is partnered with"], "scores": [0.95]},
+                    {"labels": ["is partnered with"], "scores": [0.5]},
+                ],
+                [
+                    {"labels": ["is partnered with"], "scores": [0.96]},
+                    {"labels": ["is partnered with"], "scores": [0.5]},
+                ],
+            ]
+        )
+        get_pipeline.return_value = classifier
+
+        result = relationship_extraction_map(
+            {
+                "content": "Acme is partnered with Globex.",
+                "entities": [
+                    {"name": "Acme", "type": "ORG"},
+                    {"name": "Globex", "type": "ORG"},
+                ],
+            }
+        )
+
+        self.assertEqual(len(result["relationships"]), 1)
+        self.assertEqual(
+            {
+                key: value
+                for key, value in result["relationships"][0].items()
+                if key != "confidence"
+            },
+            {
+                "subject": "Acme",
+                "predicate": "partnered_with",
+                "object": "Globex",
+                "context": "Acme is partnered with Globex.",
+            },
+        )
+        self.assertAlmostEqual(result["relationships"][0]["confidence"], 0.96)
+
+    @patch(
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
+    )
+    def test_map_skips_entities_absent_from_the_chunk(self, get_pipeline):
+        classifier = Mock()
+        get_pipeline.return_value = classifier
+
+        result = relationship_extraction_map(
+            {
+                "content": "Ada Lovelace wrote notes.",
+                "entities": [
+                    {"name": "Ada Lovelace", "type": "PERSON"},
+                    {"name": "Analytical Engine", "type": "PRODUCT"},
+                ],
+            }
+        )
+
+        self.assertEqual(result, {"relationships": []})
+        classifier.assert_not_called()
 
     def test_reduce_deduplicates_in_map_order_and_keeps_best_confidence(self):
         low = _relationship("Ada", "created", "Notes", 0.4)

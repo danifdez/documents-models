@@ -1,11 +1,16 @@
 import logging
 import multiprocessing
+import json
+import os
 import signal
+import subprocess
 import sys
 import time
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    if "--self-check" in sys.argv:
+        os.environ["MODELS_SELF_CHECK"] = "1"
 
 from lib.execution.result_outbox import ResultOutbox
 from lib.execution.protocol_client import (
@@ -111,6 +116,86 @@ def effective_task_capabilities() -> list[str]:
 CAPABILITIES = effective_task_capabilities()
 
 
+def self_check() -> int:
+    from common.execution_registry import TASK_HANDLERS
+    from lib.llm.config import get_tasks
+    from services.llama_server import server_binary
+    from utils.runtime_variant import validate_llama_variant
+    from utils.task_dispatch import ensure_task_handler
+
+    failed_handlers = [
+        task_type
+        for task_type in CAPABILITIES
+        if not ensure_task_handler(task_type)
+    ]
+    binary = server_binary()
+    variant = os.environ.get("DOCUMENTS_MODELS_VARIANT", "unknown")
+    llama_output = ""
+    llama_error = ""
+    if binary:
+        try:
+            completed = subprocess.run(
+                [binary, "--version"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            llama_output = f"{completed.stdout}\n{completed.stderr}".strip()
+            llama_compatible, llama_error = validate_llama_variant(
+                variant,
+                llama_output,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            llama_compatible = False
+            llama_error = str(error)
+    else:
+        llama_compatible = False
+        llama_error = "llama-server was not found"
+    defaults_available = bool(get_tasks())
+    prompts_available = os.path.isdir(
+        os.path.join(
+            getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+            "tasks",
+        )
+    )
+    if prompts_available:
+        prompts_root = os.path.join(
+            getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+            "tasks",
+        )
+        prompts_available = any(
+            name.endswith(".md")
+            for _, _, names in os.walk(prompts_root)
+            for name in names
+        )
+    result = {
+        "ok": (
+            not failed_handlers
+            and defaults_available
+            and prompts_available
+            and llama_compatible
+        ),
+        "component": "models",
+        "variant": variant,
+        "handlers": len(TASK_HANDLERS),
+        "failedHandlers": failed_handlers,
+        "llamaServer": {
+            "available": bool(binary),
+            "path": binary,
+            "compatible": llama_compatible,
+            "build": llama_output,
+            "error": llama_error,
+        },
+        "resources": {
+            "defaults": defaults_available,
+            "prompts": prompts_available,
+        },
+    }
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["ok"] else 1
+
+
 def _metadata() -> dict:
     return {
         "cpuCount": CPU_COUNT,
@@ -214,6 +299,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if "--self-check" in sys.argv:
+        raise SystemExit(self_check())
     if "--setup" in sys.argv:
         from setup_models import setup
 

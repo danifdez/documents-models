@@ -52,15 +52,6 @@ root ::= "[" ws ( sstring ( "," ws sstring ){0,63} )? "]"
     + _BOUNDED_STRING + _JSON_COMMON
 )
 
-# relationship-extraction-map: array of {subject, predicate, object} triples.
-RELATIONSHIPS_GBNF = (
-    r"""
-root ::= "[" ws ( rel ( "," ws rel ){0,127} )? "]"
-rel  ::= "{" ws "\"subject\"" ws ":" ws sstring "," ws "\"predicate\"" ws ":" ws sstring "," ws "\"object\"" ws ":" ws sstring "}" ws
-"""
-    + _BOUNDED_STRING + _JSON_COMMON
-)
-
 # Agent step decision: {"thought": ..., "tool": ..., "args": {...}}
 # or {"thought": ..., "finish": <value>}.
 AGENT_DECISION_GBNF = (

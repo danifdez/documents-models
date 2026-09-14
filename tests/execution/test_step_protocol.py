@@ -78,6 +78,7 @@ class StepProtocolTest(unittest.TestCase):
         self.assertNotIn("summarize", executions.CAPABILITIES)
         self.assertIn("ingest-content", executions.CAPABILITIES)
         self.assertIn("indexed-file-ingest", executions.CAPABILITIES)
+        self.assertIn("relationship-extraction-map", executions.CAPABILITIES)
         self.assertIn("relationship-extraction-reduce", executions.CAPABILITIES)
 
     def test_worker_filters_tasks_by_effective_requirements(self):
@@ -112,6 +113,7 @@ class StepProtocolTest(unittest.TestCase):
                     "summarize-reduce",
                     "summarize-finalize",
                     "indexed-file-extraction",
+                    "relationship-extraction-map",
                     "relationship-extraction-reduce",
                 ],
             )

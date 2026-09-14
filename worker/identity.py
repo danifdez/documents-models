@@ -34,7 +34,11 @@ def _load_or_create_worker_id() -> str:
         return new_id
 
 
-WORKER_ID = _load_or_create_worker_id()
+WORKER_ID = (
+    "self-check"
+    if os.environ.get("MODELS_SELF_CHECK") == "1"
+    else _load_or_create_worker_id()
+)
 _worker_cfg = get_worker_config()
 WORKER_NAME = _worker_cfg.get("name", "") or f"worker-{WORKER_ID[:8]}"
 HEARTBEAT_INTERVAL = int(_worker_cfg.get("heartbeat_interval", 15))

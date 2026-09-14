@@ -21,6 +21,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STEP_WEIGHTS = {
     "embeddings": 0.15,
     "ner": 0.3,
+    "relationships": 2.2,
     "whisper": 0.5,
     "llm": 5.7,
 }
@@ -68,6 +69,20 @@ def setup():
             revision=entity_task.get("model_revision"),
         )
         steps.append(("ner", model, downloader))
+
+    relationship_task = tasks.get("relationship-extraction-map", {})
+    if (
+        relationship_task.get("enabled", False)
+        and relationship_task.get("type") == "zero-shot-classification"
+    ):
+        model = relationship_task.get(
+            "model", "joeddav/xlm-roberta-large-xnli"
+        )
+        downloader = partial(
+            download_sequence_classifier,
+            revision=relationship_task.get("model_revision"),
+        )
+        steps.append(("relationships", model, downloader))
 
     # Whisper (transcription)
     transcribe_task = tasks.get("transcribe", {})
@@ -130,6 +145,16 @@ def download_token_classifier(model_name, report=None, revision=None):
         fix_mistral_regex=True,
     )
     AutoModelForTokenClassification.from_pretrained(
+        model_name,
+        revision=revision,
+    )
+
+
+def download_sequence_classifier(model_name, report=None, revision=None):
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    AutoTokenizer.from_pretrained(model_name, revision=revision)
+    AutoModelForSequenceClassification.from_pretrained(
         model_name,
         revision=revision,
     )
