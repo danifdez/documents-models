@@ -2,12 +2,38 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.runtime_variant import validate_llama_variant
+
+
+def llama_build_metadata(llama_server: str) -> str:
+    completed = subprocess.run(
+        [llama_server, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}".strip()
+
+    linker = "ldd" if sys.platform.startswith("linux") else "otool" if sys.platform == "darwin" else None
+    if linker and shutil.which(linker):
+        arguments = [linker, llama_server] if linker == "ldd" else [linker, "-L", llama_server]
+        linked = subprocess.run(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        output = f"{output}\n{linked.stdout}\n{linked.stderr}".strip()
+
+    return output
 
 
 def main() -> int:
@@ -32,14 +58,7 @@ def main() -> int:
     scores = torch.tensor([0.9, 0.8])
     nms(boxes, scores, 0.5)
 
-    completed = subprocess.run(
-        [args.llama_server, "--version"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    engine_output = f"{completed.stdout}\n{completed.stderr}".strip()
+    engine_output = llama_build_metadata(args.llama_server)
     torch_cuda = torch.version.cuda
 
     if args.variant == "cpu" and torch_cuda:

@@ -34,6 +34,16 @@ class RuntimeVariantTest(unittest.TestCase):
         self.assertFalse(compatible)
         self.assertIn("without CUDA", reason)
 
+    def test_cuda_accepts_linked_cuda_backend(self):
+        compatible, reason = validate_llama_variant(
+            "cuda",
+            "version: 10243\nlibggml-cuda.so => /usr/lib/libggml-cuda.so",
+            "linux",
+        )
+
+        self.assertTrue(compatible)
+        self.assertEqual(reason, "")
+
     def test_metal_requires_macos_and_metal_metadata(self):
         compatible, reason = validate_llama_variant(
             "metal",
