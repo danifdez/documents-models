@@ -120,7 +120,7 @@ def self_check() -> int:
     from common.execution_registry import TASK_HANDLERS
     from lib.llm.config import get_tasks
     from services.llama_server import server_binary
-    from utils.runtime_variant import validate_llama_variant
+    from utils.runtime_variant import llama_build_metadata, validate_llama_variant
     from utils.task_dispatch import ensure_task_handler
 
     failed_handlers = [
@@ -134,14 +134,7 @@ def self_check() -> int:
     llama_error = ""
     if binary:
         try:
-            completed = subprocess.run(
-                [binary, "--version"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            llama_output = f"{completed.stdout}\n{completed.stderr}".strip()
+            llama_output = llama_build_metadata(binary)
             llama_compatible, llama_error = validate_llama_variant(
                 variant,
                 llama_output,

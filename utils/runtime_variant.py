@@ -1,4 +1,29 @@
+import shutil
+import subprocess
 import sys
+
+
+def llama_build_metadata(llama_server: str) -> str:
+    completed = subprocess.run(
+        [llama_server, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    output = f"{completed.stdout}\n{completed.stderr}".strip()
+    linker = "ldd" if sys.platform.startswith("linux") else "otool" if sys.platform == "darwin" else None
+    if linker and shutil.which(linker):
+        arguments = [linker, llama_server] if linker == "ldd" else [linker, "-L", llama_server]
+        linked = subprocess.run(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        output = f"{output}\n{linked.stdout}\n{linked.stderr}".strip()
+    return output
 
 
 def validate_llama_variant(
