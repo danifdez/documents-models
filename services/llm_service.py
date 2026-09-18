@@ -26,6 +26,42 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 # other, so this is a "something is wrong" timeout, not a deadline.
 REQUEST_TIMEOUT_S = float(os.environ.get("LLAMA_TIMEOUT", "600"))
 
+# llama-server compiles a decoding grammar from the tool parameter JSON
+# Schemas. A bounded string (`maxLength`) becomes a repeated-character rule,
+# and above roughly 1800 the generated grammar is rejected at sampler init
+# ("Failed to initialize samplers: failed to parse grammar"). Tool schemas
+# legitimately declare large maxima (multi-thousand-char prompts, 1 MB file
+# bodies) that trip this, so the grammar copy drops oversized bounds.
+# Argument size stays bounded by `max_tokens`, and the Backend validates the
+# resulting payload, so the bound is not load-bearing for correctness.
+_MAX_GRAMMAR_STRING_LENGTH = 1000
+
+
+def sanitize_tools_for_grammar(tools: List[dict]) -> List[dict]:
+    """Return a copy of `tools` whose schemas llama-server can compile.
+
+    Only `maxLength` values above `_MAX_GRAMMAR_STRING_LENGTH` are removed;
+    everything else is preserved. The caller's definitions are not mutated.
+    """
+    sanitized = json.loads(json.dumps(tools))
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            max_length = node.get("maxLength")
+            if (
+                isinstance(max_length, int)
+                and max_length > _MAX_GRAMMAR_STRING_LENGTH
+            ):
+                node.pop("maxLength", None)
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(sanitized)
+    return sanitized
+
 
 def strip_thinking(text: str) -> str:
     """Remove Qwen3 <think>...</think> blocks from a model response."""
@@ -321,7 +357,7 @@ class LLMService:
         """
         body: Dict[str, Any] = {
             "messages": messages,
-            "tools": tools,
+            "tools": sanitize_tools_for_grammar(tools),
             "tool_choice": tool_choice,
             "max_tokens": max_tokens,
             "stream": False,
