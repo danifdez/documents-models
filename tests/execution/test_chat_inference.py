@@ -41,6 +41,7 @@ _TOOL_VERSIONS = {
         "browser.type_text",
         "browser.select_option",
         "browser.read_current_page",
+        "browser.run_task",
         "workspace_files.list",
         "workspace_files.search",
         "workspace_files.read",
@@ -74,6 +75,56 @@ def capabilities(*names, skills=None, skill_signals=None):
 class ChatInferenceTest(unittest.TestCase):
     def test_loads_the_packaged_system_prompt(self):
         self.assertIn("exactly one inference", _SYSTEM_PROMPT)
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_routes_explicit_web_search_to_connected_ia_browser(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+        request = "Busca en Wikipedia cuándo se publicó Don Quijote y dame el enlace."
+        payload = {
+            "_task_type": "assistant-chat",
+            "activeCapabilities": capabilities("browser.run_task"),
+            "conversation": [{"role": "user", "content": request}],
+        }
+
+        outcome = chat_inference(payload)
+
+        self.assertEqual(outcome.value["kind"], "tool_requests")
+        self.assertEqual(outcome.value["calls"][0]["name"], "browser.run_task")
+        self.assertEqual(outcome.value["calls"][0]["arguments"], {"goal": request})
+        get_llm_service.assert_not_called()
+
+        get_llm_service.return_value.chat_with_tools.return_value = {
+            "content": "La primera parte apareció en 1605."
+        }
+        payload["toolHistory"] = [
+            {"calls": [{"name": "browser.run_task"}], "results": []}
+        ]
+        self.assertEqual(chat_inference(payload).value["kind"], "final_text")
+
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
+    @patch("tasks.assistant_chat.assistant_chat.get_task_config")
+    @patch("tasks.assistant_chat.assistant_chat.get_llm_service")
+    def test_browser_availability_is_explicit_in_model_instructions(
+        self, get_llm_service, get_task_config, _get_llm_params
+    ):
+        get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
+        get_llm_service.return_value.chat_with_tools.return_value = {
+            "content": "Done"
+        }
+        chat_inference(
+            {
+                "activeCapabilities": capabilities("browser.run_task"),
+                "conversation": [{"role": "user", "content": "Hello"}],
+            }
+        )
+        instructions = get_llm_service.return_value.chat_with_tools.call_args.args[0][0][
+            "content"
+        ]
+        self.assertIn("IA Browser is connected for this turn", instructions)
 
     def test_rejects_legacy_text_skill_signals(self):
         with self.assertRaisesRegex(ValueError, "Invalid product skill signals"):
@@ -634,6 +685,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "browser.click",
                     "browser.type_text",
                     "browser.select_option",
+                    "browser.run_task",
                 ),
                 "conversation": [
                     {
@@ -649,6 +701,9 @@ class ChatInferenceTest(unittest.TestCase):
             for tool in llm.chat_with_tools.call_args.args[1]
         }
         self.assertIn("browser.navigate", tools)
+        self.assertEqual(
+            tools["browser.run_task"]["parameters"]["required"], ["goal"]
+        )
         self.assertEqual(
             tools["browser.navigate"]["parameters"]["required"], ["url"]
         )

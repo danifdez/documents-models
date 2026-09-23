@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -12,6 +13,15 @@ from tasks.assistant_chat.tool_catalog import resolve_active_tools
 from tasks.assistant_chat.tool_results import materialize_tool_result
 
 _SYSTEM_PROMPT = get_prompt("assistant-chat").strip()
+_WEB_REQUEST = re.compile(
+    r"\b(?:busca|buscar|búscame|búscalo|búscala|investiga|consulta|verifica|comprueba|"
+    r"encuentra|search|research|look up|check|find)\b",
+    re.IGNORECASE,
+)
+_WEB_SOURCE = re.compile(
+    r"\b(?:ia browser|wikipedia|web|internet|online|navegador|browser)\b|https?://",
+    re.IGNORECASE,
+)
 
 
 def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -203,6 +213,19 @@ def _system_prompt(payload: Dict[str, Any]) -> str:
     if folder_scope:
         prompt = f"{prompt}\n\nWorkspace folder scope: {folder_scope}"
     active_capabilities = payload.get("activeCapabilities")
+    if isinstance(active_capabilities, dict):
+        available_names = {
+            tool.get("name")
+            for tool in active_capabilities.get("tools", [])
+            if isinstance(tool, dict)
+        }
+        if "browser.run_task" in available_names:
+            prompt = (
+                f"{prompt}\n\nIA Browser is connected for this turn. "
+                "browser.run_task is available. For an explicit web task, "
+                "call it and wait for its result; do not say that browser "
+                "tasks are unavailable."
+            )
     skill_instructions = (
         []
         if active_capabilities is None and payload.get("delegationMode") is True
@@ -309,10 +332,10 @@ def _outcome(
 def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
     task_type = str(payload.get("_task_type") or "assistant-chat")
     config = get_task_config(task_type)
-    llm = get_llm_service(**get_llm_params(task_type))
     messages = _conversation(payload)
     max_tokens = int(config.get("max_tokens", 1200))
     if payload.get("delegationMode") is True:
+        llm = get_llm_service(**get_llm_params(task_type))
         message = {
             "content": llm.chat(
                 messages,
@@ -322,6 +345,21 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
         }
     else:
         tools = resolve_active_tools(payload)
+        browser_goal = _explicit_browser_goal(payload, tools)
+        if browser_goal is not None:
+            return InferenceOutcome(
+                {
+                    "kind": "tool_requests",
+                    "calls": [
+                        {
+                            "toolCallId": str(uuid4()),
+                            "name": "browser.run_task",
+                            "arguments": {"goal": browser_goal},
+                        }
+                    ],
+                }
+            )
+        llm = get_llm_service(**get_llm_params(task_type))
         if tools:
             message = llm.chat_with_tools(
                 messages,
@@ -349,3 +387,28 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
             allowed_tools,
         )
     )
+
+
+def _explicit_browser_goal(payload: Dict[str, Any], tools: List[Dict[str, Any]]) -> str | None:
+    if not any(tool["function"]["name"] == "browser.run_task" for tool in tools):
+        return None
+    for batch in payload.get("toolHistory") or []:
+        if isinstance(batch, dict) and any(
+            isinstance(call, dict) and call.get("name") == "browser.run_task"
+            for call in batch.get("calls") or []
+        ):
+            return None
+    conversation = payload.get("conversation") or []
+    for message in reversed(conversation):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if (
+            isinstance(content, str)
+            and _WEB_REQUEST.search(content)
+            and _WEB_SOURCE.search(content)
+            and len(content.strip()) <= 4000
+        ):
+            return content.strip()
+        return None
+    return None

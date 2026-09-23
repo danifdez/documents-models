@@ -91,6 +91,25 @@ _AGENT_DELEGATE_TOOL = {
         },
     },
 }
+_BROWSER_RUN_TASK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "browser.run_task",
+        "description": (
+            "Ask the paired IA Browser agent to complete one web search, "
+            "research, or interaction task in its own tab and return an "
+            "answer with sources. The user must approve the task before it starts."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["goal"],
+            "properties": {
+                "goal": {"type": "string", "minLength": 1, "maxLength": 4000},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
 _BROWSER_READ_TOOL = {
     "type": "function",
     "function": {
@@ -356,6 +375,7 @@ _TOOL_DEFINITIONS = {
     ),
     "user_tasks.create": ("user_tasks.create/1", _USER_TASK_CREATE_TOOL),
     "agents.delegate": ("agents.delegate/1", _AGENT_DELEGATE_TOOL),
+    "browser.run_task": ("browser.run_task/1", _BROWSER_RUN_TASK_TOOL),
     "browser.read_current_page": (
         "browser.read_current_page/1",
         _BROWSER_READ_TOOL,

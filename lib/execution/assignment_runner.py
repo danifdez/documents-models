@@ -13,7 +13,7 @@ from lib.execution.protocol_client import (
     ProtocolTransportError,
 )
 from lib.execution.result_outbox import ResultOutbox
-from lib.execution.step_result import step_result_base
+from lib.execution.step_result import cancelled_inference_fields, step_result_base
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +115,14 @@ def _execute_in_temporary_process(
 
 
 def _cancelled_result(assignment: dict) -> dict:
-    return {
+    result = {
         **step_result_base(assignment),
         "status": "cancelled",
         "error": None,
     }
+    if assignment["stepKind"] == "inference":
+        result.update(cancelled_inference_fields())
+    return result
 
 
 def _assignment_policy_error(assignment: dict) -> tuple[str, str] | None:

@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import threading
@@ -48,6 +49,39 @@ def _blocking_process_executor(
 
 
 class WorkerRuntimeTest(unittest.TestCase):
+    def test_cancelled_inference_can_be_delivered_after_restart(self):
+        client = Mock()
+        client.read_control.return_value = {"cancelled": True}
+        client.submit_result.return_value = {"code": "stale_attempt"}
+        assignment = {
+            "executionId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca701",
+            "stepId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca702",
+            "operationId": "018f1d8a-54d7-7d63-a1ee-5e9a6adca703",
+            "attemptId": FIRST_ATTEMPT_ID,
+            "stepKind": "inference",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            outbox = ResultOutbox(directory)
+            run_assignment(client, outbox, assignment, threading.Event())
+            stored = outbox._load(outbox.directory / f"{FIRST_ATTEMPT_ID}.json")
+            result = stored["result"]
+            self.assertEqual(result["output"]["outcome"]["kind"], "cancelled")
+            self.assertEqual(result["inference"]["finishReason"], "cancelled")
+            self.assertIn("usage", result)
+
+            legacy = {
+                key: value
+                for key, value in result.items()
+                if key not in {"output", "usage", "inference"}
+            }
+            path = outbox.directory / f"{FIRST_ATTEMPT_ID}.json"
+            path.write_text(json.dumps({"result": legacy, "artifacts": []}))
+            outbox.deliver_all(client)
+            delivered = client.submit_result.call_args.args[0]
+            self.assertEqual(delivered["output"]["outcome"]["kind"], "cancelled")
+            self.assertEqual(delivered["inference"]["finishReason"], "cancelled")
+            self.assertFalse(path.exists())
+
     def test_stores_a_cancelled_result_without_running_the_handler(self):
         client = Mock()
         client.read_control.return_value = {"cancelled": True}

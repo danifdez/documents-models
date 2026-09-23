@@ -14,3 +14,26 @@ def step_result_base(assignment: dict) -> dict:
         "runtimeFingerprint": runtime_fingerprint(),
         "artifactRefs": [],
     }
+
+
+def cancelled_inference_fields() -> dict:
+    return {
+        "output": {
+            "kind": "inference",
+            "outcome": {"kind": "cancelled", "reason": "Execution cancelled"},
+        },
+        "usage": {
+            "promptTokens": None,
+            "completionTokens": None,
+            "totalTokens": None,
+        },
+        "inference": {
+            "effectiveModel": "not_executed",
+            "effectiveAdapter": None,
+            "effectivePromptPackages": ["not_executed"],
+            "finishReason": "cancelled",
+            "inferenceMs": 0,
+            "cacheOutcome": "bypass",
+            "warnings": [],
+        },
+    }

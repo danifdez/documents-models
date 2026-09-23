@@ -24,7 +24,7 @@
     },
     "tools": {
       "type": "array",
-      "maxItems": 15,
+      "maxItems": 16,
       "items": { "$ref": "#/$defs/tool" }
     },
     "skills": {
@@ -68,6 +68,7 @@
             "user_tasks.create",
             "agents.delegate",
             "browser.read_current_page",
+            "browser.run_task",
             "browser.navigate",
             "browser.go_back",
             "browser.click",
@@ -87,6 +88,7 @@
             "user_tasks.create/1",
             "agents.delegate/1",
             "browser.read_current_page/1",
+            "browser.run_task/1",
             "browser.navigate/1",
             "browser.go_back/1",
             "browser.click/1",

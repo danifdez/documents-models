@@ -13,6 +13,7 @@ from lib.execution.private_storage import (
     secure_existing_file,
     write_private_text,
 )
+from lib.execution.step_result import cancelled_inference_fields
 
 ACK_CODES = {
     "received",
@@ -75,6 +76,13 @@ class ResultOutbox:
         attempt_id = self._attempt_id(value["result"])
         if path.stem != attempt_id:
             raise RuntimeError("Pending step result identity does not match")
+        result = value["result"]
+        if (
+            result.get("stepKind") == "inference"
+            and result.get("status") == "cancelled"
+        ):
+            for key, field in cancelled_inference_fields().items():
+                result.setdefault(key, field)
         return value
 
     def _deliver(
