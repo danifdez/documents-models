@@ -241,7 +241,7 @@ if [ "$HAS_CUDA" -eq 1 ]; then
   pip install -r requirements-gpu.txt
   # Force reinstall llama-cpp-python with CUDA support (compile from source)
   info "Compiling llama-cpp-python with CUDA support (this may take a few minutes)..."
-  CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
+  CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python==0.3.31 --force-reinstall --no-cache-dir
   ok "GPU dependencies installed"
 else
   warn "No CUDA detected — installing CPU-only mode"

@@ -1,4 +1,5 @@
-docling==2.126.0
+docling==2.130.0
+docling-parse==7.21.0
 lxml_html_clean==0.4.5
 beautifulsoup4==4.15.0
 trafilatura==2.2.0
