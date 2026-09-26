@@ -13,4 +13,4 @@ dateparser==1.4.3
 mutagen==1.48.1
 odfpy==1.4.1
 faster-whisper==1.2.1
-websockets==17.1
+websockets==16.1.1
