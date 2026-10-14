@@ -21,6 +21,7 @@ from lib.execution.protocol_client import (
 from lib.execution.code_identity import code_fingerprint
 from lib.execution.runtime_identity import runtime_fingerprint
 from lib.execution.worker_runtime import WorkerRuntime
+from lib.llm.config import get_all_task_names
 from utils.device import (
     CPU_COUNT,
     GPU_NAME,
@@ -51,64 +52,21 @@ PROTOCOL_RETRY_BACKOFF_SECONDS = 1
 LEASE_DURATION_MS = 30_000
 CLAIM_WAIT_TIMEOUT_MS = 10_000
 ACTIVE_CLAIM_WAIT_TIMEOUT_MS = 1_000
-SUPPORTED_TASK_TYPES = (
-    "assistant-chat",
-    "agent-chat",
-    "context-input-map",
-    "context-input-reduce",
-    "ask",
-    "browser-inference",
-    "detect-language",
-    "document-extraction",
-    "data-source-sync",
-    "embedding",
-    "dataset.extract-row",
-    "dataset.extract-row-map",
-    "dataset.extract-row-reduce",
-    "dataset.propose-columns",
-    "entity-extraction-map",
-    "entity-extraction-reduce",
-    "date-extraction-map",
-    "date-extraction-reduce",
-    "keywords-map",
-    "keywords-reduce",
-    "key-point-map",
-    "key-point-reduce",
-    "distribution",
-    "correlation",
-    "correlation-matrix",
-    "group-by",
-    "time-series",
-    "outliers",
-    "pivot-table",
-    "summary",
-    "query",
-    "chart",
-    "transcribe",
-    "translate-map",
-    "translate-reduce",
-    "summarize-map",
-    "summarize-reduce",
-    "summarize-compose",
-    "summarize-finalize",
-    "search",
-    "ingest-content",
-    "indexed-file-extraction",
-    "indexed-file-ingest",
-    "indexed-file-search",
-    "relationship-extraction-map",
-    "relationship-extraction-reduce",
-)
 STEP_KINDS = ["service", "code", "inference"]
 
 
 def effective_task_capabilities() -> list[str]:
+    """Task types this worker advertises, in the task catalog's own order.
+
+    The catalog (config/tasks.json over common/tasks.default.json) is the only
+    list of task types; adding a task there is enough to advertise it.
+    """
     supported = set(
         get_supported_task_types(detect_worker_capabilities())
     )
     return [
         task_type
-        for task_type in SUPPORTED_TASK_TYPES
+        for task_type in get_all_task_names()
         if task_type in supported
     ]
 

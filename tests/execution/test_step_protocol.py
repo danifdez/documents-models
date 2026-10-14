@@ -17,7 +17,7 @@ from lib.execution.result_outbox import ResultOutbox
 from lib.execution.step_executor import _inference_metadata, execute_assignment
 from lib.execution.outcome import InferenceOutcome
 from lib.execution.runtime_identity import runtime_fingerprint
-from lib.llm.config import active_deployments
+from lib.llm.config import active_deployments, get_all_task_names
 from lib.llm.prompts import prompt_package_fingerprint
 from worker.capabilities import get_supported_task_types
 import executions
@@ -42,7 +42,7 @@ class StepProtocolTest(unittest.TestCase):
         configured = set(
             get_supported_task_types(["llm", "embeddings", "gpu"])
         )
-        self.assertEqual(set(executions.SUPPORTED_TASK_TYPES), configured)
+        self.assertEqual(configured, set(get_all_task_names()))
 
     def test_worker_advertises_supported_step_capabilities(self):
         self.assertIn("assistant-chat", executions.CAPABILITIES)
@@ -87,8 +87,8 @@ class StepProtocolTest(unittest.TestCase):
             return_value={"disable_llm": True, "disable_embeddings": True},
         ):
             self.assertEqual(
-                executions.effective_task_capabilities(),
-                [
+                set(executions.effective_task_capabilities()),
+                {
                     "detect-language",
                     "document-extraction",
                     "data-source-sync",
@@ -115,7 +115,7 @@ class StepProtocolTest(unittest.TestCase):
                     "indexed-file-extraction",
                     "relationship-extraction-map",
                     "relationship-extraction-reduce",
-                ],
+                },
             )
 
     def test_registers_once_and_uses_worker_credential(self):
