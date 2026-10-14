@@ -5,12 +5,10 @@ import tempfile
 from threading import Lock
 
 from common.execution_registry import execution_handler
+from common.media_formats import MEDIA_EXTENSIONS, VIDEO_EXTENSIONS
 from lib.llm.config import get_task_config
 
 logger = logging.getLogger(__name__)
-
-_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.opus', '.aiff', '.aif'}
-_VIDEO_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.avi', '.mkv', '.webm', '.wmv'}
 
 _model = None
 _model_lock = Lock()
@@ -69,9 +67,7 @@ def _extract_audio_from_video(video_path: str) -> str:
 @execution_handler("transcribe")
 def transcribe(payload) -> dict:
     ext = payload.get("extension")
-    if not isinstance(ext, str) or ext.lower() not in (
-        _AUDIO_EXTENSIONS | _VIDEO_EXTENSIONS
-    ):
+    if not isinstance(ext, str) or ext.lower() not in MEDIA_EXTENSIONS:
         raise ValueError("Transcribe requires a supported media extension")
     ext = ext.lower()
     content = (payload.get("_input_artifacts") or {}).get("media")
@@ -79,7 +75,7 @@ def transcribe(payload) -> dict:
         raise ValueError("Transcribe step is missing its media artifact")
 
     source_path = _materialize(content, ext)
-    is_video = ext.lower() in _VIDEO_EXTENSIONS
+    is_video = ext in VIDEO_EXTENSIONS
     audio_path = source_path
     temp_audio = None
 

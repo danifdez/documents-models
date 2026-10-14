@@ -9,6 +9,8 @@ Transcription converts speech in a supported audio or video file into text. It c
 | Audio | `.mp3`, `.wav`, `.ogg`, `.flac`, `.aac`, `.m4a`, `.wma`, `.opus`, `.aiff`, `.aif` |
 | Video | `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`, `.wmv` |
 
+The authoritative list lives in `common/media_formats.py`.
+
 For video, Documents first extracts the audio track.
 
 ## Result

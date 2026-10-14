@@ -2,6 +2,7 @@ import os
 import tempfile
 
 from common.execution_registry import execution_handler
+from common.media_formats import MEDIA_EXTENSIONS
 from tasks.extraction.processors.html_processor import process_html
 from tasks.extraction.processors.doc_processor import process_doc
 from tasks.extraction.processors.pdf_processor import process_pdf
@@ -50,9 +51,7 @@ def _extract_by_extension(payload: dict) -> dict:
             return process_eml(tmp_path)
         if ext in ['.odt']:
             return process_odt(tmp_path)
-        if ext in ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma',
-                   '.opus', '.aiff', '.aif',
-                   '.mp4', '.m4v', '.mov', '.avi', '.mkv', '.webm', '.wmv']:
+        if ext in MEDIA_EXTENSIONS:
             return process_media(tmp_path)
         raise ValueError(f"Unsupported file type: {ext}")
     finally:

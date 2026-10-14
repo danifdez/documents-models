@@ -15,7 +15,7 @@ Document extraction turns uploaded files into clean content that Documents can d
 | Audio | `.mp3`, `.wav`, `.ogg`, `.flac`, `.aac`, `.m4a`, `.wma`, `.opus`, `.aiff`, `.aif` | Duration and embedded media metadata. No transcript is produced by extraction itself. |
 | Video | `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`, `.wmv` | Duration and embedded media metadata. No transcript is produced by extraction itself. |
 
-Unsupported extensions cause the extraction action to fail explicitly.
+Unsupported extensions cause the extraction action to fail explicitly. The authoritative list of media formats lives in `common/media_formats.py`.
 
 ## Cleaned content
 

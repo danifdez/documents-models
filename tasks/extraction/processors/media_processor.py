@@ -6,9 +6,7 @@ from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
 
-
-_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.opus', '.aiff', '.aif'}
-_VIDEO_EXTENSIONS = {'.mp4', '.m4v', '.mov', '.avi', '.mkv', '.webm', '.wmv'}
+from common.media_formats import VIDEO_EXTENSIONS
 
 
 def _format_duration(seconds: float) -> str:
@@ -80,7 +78,7 @@ def _build_content(info_rows: list[tuple[str, str]]) -> str:
 
 def process_media(file_path: str) -> dict:
     ext = os.path.splitext(file_path)[1].lower()
-    is_video = ext in _VIDEO_EXTENSIONS
+    is_video = ext in VIDEO_EXTENSIONS
 
     title = None
     author = None
