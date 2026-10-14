@@ -2,10 +2,11 @@
 
 import base64
 import hashlib
-import json
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List
+
+from common.canonical_json import canonical_bytes
 
 MAX_OUTPUT_ARTIFACT_BYTES = 8 * 1024 * 1024
 
@@ -24,13 +25,7 @@ class HandlerOutput:
 
 
 def json_output_artifact(role: str, kind: str, value: Any) -> OutputArtifact:
-    body = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
+    body = canonical_bytes(value)
     if len(body) > MAX_OUTPUT_ARTIFACT_BYTES:
         raise ValueError(f"{kind} output artifact exceeds 8 MiB")
     return OutputArtifact(role=role, kind=kind, body=body)

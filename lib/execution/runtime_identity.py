@@ -1,9 +1,10 @@
 import hashlib
-import json
 import os
 import platform
 import sys
 from pathlib import Path
+
+from common.canonical_json import canonical_sha256, is_sha256_reference
 
 _PROJECT_DIR = Path(__file__).resolve().parents[2]
 
@@ -11,11 +12,7 @@ _PROJECT_DIR = Path(__file__).resolve().parents[2]
 def runtime_fingerprint(project_root: Path | None = None) -> str:
     supplied = os.environ.get("DOCUMENTS_RUNTIME_FINGERPRINT", "").strip()
     if supplied:
-        if not (
-            len(supplied) == 71
-            and supplied.startswith("sha256:")
-            and all(character in "0123456789abcdef" for character in supplied[7:])
-        ):
+        if not is_sha256_reference(supplied):
             raise ValueError(
                 "DOCUMENTS_RUNTIME_FINGERPRINT must be a SHA-256 reference"
             )
@@ -35,11 +32,4 @@ def runtime_fingerprint(project_root: Path | None = None) -> str:
             else None
         ),
     }
-    encoded = json.dumps(
-        identity,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    return canonical_sha256(identity)

@@ -7,14 +7,15 @@ import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
+from common.canonical_json import canonical_sha256, is_sha256_reference
+
 _PROJECT_DIR = Path(__file__).resolve().parents[2]
-_HASH_PREFIX = "sha256:"
 
 
 def code_fingerprint(project_root: Path | None = None) -> str:
     supplied = os.environ.get("DOCUMENTS_CODE_FINGERPRINT", "").strip()
     if supplied:
-        if not _is_hash(supplied):
+        if not is_sha256_reference(supplied):
             raise ValueError("DOCUMENTS_CODE_FINGERPRINT must be a SHA-256 reference")
         return supplied
     return _tree_fingerprint((project_root or _PROJECT_DIR).resolve())
@@ -22,15 +23,7 @@ def code_fingerprint(project_root: Path | None = None) -> str:
 
 @lru_cache(maxsize=4)
 def _tree_fingerprint(root: Path) -> str:
-    manifest = _tree_manifest(root)
-    encoded = json.dumps(
-        manifest,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return _HASH_PREFIX + hashlib.sha256(encoded).hexdigest()
+    return canonical_sha256(_tree_manifest(root))
 
 
 def _tree_manifest(root: Path) -> dict:
@@ -126,11 +119,3 @@ def _may_contain(directory: str, scopes: tuple[str, ...]) -> bool:
         ):
             return True
     return False
-
-
-def _is_hash(value: str) -> bool:
-    return (
-        len(value) == 71
-        and value.startswith(_HASH_PREFIX)
-        and all(character in "0123456789abcdef" for character in value[7:])
-    )

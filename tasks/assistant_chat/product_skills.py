@@ -1,6 +1,6 @@
-import hashlib
-import json
 from typing import Any, Dict, List
+
+from common.canonical_json import canonical_sha256
 
 
 WORKSPACE_DOCUMENT_SKILL_ID = "workspace-document-workflow"
@@ -63,16 +63,6 @@ Corroborate material claims when independent sources are available. Do not hide 
 For time-sensitive claims, make freshness explicit. Separate quotations or source facts from conclusions inferred by the assistant."""
 
 
-def _canonical_hash(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-
-
 def _signal_key(value: Any) -> tuple[str, str]:
     if (
         isinstance(value, dict)
@@ -93,7 +83,7 @@ _PRODUCT_SKILLS = {
     (WORKSPACE_DOCUMENT_SKILL_ID, WORKSPACE_DOCUMENT_SKILL_VERSION): {
         "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
         "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
-        "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
+        "contentHash": canonical_sha256(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
         "instructions": WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
         "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
         "resources": [
@@ -101,14 +91,14 @@ _PRODUCT_SKILLS = {
                 "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
                 "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
                 "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
-                "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                "contentHash": canonical_sha256(DOCUMENT_FORMAT_RESOURCE_CONTENT),
             }
         ],
     },
     (EVIDENCE_RESEARCH_SKILL_ID, EVIDENCE_RESEARCH_SKILL_VERSION): {
         "title": EVIDENCE_RESEARCH_SKILL_TITLE,
         "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
-        "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
+        "contentHash": canonical_sha256(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
         "instructions": EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS,
         "activationSignal": DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
         "resources": [
@@ -116,7 +106,7 @@ _PRODUCT_SKILLS = {
                 "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
                 "title": SOURCE_EVALUATION_RESOURCE_TITLE,
                 "description": SOURCE_EVALUATION_RESOURCE_DESCRIPTION,
-                "contentHash": _canonical_hash(SOURCE_EVALUATION_RESOURCE_CONTENT),
+                "contentHash": canonical_sha256(SOURCE_EVALUATION_RESOURCE_CONTENT),
             }
         ],
     },

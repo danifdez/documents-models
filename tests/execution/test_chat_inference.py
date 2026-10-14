@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from common.canonical_json import canonical_sha256
 from tasks.assistant_chat.assistant_chat import _SYSTEM_PROMPT, chat_inference
 from tasks.assistant_chat.product_skills import (
     DOCUMENT_FORMAT_RESOURCE_CONTENT,
@@ -23,7 +24,6 @@ from tasks.assistant_chat.product_skills import (
     WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS,
     WORKSPACE_DOCUMENT_SKILL_TITLE,
     WORKSPACE_DOCUMENT_SKILL_VERSION,
-    _canonical_hash,
     resolve_active_skill_instructions,
 )
 
@@ -147,7 +147,7 @@ class ChatInferenceTest(unittest.TestCase):
             "version": WORKSPACE_DOCUMENT_SKILL_VERSION,
             "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
-            "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
+            "contentHash": canonical_sha256(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
             "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
             "resources": [
@@ -155,7 +155,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
                     "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
                     "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
-                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                    "contentHash": canonical_sha256(DOCUMENT_FORMAT_RESOURCE_CONTENT),
                 }
             ],
         }
@@ -203,7 +203,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
                     "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
                     "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
-                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                    "contentHash": canonical_sha256(DOCUMENT_FORMAT_RESOURCE_CONTENT),
                 }
             ],
         }
@@ -232,7 +232,7 @@ class ChatInferenceTest(unittest.TestCase):
             "version": EVIDENCE_RESEARCH_SKILL_VERSION,
             "title": EVIDENCE_RESEARCH_SKILL_TITLE,
             "description": EVIDENCE_RESEARCH_SKILL_DESCRIPTION,
-            "contentHash": _canonical_hash(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
+            "contentHash": canonical_sha256(EVIDENCE_RESEARCH_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
             "activationSignal": DOCUMENT_SEARCH_AVAILABLE_SIGNAL,
             "resources": [
@@ -240,7 +240,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "resourceId": SOURCE_EVALUATION_RESOURCE_ID,
                     "title": SOURCE_EVALUATION_RESOURCE_TITLE,
                     "description": SOURCE_EVALUATION_RESOURCE_DESCRIPTION,
-                    "contentHash": _canonical_hash(
+                    "contentHash": canonical_sha256(
                         SOURCE_EVALUATION_RESOURCE_CONTENT
                     ),
                 }
@@ -251,7 +251,7 @@ class ChatInferenceTest(unittest.TestCase):
             "version": WORKSPACE_DOCUMENT_SKILL_VERSION,
             "title": WORKSPACE_DOCUMENT_SKILL_TITLE,
             "description": WORKSPACE_DOCUMENT_SKILL_DESCRIPTION,
-            "contentHash": _canonical_hash(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
+            "contentHash": canonical_sha256(WORKSPACE_DOCUMENT_SKILL_INSTRUCTIONS),
             "activationReason": "signal_match",
             "activationSignal": WORKSPACE_FOLDER_CONFIGURED_SIGNAL,
             "resources": [
@@ -259,7 +259,7 @@ class ChatInferenceTest(unittest.TestCase):
                     "resourceId": DOCUMENT_FORMAT_RESOURCE_ID,
                     "title": DOCUMENT_FORMAT_RESOURCE_TITLE,
                     "description": DOCUMENT_FORMAT_RESOURCE_DESCRIPTION,
-                    "contentHash": _canonical_hash(DOCUMENT_FORMAT_RESOURCE_CONTENT),
+                    "contentHash": canonical_sha256(DOCUMENT_FORMAT_RESOURCE_CONTENT),
                 }
             ],
         }

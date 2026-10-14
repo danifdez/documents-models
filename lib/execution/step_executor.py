@@ -1,10 +1,9 @@
-import hashlib
-import json
 import logging
 import re
 import time
 from typing import Any, Dict
 
+from common.canonical_json import canonical_sha256
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.active_context import effective_payload_from_active_context
 from lib.execution.outcome import InferenceOutcome
@@ -169,11 +168,4 @@ def _adapter_fingerprint(config: Dict[str, Any]) -> str | None:
     except (TypeError, ValueError):
         return None
     identity = {"available": True, "scale": scale, "sha256": sha256}
-    encoded = json.dumps(
-        identity,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    return canonical_sha256(identity)
