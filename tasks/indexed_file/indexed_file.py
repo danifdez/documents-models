@@ -4,7 +4,7 @@ from common.execution_registry import execution_handler
 from common.vector_contract import (
     load_vector_candidates,
     rank_vector_candidates,
-    vector_point,
+    vector_points_for_chunks,
     vector_points_output,
 )
 from lib.execution.output_artifact import HandlerOutput
@@ -37,22 +37,15 @@ def ingest_indexed_file(payload: dict) -> HandlerOutput:
     embeddings = get_embedding_service().encode(
         chunks, normalize_embeddings=True
     )
-    points = []
-    for index, (chunk, embedding) in enumerate(zip(chunks, embeddings), 1):
-        points.append(
-            vector_point(
-                f"{source_id}:{index}",
-                embedding.tolist(),
-                {
-                    "text": chunk,
-                    "source_id": source_id,
-                    "indexed_file_id": indexed_file_id,
-                    "filename": filename,
-                    "part_number": index,
-                    "total_chunks": len(chunks),
-                },
-            )
-        )
+    points = vector_points_for_chunks(
+        source_id,
+        chunks,
+        embeddings,
+        {
+            "indexed_file_id": indexed_file_id,
+            "filename": filename,
+        },
+    )
     return vector_points_output(
         {
             "indexedFileId": indexed_file_id,

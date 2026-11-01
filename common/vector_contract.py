@@ -68,6 +68,38 @@ def rank_vector_candidates(
     return ranked[: max(1, min(int(limit), 100))]
 
 
+def vector_points_for_chunks(
+    source_id: str,
+    chunks: List[str],
+    embeddings: Any,
+    metadata: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
+    """Build one vector point per embedded text chunk.
+
+    `metadata` is merged into every point payload, but the keys that identify
+    the chunk (`text`, `source_id`, `part_number`, `total_chunks`) always win,
+    so callers cannot accidentally detach a point from its source.
+    """
+    total = len(chunks)
+    if len(embeddings) != total:
+        raise ValueError("chunk and embedding counts must match")
+    points = []
+    for index, (chunk, embedding) in enumerate(zip(chunks, embeddings), 1):
+        payload = dict(metadata or {})
+        payload.update(
+            {
+                "text": chunk,
+                "source_id": source_id,
+                "part_number": index,
+                "total_chunks": total,
+            }
+        )
+        points.append(
+            vector_point(f"{source_id}:{index}", embedding.tolist(), payload)
+        )
+    return points
+
+
 def vector_point(
     point_id: str,
     embedding: Any,

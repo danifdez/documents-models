@@ -1,7 +1,10 @@
 """Self-contained workspace vectorization step."""
 
 from common.execution_registry import execution_handler
-from common.vector_contract import vector_point, vector_points_output
+from common.vector_contract import (
+    vector_points_for_chunks,
+    vector_points_output,
+)
 from lib.execution.output_artifact import HandlerOutput
 from services.embedding_service import get_embedding_service
 from services.text import clean_html_text, semantic_chunk_text
@@ -34,22 +37,15 @@ def ingest(payload: dict) -> HandlerOutput:
     embeddings = get_embedding_service().encode(
         chunks, normalize_embeddings=True
     )
-    points = []
-    for index, (chunk, embedding) in enumerate(zip(chunks, embeddings), 1):
-        points.append(
-            vector_point(
-                f"{source_id}:{index}",
-                embedding.tolist(),
-                {
-                    "text": chunk,
-                    "source_id": source_id,
-                    "project_id": payload.get("projectId"),
-                    "source_type": source_type,
-                    "part_number": index,
-                    "total_chunks": len(chunks),
-                },
-            )
-        )
+    points = vector_points_for_chunks(
+        source_id,
+        chunks,
+        embeddings,
+        {
+            "project_id": payload.get("projectId"),
+            "source_type": source_type,
+        },
+    )
     return vector_points_output(
         {"sourceId": source_id, "chunks": len(points)}, points
     )

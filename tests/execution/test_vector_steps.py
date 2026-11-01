@@ -3,8 +3,12 @@ import base64
 import unittest
 from unittest.mock import patch
 
-from common.vector_contract import load_vector_candidates, rank_vector_candidates
-from common.vector_contract import vector_points_output
+from common.vector_contract import (
+    load_vector_candidates,
+    rank_vector_candidates,
+    vector_points_for_chunks,
+    vector_points_output,
+)
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.step_executor import execute_assignment
 from utils.task_dispatch import ensure_task_handler
@@ -12,6 +16,13 @@ from utils.task_dispatch import ensure_task_handler
 
 def embedding(first: float, second: float = 0.0):
     return [first, second, *([0.0] * 382)]
+
+
+class _Embedding(list):
+    """Stand-in for the numpy rows returned by the embedding service."""
+
+    def tolist(self):
+        return list(self)
 
 
 class VectorContractTest(unittest.TestCase):
@@ -38,6 +49,46 @@ class VectorContractTest(unittest.TestCase):
         ranked = rank_vector_candidates(embedding(1.0), candidates, 2)
         self.assertEqual([item["id"] for item in ranked], ["high", "low"])
         self.assertAlmostEqual(ranked[0]["score"], 1.0)
+
+    def test_builds_one_point_per_chunk_with_source_metadata(self):
+        points = vector_points_for_chunks(
+            "doc_7",
+            ["First", "Second"],
+            [_Embedding(embedding(1.0)), _Embedding(embedding(0.0, 1.0))],
+            {"doc_id": 7},
+        )
+
+        self.assertEqual([point["id"] for point in points], ["doc_7:1", "doc_7:2"])
+        self.assertEqual(
+            points[0]["payload"],
+            {
+                "doc_id": 7,
+                "text": "First",
+                "source_id": "doc_7",
+                "part_number": 1,
+                "total_chunks": 2,
+            },
+        )
+        self.assertEqual(points[1]["embedding"], embedding(0.0, 1.0))
+
+    def test_chunk_identity_cannot_be_overridden_by_metadata(self):
+        points = vector_points_for_chunks(
+            "doc_7",
+            ["First"],
+            [_Embedding(embedding(1.0))],
+            {"text": "Spoofed", "source_id": "other"},
+        )
+
+        self.assertEqual(points[0]["payload"]["text"], "First")
+        self.assertEqual(points[0]["payload"]["source_id"], "doc_7")
+
+    def test_rejects_mismatched_chunk_and_embedding_counts(self):
+        with self.assertRaisesRegex(ValueError, "counts must match"):
+            vector_points_for_chunks(
+                "doc_7",
+                ["First", "Second"],
+                [_Embedding(embedding(1.0))],
+            )
 
     def test_rejects_missing_candidates_artifact(self):
         with self.assertRaisesRegex(ValueError, "artifact is required"):
