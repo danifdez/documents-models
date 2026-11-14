@@ -7,6 +7,7 @@ from common.canonical_json import canonical_sha256
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.active_context import effective_payload_from_active_context
 from lib.execution.outcome import InferenceOutcome
+from lib.execution.inference_capture import capture_assignment
 from lib.execution.output_artifact import HandlerOutput, prepare_output_artifacts
 from lib.execution.step_result import step_result_base
 from lib.llm.config import get_task_config
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @assignment_context
+@capture_assignment
 def execute_assignment(
     assignment: Dict[str, Any],
     artifacts: Dict[str, bytes] | None = None,

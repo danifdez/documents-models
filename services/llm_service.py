@@ -18,8 +18,19 @@ import re
 from lib.llm.config import get_inference_sampling
 from services import llama_server
 from lib.telemetry import trace_post, inference_span, inference_response
+from lib.execution.inference_capture import current_capture, CaptureError
 
 logger = logging.getLogger(__name__)
+
+
+class _NoCaptureRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_capture_opener = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _NoCaptureRedirect(),
+)
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -79,20 +90,53 @@ def _post(url: str, payload: Dict[str, Any], stream: bool = False):
     req = urllib.request.Request(
         url, data=data, method="POST", headers={"Content-Type": "application/json"}
     )
+    capture = current_capture()
+    exchange = capture.begin(url, data, stream) if capture else None
     try:
-        resp = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S)
+        resp = (_capture_opener.open(req, timeout=REQUEST_TIMEOUT_S) if exchange
+                else urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S))
     except urllib.error.HTTPError as e:
+        if exchange:
+            try:
+                exchange.read(e, e.code)
+            except CaptureError:
+                raise
+            except Exception:
+                exchange.finish("transport_error")
+                raise CaptureError("Inference error response transport failed") from None
+            finally:
+                e.close()
+            raise CaptureError(f"Inference request failed (HTTP {e.code})") from None
         raise RuntimeError(f"llama-server rejected the request: {_error_detail(e)}") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise RuntimeError(f"llama-server at {url} is not answering: {e}") from e
+    except Exception as e:
+        if exchange:
+            exchange.finish("transport_error")
+            raise CaptureError("Inference transport failed") from None
+        if isinstance(e, (urllib.error.URLError, TimeoutError, OSError)):
+            raise RuntimeError(f"llama-server at {url} is not answering: {e}") from e
+        raise
     if stream:
         return resp
-    with resp:
-        raw = resp.read().decode("utf-8")
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"llama-server returned something that isn't JSON: {raw[:200]}") from e
+        with resp:
+            raw = exchange.read(resp, resp.status) if exchange else resp.read()
+    except CaptureError:
+        raise
+    except Exception:
+        if exchange:
+            exchange.finish("transport_error")
+            raise CaptureError("Inference response transport failed") from None
+        raise
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        if exchange:
+            exchange.finish("invalid_response")
+            raise CaptureError("Inference returned an invalid JSON response") from None
+        if isinstance(e, UnicodeDecodeError):
+            raise
+        text = raw.decode("utf-8")
+        raise RuntimeError(f"llama-server returned something that isn't JSON: {text[:200]}") from e
 
 
 def _error_detail(e: urllib.error.HTTPError) -> str:
