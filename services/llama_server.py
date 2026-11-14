@@ -376,6 +376,15 @@ def ensure_server(model_path: str = "") -> str:
         return url
 
 
+def _engine_environment() -> dict[str, str]:
+    # Exporter endpoints, auth headers and TLS keys belong to the application,
+    # not the inference engine. Preserve the parent's copy for worker restarts.
+    return {
+        key: value for key, value in os.environ.items()
+        if not key.startswith("OTEL_EXPORTER_OTLP")
+    }
+
+
 def _spawn(url: str, task_model_path: str) -> None:
     binary = server_binary()
     if not binary:
@@ -410,7 +419,10 @@ def _spawn(url: str, task_model_path: str) -> None:
     global _child
     # Its own process group, so a Ctrl-C in the worker's terminal doesn't reach
     # the server before we get to shut it down in order.
-    _child = subprocess.Popen(cmd, stdout=log, stderr=log, start_new_session=True)
+    _child = subprocess.Popen(
+        cmd, stdout=log, stderr=log, start_new_session=True,
+        env=_engine_environment(),
+    )
     atexit.register(stop)
 
     deadline = time.monotonic() + STARTUP_TIMEOUT_S
@@ -506,7 +518,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger.info("Starting engine: %s", " ".join(cmd))
     # exec, not spawn: the service manager's PID must be the server's, or
     # stopping the service would leave the engine running.
-    os.execv(binary, cmd)
+    os.execve(binary, cmd, _engine_environment())
 
 
 if __name__ == "__main__":
