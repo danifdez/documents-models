@@ -1,0 +1,3 @@
+# Optional metadata-only OTLP support; no MLflow or Langfuse SDK in the product.
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2

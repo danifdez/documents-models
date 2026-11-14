@@ -84,3 +84,7 @@ those that explicitly need a GPU.
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See the LICENSE file for details.
+
+## OpenTelemetry
+
+Optional metadata-only tracing: [configuration and security boundary](docs/opentelemetry.md).

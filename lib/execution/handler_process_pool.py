@@ -15,6 +15,7 @@ from typing import Callable
 from uuid import uuid4
 
 from lib.execution.step_executor import execute_assignment
+from lib.telemetry import shutdown as shutdown_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,7 @@ def _handler_slot_main(
     except (BrokenPipeError, EOFError, OSError):
         return
     finally:
+        shutdown_telemetry()
         connection.close()
 
 

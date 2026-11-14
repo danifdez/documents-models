@@ -1,3 +1,4 @@
+-r requirements-telemetry.txt
 docling==2.138.0
 docling-parse==7.22.3
 lxml_html_clean==0.4.5

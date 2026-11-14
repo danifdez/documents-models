@@ -35,7 +35,6 @@ def context_input_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
             {"role": "user", "content": ordered},
         ],
         max_tokens=int(config.get("max_tokens", 900)),
-        inference_name="context-input-reduce",
     )
     if not isinstance(digest, str) or not digest.strip():
         raise ValueError("Context input reduce returned an empty digest")

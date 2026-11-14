@@ -73,7 +73,6 @@ def browser_inference(payload: Dict[str, Any]) -> Dict[str, str]:
         max_tokens=max_tokens,
         response_format=response_format,
         allow_thinking=True,
-        inference_name=str(payload.get("label") or "browser-inference"),
         sampling_overrides=sampling,
         chat_template_kwargs=template_kwargs,
     )

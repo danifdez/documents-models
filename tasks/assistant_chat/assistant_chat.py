@@ -340,7 +340,6 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
             "content": llm.chat(
                 messages,
                 max_tokens=max_tokens,
-                inference_name=task_type,
             )
         }
     else:
@@ -366,14 +365,12 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
                 tools,
                 max_tokens=max_tokens,
                 tool_choice="auto",
-                inference_name=task_type,
             )
         else:
             message = {
                 "content": llm.chat(
                     messages,
                     max_tokens=max_tokens,
-                    inference_name=task_type,
                 )
             }
     allowed_tools = {

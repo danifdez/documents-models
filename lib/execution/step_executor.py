@@ -13,9 +13,12 @@ from lib.llm.config import get_task_config
 from lib.llm.prompts import prompt_package_fingerprint
 from utils.task_dispatch import call_handler, ensure_task_handler
 
+from lib.telemetry import assignment_context
+
 logger = logging.getLogger(__name__)
 
 
+@assignment_context
 def execute_assignment(
     assignment: Dict[str, Any],
     artifacts: Dict[str, bytes] | None = None,

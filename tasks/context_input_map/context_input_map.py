@@ -30,7 +30,6 @@ def context_input_map(payload: Dict[str, Any]) -> Dict[str, Any]:
             {"role": "user", "content": content},
         ],
         max_tokens=int(config.get("max_tokens", 700)),
-        inference_name="context-input-map",
     )
     if not isinstance(digest, str) or not digest.strip():
         raise ValueError("Context input map returned an empty digest")

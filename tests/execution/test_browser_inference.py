@@ -79,7 +79,6 @@ class BrowserInferenceTest(unittest.TestCase):
             max_tokens=256,
             response_format=request["response_format"],
             allow_thinking=True,
-            inference_name="agent-step",
             sampling_overrides={"temperature": 0.0, "top_k": 1},
             chat_template_kwargs={"enable_thinking": False},
         )

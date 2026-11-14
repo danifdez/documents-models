@@ -17,6 +17,7 @@ import re
 
 from lib.llm.config import get_inference_sampling
 from services import llama_server
+from lib.telemetry import trace_post, inference_span, inference_response
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ def strip_thinking(text: str) -> str:
     return _THINK_RE.sub("", text).strip()
 
 
+@trace_post
 def _post(url: str, payload: Dict[str, Any], stream: bool = False):
     """POST JSON to the engine. Returns the parsed reply, or the live response
     object when `stream` is set so the caller can read it as it arrives."""
@@ -282,8 +284,6 @@ class LLMService:
         temperature: Optional[float] = None,
         seed: Optional[int] = None,
         allow_thinking: bool = False,
-        inference_name: str = "chat",
-        trace_metadata: Optional[Dict[str, Any]] = None,
         sampling_overrides: Optional[Dict[str, Any]] = None,
         chat_template_kwargs: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -334,8 +334,6 @@ class LLMService:
         tools: List[dict],
         max_tokens: int = 1000,
         tool_choice: str = "auto",
-        inference_name: str = "chat_with_tools",
-        trace_metadata: Optional[Dict[str, Any]] = None,
     ) -> dict:
         """Chat completion with function/tool calling enabled.
 
@@ -351,9 +349,6 @@ class LLMService:
         Needs a server started with --jinja; without it llama-server has no
         chat template to render the tool calls with and answers 500.
 
-        `inference_name` and `trace_metadata` distinguish semantic follow-up
-        operations, such as a bounded output repair, without changing the
-        request sent to the model.
         """
         body: Dict[str, Any] = {
             "messages": messages,
@@ -377,8 +372,6 @@ class LLMService:
         self,
         messages: list,
         max_tokens: int = 1000,
-        inference_name: str = "chat_stream",
-        trace_metadata: Optional[Dict[str, Any]] = None,
     ) -> Iterator[str]:
         """Chat completion as a token stream. Yields content chunks as the
         model produces them. The caller is responsible for accumulating the
@@ -400,23 +393,25 @@ class LLMService:
         body.update(self._model_field())
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
-        with resp:
-            for raw in resp:
-                line = raw.decode("utf-8", "replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                payload = line[len("data:"):].strip()
-                if payload == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(payload)
-                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                    piece = delta.get("content") or ""
-                except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
-                    piece = ""
-                if piece:
-                    yield piece
+        with inference_span(body) as current_span:
+            resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
+            with resp:
+                for raw in resp:
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[len("data:"):].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload)
+                        inference_response(current_span, chunk)
+                        delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                        piece = delta.get("content") or ""
+                    except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
+                        piece = ""
+                    if piece:
+                        yield piece
 
 
 def _content_of(resp: Dict[str, Any]) -> str:
