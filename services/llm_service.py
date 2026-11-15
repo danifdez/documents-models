@@ -203,6 +203,9 @@ class LLMService:
         if engine or instance['status'] == 'verified_local':
             engine = engine or {'source': 'server_props', 'properties': {}}
             engine['localInstance'] = instance
+        capture = current_capture()
+        if capture is not None:
+            capture.record_templates(data, engine)
         return {'engine': engine, 'adapter': adapter}, data
 
     def _post(self, path, body):

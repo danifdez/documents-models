@@ -10,7 +10,7 @@ import math
 import time
 from urllib.parse import urlsplit
 
-from common.canonical_json import canonical_sha256
+from common.canonical_json import canonical_bytes, canonical_sha256
 from lib.execution.engine_configuration import generation_defaults
 
 from lib.execution.output_artifact import json_output_artifact, prepare_output_artifacts
@@ -21,6 +21,8 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_CALLS = 4
 MAX_METADATA_CALLS = 128
+MAX_TEMPLATE_BYTES = 256 * 1024
+MAX_RUNTIME_BYTES = 1024 * 1024
 KIND = "inference_exchange"
 
 
@@ -169,6 +171,30 @@ class Capture:
                          ("executionId", "stepId", "operationId", "attemptId")}
         self.calls = []
         self.size = 0
+        self.templates = {}
+        self.templates_omitted = False
+
+    def record_templates(self, data, engine):
+        """Keep content only under the existing grant, once per canonical hash."""
+        if not self.enabled:
+            return
+        properties = (engine or {}).get('properties') or {}
+        for source, name in (('chat_template', 'chatTemplateHash'), ('chat_template_tool_use', 'toolTemplateHash')):
+            template = data.get(source)
+            if template in (None, ''):
+                continue
+            digest = properties.get(name)
+            try:
+                if not isinstance(template, str) or len(template) > MAX_TEMPLATE_BYTES or digest != canonical_sha256(template):
+                    raise ValueError()
+                if digest in self.templates:
+                    continue
+                candidate = {**self.templates, digest: template}
+                if len(canonical_bytes(candidate)) > MAX_TEMPLATE_BYTES:
+                    raise ValueError()
+                self.templates = candidate
+            except (ValueError, TypeError, UnicodeError):
+                self.templates_omitted = True
 
     def begin(self, url, data, stream):
         parts = urlsplit(url)
@@ -239,6 +265,18 @@ class Capture:
                         'calls': [{'callIndex': call['callIndex'], 'observedAt': call['_observedAt'],
                                    'engine': (call.get('_identity') or {}).get('engine'),
                                    'adapter': (call.get('_identity') or {}).get('adapter')} for call in self.observations]}
+            if self.enabled:
+                references = {properties[name] for call in evidence['calls']
+                              for properties in [((call.get('engine') or {}).get('properties') or {})]
+                              for name in ('chatTemplateHash', 'toolTemplateHash') if name in properties}
+                content = {digest: text for digest, text in self.templates.items() if digest in references}
+                if content:
+                    evidence['templates'] = content
+                    if len(canonical_bytes(evidence)) > MAX_RUNTIME_BYTES:
+                        evidence.pop('templates')
+                        self.templates_omitted = True
+                if self.templates_omitted:
+                    evidence['templateCaptureOmission'] = 'unavailable_or_size_limit'
             artifacts.append(json_output_artifact('inference_runtime', 'inference_runtime', evidence))
         return artifacts
 
