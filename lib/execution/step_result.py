@@ -28,12 +28,12 @@ def cancelled_inference_fields() -> dict:
             "totalTokens": None,
         },
         "inference": {
-            "effectiveModel": "not_executed",
+            "effectiveModel": "unreported",
             "effectiveAdapter": None,
-            "effectivePromptPackages": ["not_executed"],
-            "finishReason": "cancelled",
+            "effectivePromptPackages": ["unreported"],
+            "finishReason": "unknown",
             "inferenceMs": 0,
-            "cacheOutcome": "bypass",
-            "warnings": [],
+            "cacheOutcome": "unknown",
+            "warnings": ["inference_metadata_unavailable_after_cancellation"],
         },
     }

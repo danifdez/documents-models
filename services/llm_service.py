@@ -18,7 +18,7 @@ import re
 from lib.llm.config import get_inference_sampling
 from services import llama_server
 from lib.telemetry import trace_post, inference_span, inference_response
-from lib.execution.inference_capture import current_capture, CaptureError
+from lib.execution.inference_capture import current_capture, CaptureError, observe_inference
 
 logger = logging.getLogger(__name__)
 
@@ -432,12 +432,13 @@ class LLMService:
             "messages": messages,
             "max_tokens": max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "cache_prompt": True,
         }
         body.update(self._model_field())
         body.update(self._sampling_kwargs())
         body.update(self._lora_field())
-        with inference_span(body) as current_span:
+        with inference_span(body) as current_span, observe_inference(body) as observation:
             resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
             with resp:
                 for raw in resp:
@@ -449,7 +450,7 @@ class LLMService:
                         break
                     try:
                         chunk = json.loads(payload)
-                        inference_response(current_span, chunk)
+                        inference_response(current_span, chunk, observation)
                         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                         piece = delta.get("content") or ""
                     except (json.JSONDecodeError, IndexError, TypeError, AttributeError):

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from urllib.parse import urlsplit
+from lib.execution.inference_capture import observe_inference, response_metadata, update_observation
 
 _provider = None
 _initialized = False
@@ -150,17 +151,17 @@ def inference_span(payload, operation="chat"):
         yield current
 
 
-def inference_response(current, response):
-    if current is None or not isinstance(response, dict):
+def inference_response(current, response, observation=None):
+    metadata = response_metadata(response)
+    update_observation(observation, metadata)
+    if current is None:
         return
-    usage = response.get("usage") or {}
-    for key, attr in (("prompt_tokens", "input_tokens"), ("completion_tokens", "output_tokens")):
-        value = usage.get(key)
-        if type(value) is int and 0 <= value <= 1_000_000:
+    for key, attr in (("promptTokens", "input_tokens"), ("completionTokens", "output_tokens")):
+        value = metadata['usage'][key]
+        if value is not None:
             current.set_attribute("gen_ai.usage." + attr, value)
-    model = response.get("model")
-    if isinstance(model, str) and re.fullmatch(r"[\w.:-]{1,120}", model, flags=re.ASCII):
-        current.set_attribute("gen_ai.response.model", model)
+    if metadata['effectiveModel']:
+        current.set_attribute("gen_ai.response.model", metadata['effectiveModel'])
 
 
 def trace_post(function):
@@ -170,8 +171,8 @@ def trace_post(function):
         if stream:
             return function(url, payload, stream=True)
         operation = "chat" if "messages" in payload else "text_completion"
-        with inference_span(payload, operation) as current:
+        with inference_span(payload, operation) as current, observe_inference(payload) as observation:
             response = function(url, payload, stream=False)
-            inference_response(current, response)
+            inference_response(current, response, observation)
             return response
     return wrapped

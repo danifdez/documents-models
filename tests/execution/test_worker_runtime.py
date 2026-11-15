@@ -66,7 +66,7 @@ class WorkerRuntimeTest(unittest.TestCase):
             stored = outbox._load(outbox.directory / f"{FIRST_ATTEMPT_ID}.json")
             result = stored["result"]
             self.assertEqual(result["output"]["outcome"]["kind"], "cancelled")
-            self.assertEqual(result["inference"]["finishReason"], "cancelled")
+            self.assertEqual(result["inference"]["finishReason"], "unknown")
             self.assertIn("usage", result)
 
             legacy = {
@@ -79,7 +79,7 @@ class WorkerRuntimeTest(unittest.TestCase):
             outbox.deliver_all(client)
             delivered = client.submit_result.call_args.args[0]
             self.assertEqual(delivered["output"]["outcome"]["kind"], "cancelled")
-            self.assertEqual(delivered["inference"]["finishReason"], "cancelled")
+            self.assertEqual(delivered["inference"]["finishReason"], "unknown")
             self.assertFalse(path.exists())
 
     def test_stores_a_cancelled_result_without_running_the_handler(self):

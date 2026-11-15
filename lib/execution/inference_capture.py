@@ -1,10 +1,12 @@
-"""Opt-in inference exchanges carried by the existing attempt artifact protocol."""
+"""Body-free engine metadata and opt-in canonical attempt artifacts."""
 
 import base64
 from contextvars import ContextVar
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 import re
+import math
 import time
 from urllib.parse import urlsplit
 
@@ -15,6 +17,7 @@ _CAPTURE = ContextVar("inference_capture", default=None)
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_CALLS = 4
+MAX_METADATA_CALLS = 128
 KIND = "inference_exchange"
 
 
@@ -23,15 +26,105 @@ class CaptureError(RuntimeError):
 
 
 def current_capture():
-    return _CAPTURE.get()
+    context = _CAPTURE.get()
+    return context if context is not None and context.enabled else None
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def safe_model(value):
+    if not isinstance(value, str) or '://' in value:
+        return None
+    # Engines may report an absolute model path. Keep only its public label.
+    value = value.replace('\\', '/').rsplit('/', 1)[-1]
+    return value if re.fullmatch(r'[A-Za-z0-9_.:-]{1,120}', value) else None
+
+
+def _counter(value):
+    return value if type(value) is int and 0 <= value <= 1_000_000 else None
+
+
+def response_metadata(response):
+    """Project only bounded, body-free engine fields for results and telemetry."""
+    response = response if isinstance(response, dict) else {}
+    usage = response.get('usage')
+    usage = usage if isinstance(usage, dict) else {}
+    prompt = _counter(usage.get('prompt_tokens'))
+    if prompt is None:
+        prompt = _counter(response.get('tokens_evaluated'))
+    completion = _counter(usage.get('completion_tokens'))
+    if completion is None:
+        completion = _counter(response.get('tokens_predicted'))
+    total = _counter(usage.get('total_tokens'))
+    if total is None and prompt is not None and completion is not None:
+        total = _counter(prompt + completion)
+    choices = response.get('choices')
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    reason = choice.get('finish_reason')
+    if not isinstance(reason, str) or reason not in {'stop', 'length', 'tool_calls', 'function_call', 'content_filter'}:
+        stop_type = response.get('stop_type')
+        reason = {'eos': 'stop', 'word': 'stop', 'limit': 'length'}.get(stop_type) if isinstance(stop_type, str) else None
+    details = usage.get('prompt_tokens_details')
+    cached = _counter(details.get('cached_tokens')) if isinstance(details, dict) else None
+    if cached is None:
+        cached = _counter(response.get('tokens_cached'))
+    timing = response.get('timings')
+    engine_ms = None
+    if isinstance(timing, dict):
+        values = [timing.get(key) for key in ('prompt_ms', 'predicted_ms')]
+        if all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1_000_000_000 for value in values):
+            engine_ms = int(sum(values))
+    return {'effectiveModel': safe_model(response.get('model')), 'finishReason': reason,
+            'cacheOutcome': None if cached is None else ('hit' if cached > 0 else 'miss'),
+            'engineMs': engine_ms,
+            'usage': {'promptTokens': prompt, 'completionTokens': completion, 'totalTokens': total}}
+
+
+def update_observation(observation, metadata):
+    if observation is None:
+        return
+    for key in ('effectiveModel', 'finishReason', 'cacheOutcome', 'engineMs'):
+        value = metadata[key]
+        if value is not None:
+            if key == 'effectiveModel' and observation[key] not in (None, value):
+                observation['mixedModel'] = True
+            observation[key] = value
+    # Stream usage is cumulative: replace values rather than adding chunks.
+    for key, value in metadata['usage'].items():
+        if value is not None:
+            observation['usage'][key] = value
+
+
+@contextmanager
+def observe_inference(payload):
+    context = _CAPTURE.get()
+    observation = None
+    if context is not None:
+        if len(context.observations) < MAX_METADATA_CALLS:
+            observation = {**response_metadata(None), 'requestedModel': safe_model(payload.get('model')),
+                           'callIndex': len(context.observations) + 1, 'status': 'completed'}
+            context.observations.append(observation)
+        else:
+            context.metadata_truncated = True
+    started = time.monotonic()
+    try:
+        yield observation
+    except BaseException:
+        if observation is not None:
+            observation['status'] = 'incomplete'
+        raise
+    finally:
+        if observation is not None:
+            observation['inferenceMs'] = max(0, int((time.monotonic() - started) * 1000))
+
+
 class Capture:
-    def __init__(self, assignment):
+    def __init__(self, assignment, enabled=True):
+        self.enabled = enabled
+        self.observations = []
+        self.metadata_truncated = False
         self.identity = {key: assignment[key] for key in
                          ("executionId", "stepId", "operationId", "attemptId")}
         self.calls = []
@@ -51,6 +144,40 @@ class Capture:
                 "response": None}
         self.calls.append(call)
         return Exchange(self, call)
+
+    def metadata(self):
+        calls = self.observations
+        warnings = []
+        usage = {key: sum(call['usage'][key] for call in calls)
+                 if calls and not self.metadata_truncated and all(call['usage'][key] is not None for call in calls) else None
+                 for key in ('promptTokens', 'completionTokens', 'totalTokens')}
+        if any(value is None for value in usage.values()):
+            warnings.append('token_usage_unavailable')
+        models = {call['effectiveModel'] for call in calls if call['effectiveModel'] is not None}
+        model_known = not self.metadata_truncated and bool(calls) and len(models) == 1 and all(call['effectiveModel'] and not call.get('mixedModel') for call in calls)
+        if not model_known:
+            warnings.append('served_model_unavailable_or_mixed')
+        reasons = {call['finishReason'] for call in calls}
+        reason = next(iter(reasons)) if len(reasons) == 1 and None not in reasons else 'unknown'
+        if reason == 'unknown':
+            warnings.append('engine_finish_reason_unavailable_or_mixed')
+        caches = {call['cacheOutcome'] for call in calls}
+        cache = next(iter(caches)) if len(caches) == 1 and None not in caches else 'unknown'
+        requested = {call['requestedModel'] for call in calls if call['requestedModel']}
+        if any(call['status'] != 'completed' for call in calls):
+            warnings.append('inference_response_incomplete')
+        if not calls:
+            warnings.append('inference_time_unavailable')
+        if self.metadata_truncated:
+            warnings.append('inference_metadata_truncated')
+            reason, cache = 'unknown', 'unknown'
+        metadata = {'effectiveModel': next(iter(models)) if model_known else 'unreported',
+                    'finishReason': reason, 'inferenceMs': sum(call['inferenceMs'] for call in calls) if not self.metadata_truncated else 0,
+                    'engineMs': sum(call['engineMs'] for call in calls) if calls and not self.metadata_truncated and all(call['engineMs'] is not None for call in calls) else None,
+                    'cacheOutcome': cache, 'warnings': warnings, 'calls': calls}
+        if len(requested) == 1:
+            metadata['requestedModel'] = next(iter(requested))
+        return {'usage': usage, 'inference': metadata}
 
     def artifacts(self):
         return [json_output_artifact(KIND, KIND, value) for value in self.calls]
@@ -83,7 +210,7 @@ def capture_assignment(function):
     def wrapped(assignment, artifacts=None, output_artifacts=None):
         work = assignment.get("work") or {}
         grant = work.get("inferenceCapture")
-        if grant is None:
+        if grant is None and assignment.get('stepKind') != 'inference':
             # Explicitly clear an outer context, including on reused handler processes.
             token = _CAPTURE.set(None)
             try:
@@ -97,22 +224,27 @@ def capture_assignment(function):
                  and grant["authorizedBy"] not in {"standalone", "system"}
                  and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", grant["authorizedBy"])
                  and output_artifacts is not None)
-        if not valid:
+        if grant is not None and not valid:
             result = {**step_result_base(assignment), "status": "failed",
                       "error": {"code": "INFERENCE_CAPTURE_DENIED", "message": "Inference capture authorization or artifact delivery is unavailable", "retryable": False}}
             if assignment.get("stepKind") == "inference":
                 result.update(cancelled_inference_fields())
                 result["output"]["outcome"] = {"kind": "failed"}
-                result["inference"]["finishReason"] = "error"
+                result["inference"]["finishReason"] = "unknown"
             return result
-        capture = Capture(assignment)
+        capture = Capture(assignment, enabled=grant is not None)
         token = _CAPTURE.set(capture)
         try:
             result = function(assignment, artifacts, output_artifacts)
         finally:
             _CAPTURE.reset(token)
+        if result.get('stepKind') == 'inference':
+            metadata = capture.metadata()
+            result['usage'] = metadata['usage']
+            result.setdefault('inference', {}).update(metadata['inference'])
         uploads, refs = prepare_output_artifacts(capture.artifacts())
         result["artifactRefs"].extend(refs)
-        output_artifacts.extend(uploads)
+        if uploads:
+            output_artifacts.extend(uploads)
         return result
     return wrapped

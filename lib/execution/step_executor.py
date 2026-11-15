@@ -1,13 +1,12 @@
 import logging
 import re
-import time
 from typing import Any, Dict
 
 from common.canonical_json import canonical_sha256
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.active_context import effective_payload_from_active_context
 from lib.execution.outcome import InferenceOutcome
-from lib.execution.inference_capture import capture_assignment
+from lib.execution.inference_capture import capture_assignment, safe_model
 from lib.execution.output_artifact import HandlerOutput, prepare_output_artifacts
 from lib.execution.step_result import step_result_base
 from lib.llm.config import get_task_config
@@ -53,7 +52,6 @@ def execute_assignment(
                 "retryable": False,
             },
         }
-    started_at = time.monotonic()
     try:
         handler_payload = effective_payload_from_active_context(
             task_type,
@@ -91,13 +89,7 @@ def execute_assignment(
                     "kind": "inference",
                     "outcome": outcome,
                 },
-                **_inference_metadata(
-                    task_type,
-                    started_at,
-                    "tool_calls"
-                    if outcome.get("kind") == "tool_requests"
-                    else "completed",
-                ),
+                **_inference_metadata(task_type),
                 "error": None,
             }
         return {
@@ -124,27 +116,20 @@ def execute_assignment(
                         "kind": "inference",
                         "outcome": {"kind": "failed"},
                     },
-                    **_inference_metadata(
-                        task_type,
-                        started_at,
-                        "error",
-                    ),
+                    **_inference_metadata(task_type),
                 }
             )
         return failed
 
 
-def _inference_metadata(
-    task_type: str,
-    started_at: float,
-    finish_reason: str,
-) -> Dict[str, Any]:
+def _inference_metadata(task_type: str) -> Dict[str, Any]:
     config = get_task_config(task_type)
     inference = {
-        "effectiveModel": str(config.get("model") or "unreported"),
+        "requestedModel": safe_model(config.get("model")) or "unreported",
+        "effectiveModel": "unreported",
         "effectivePromptPackages": [prompt_package_fingerprint()],
-        "finishReason": finish_reason,
-        "inferenceMs": max(0, int((time.monotonic() - started_at) * 1000)),
+        "finishReason": "unknown",
+        "inferenceMs": 0,
         "cacheOutcome": "unknown",
         "warnings": ["token_usage_unavailable"],
     }

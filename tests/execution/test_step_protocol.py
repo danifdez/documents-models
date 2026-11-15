@@ -313,7 +313,7 @@ class StepProtocolTest(unittest.TestCase):
                 },
             },
         )
-        self.assertEqual(result["inference"]["effectiveModel"], "test-model")
+        self.assertEqual(result["inference"]["effectiveModel"], "unreported")
         self.assertIsNone(result["inference"]["effectiveAdapter"])
         self.assertEqual(
             result["inference"]["effectivePromptPackages"],
@@ -408,7 +408,7 @@ class StepProtocolTest(unittest.TestCase):
                 "lora_path": "/private/unverified.gguf",
             },
         ):
-            metadata = _inference_metadata("summarize-map", 0, "completed")
+            metadata = _inference_metadata("summarize-map")
 
         self.assertNotIn("effectiveAdapter", metadata["inference"])
         self.assertEqual(
