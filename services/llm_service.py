@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterator, List, Optional
 import re
 
 from lib.llm.config import get_inference_sampling
-from services import llama_server
+from services import llama_server, managed_engine
 from lib.telemetry import trace_post, inference_span, inference_response
 from lib.execution.inference_capture import current_capture, CaptureError, observe_inference, engine_properties, safe_model
 
@@ -198,11 +198,19 @@ class LLMService:
             )
             adapter['scale'] = self.lora_scale
             body['lora'] = [{'id': adapter['id'], 'scale': self.lora_scale}]
-        return {'engine': engine_properties(data), 'adapter': adapter}
+        engine = engine_properties(data)
+        instance = managed_engine.inspect(self.url, data)
+        if engine or instance['status'] == 'verified_local':
+            engine = engine or {'source': 'server_props', 'properties': {}}
+            engine['localInstance'] = instance
+        return {'engine': engine, 'adapter': adapter}, data
 
     def _post(self, path, body):
-        identity = self._prepare_request(body)
-        return _post(self.url + path, body, identity=identity)
+        identity, properties = self._prepare_request(body)
+        try:
+            return _post(self.url + path, body, identity=identity)
+        finally:
+            managed_engine.confirm(self.url, properties, identity)
 
     def _model_field(self) -> Dict[str, Any]:
         return {"model": self.model_id}
@@ -426,26 +434,30 @@ class LLMService:
         }
         body.update(self._model_field())
         body.update(self._sampling_kwargs())
-        identity = self._prepare_request(body)
+        identity, properties = self._prepare_request(body)
         with inference_span(body) as current_span, observe_inference(body, identity) as observation:
-            resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
-            with resp:
-                for raw in resp:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[len("data:"):].strip()
-                    if payload == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload)
-                        inference_response(current_span, chunk, observation)
-                        delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                        piece = delta.get("content") or ""
-                    except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
-                        piece = ""
-                    if piece:
-                        yield piece
+            try:
+                resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
+                with resp:
+                    for raw in resp:
+                        line = raw.decode("utf-8", "replace").strip()
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[len("data:"):].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                            inference_response(current_span, chunk, observation)
+                            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                            piece = delta.get("content") or ""
+                        except (json.JSONDecodeError, IndexError, TypeError, AttributeError):
+                            piece = ""
+                        if piece:
+                            yield piece
+
+            finally:
+                managed_engine.confirm(self.url, properties, identity)
 
 
 def _content_of(resp: Dict[str, Any]) -> str:

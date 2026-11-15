@@ -115,7 +115,7 @@ class MetadataAggregationTest(unittest.TestCase):
         def execute(assignment, artifacts=None, output_artifacts=None):
             with patch.object(client, '_model_field', return_value={'model': 'requested'}), \
                  patch.object(client, '_sampling_kwargs', return_value={}), \
-                 patch.object(client, '_prepare_request', return_value={'engine': None, 'adapter': None}), \
+                 patch.object(client, '_prepare_request', return_value=({'engine': None, 'adapter': None}, {})), \
                  patch('services.llm_service._post', return_value=response) as post, \
                  patch.dict('os.environ', {'OTEL_SDK_DISABLED': 'true'}):
                 self.assertEqual(list(client.chat_stream([])), ['PRIVATE_TEXT'])

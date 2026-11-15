@@ -122,6 +122,18 @@ class EngineIdentityTest(unittest.TestCase):
         self.assertEqual(adapter['sha256'],checksum)
         self.assertIs(adapter['expectedChecksumMatched'],False)
 
+    def test_instance_change_after_http_does_not_export_verified_hashes(self):
+        from services import managed_engine
+        before={'status':'verified_local','instanceId':'fixture',
+                'ggufSha256':'sha256:'+'a'*64,'executableSha256':'sha256:'+'b'*64}
+        with patch.object(managed_engine,'inspect',side_effect=[before,{'status':'unknown','reason':'instance_not_bound'}]):
+            result,uploads=self.execute(self.client())
+        self.assertEqual(result['status'],'failed')
+        evidence=json.loads(base64.b64decode(uploads[0]['bodyBase64']))
+        local=evidence['calls'][0]['engine']['localInstance']
+        self.assertEqual(local,{'status':'changed','reason':'binding_invalidated'})
+        self.assertEqual(len(self.requests),1)
+
     def test_postprocessing_failure_preserves_the_observed_runtime(self):
         result,uploads=self.execute(self.client(),fail=True)
         self.assertEqual(result['status'],'failed');self.assertEqual(len(uploads),1)

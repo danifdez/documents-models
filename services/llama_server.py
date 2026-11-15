@@ -8,10 +8,8 @@ configured local or remote endpoint is reused without starting another process.
 """
 
 import atexit
-import hashlib
 import hmac
 import re
-import stat
 import json
 import logging
 import os
@@ -26,6 +24,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
+
+from lib.execution.file_identity import fingerprint_file
+from services import managed_engine
 
 from lib.llm.config import (
     active_deployments,
@@ -175,32 +176,7 @@ def verified_lora_adapter(
         if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
             raise ValueError("Invalid LoRA checksum")
         expected_sha256 = expected_sha256.lower()
-    try:
-        initial = os.stat(path, follow_symlinks=False)
-        if not stat.S_ISREG(initial.st_mode):
-            raise ValueError("LoRA must be a regular file")
-        flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
-        with os.fdopen(os.open(path, flags), "rb") as file:
-            before = os.fstat(file.fileno())
-            if not stat.S_ISREG(before.st_mode) or (initial.st_dev, initial.st_ino) != (before.st_dev, before.st_ino):
-                raise ValueError("LoRA must be a regular file")
-            digest = hashlib.sha256()
-            remaining = before.st_size
-            while remaining:
-                chunk = file.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    raise ValueError("LoRA changed during verification")
-                digest.update(chunk)
-                remaining -= len(chunk)
-            after = os.fstat(file.fileno())
-            current = os.stat(path, follow_symlinks=False)
-            signatures = {(value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
-                          for value in (before, after, current)}
-            if file.read(1) or len(signatures) != 1:
-                raise ValueError("LoRA changed during verification")
-    except OSError:
-        raise ValueError("LoRA file verification failed") from None
-    checksum = digest.hexdigest()
+    checksum = fingerprint_file(path)['sha256']
     if expected_sha256 is not None and not hmac.compare_digest(checksum, expected_sha256):
         raise ValueError("LoRA checksum mismatch")
     wanted = os.path.abspath(path)
@@ -454,6 +430,7 @@ def _spawn(url: str, task_model_path: str) -> None:
             raise RuntimeError(f"Model file not found: {engine['model_path']}")
 
     cmd = engine_cmd(binary, url, engine)
+    startup = managed_engine.prepare(url, binary, engine)
     log_path = os.environ.get("LLAMA_SERVER_LOG", "/tmp/llama-server.log")
     logger.warning(
         "No engine answering at %s — starting one for this worker. It should be a "
@@ -469,6 +446,11 @@ def _spawn(url: str, task_model_path: str) -> None:
         env=_engine_environment(),
     )
     atexit.register(stop)
+    try:
+        managed_engine.bind(startup, _child.pid)
+    except (OSError, ValueError):
+        stop()
+        raise
 
     deadline = time.monotonic() + STARTUP_TIMEOUT_S
     while time.monotonic() < deadline:
@@ -563,6 +545,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger.info("Starting engine: %s", " ".join(cmd))
     # exec, not spawn: the service manager's PID must be the server's, or
     # stopping the service would leave the engine running.
+    startup = managed_engine.prepare(url, binary, engine)
+    managed_engine.bind(startup, os.getpid())
     os.execve(binary, cmd, _engine_environment())
 
 

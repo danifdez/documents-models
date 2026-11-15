@@ -22,7 +22,8 @@ class EngineEnvironmentTest(unittest.TestCase):
         self.assertEqual(os.environ["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "Authorization=PRIVATE")
 
     def test_foreground_engine_never_inherits_exporter_credentials(self):
-        with patch.object(llama_server, "server_binary", return_value="/engine"), \
+        with patch.object(llama_server.managed_engine, "prepare", return_value=None), \
+             patch.object(llama_server, "server_binary", return_value="/engine"), \
              patch.object(llama_server, "engine_defaults", return_value={"model_path": "/model"}), \
              patch.object(llama_server, "engine_cmd", return_value=["/engine"]), \
              patch.object(llama_server.os.path, "isfile", return_value=True), \
@@ -34,7 +35,8 @@ class EngineEnvironmentTest(unittest.TestCase):
     def test_fallback_engine_never_inherits_exporter_credentials(self):
         child = Mock()
         child.poll.return_value = None
-        with patch.object(llama_server, "server_binary", return_value="/engine"), \
+        with patch.object(llama_server.managed_engine, "prepare", return_value=None), \
+             patch.object(llama_server, "server_binary", return_value="/engine"), \
              patch.object(llama_server, "engine_defaults", return_value={"model_path": "/model"}), \
              patch.object(llama_server, "engine_cmd", return_value=["/engine"]), \
              patch.object(llama_server.os.path, "isfile", return_value=True), \
