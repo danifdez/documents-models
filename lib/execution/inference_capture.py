@@ -10,6 +10,8 @@ import math
 import time
 from urllib.parse import urlsplit
 
+from common.canonical_json import canonical_sha256
+
 from lib.execution.output_artifact import json_output_artifact, prepare_output_artifacts
 from lib.execution.step_result import step_result_base, cancelled_inference_fields
 
@@ -44,6 +46,36 @@ def safe_model(value):
 
 def _counter(value):
     return value if type(value) is int and 0 <= value <= 1_000_000 else None
+
+
+def engine_properties(data):
+    """Allowlisted server declarations; paths and template content never leave here."""
+    data = data if isinstance(data, dict) else {}
+    properties = {}
+    model = safe_model(data.get('model_path') or data.get('model_alias'))
+    if model:
+        properties['modelLabel'] = model
+    build = data.get('build_info')
+    match = re.fullmatch(r'b([0-9]{1,9})-([0-9a-f]{7,40})(-dirty)?', build) if isinstance(build, str) else None
+    if match:
+        properties.update(buildNumber=int(match[1]), buildCommit=match[2])
+        if match[3]:
+            properties['buildDirty'] = True
+    defaults = data.get('default_generation_settings')
+    defaults = defaults if isinstance(defaults, dict) else {}
+    for name, value, minimum in (('contextSize', defaults.get('n_ctx'), 1),
+                                  ('slots', data.get('total_slots'), 1),
+                                  ('modelFileType', data.get('model_ftype'), 0)):
+        if type(value) is int and minimum <= value <= 2**31 - 1:
+            properties[name] = value
+    for source, name in (('chat_template', 'chatTemplateHash'), ('chat_template_tool_use', 'toolTemplateHash')):
+        template = data.get(source)
+        if isinstance(template, str) and 0 < len(template) <= 256 * 1024:
+            try:
+                properties[name] = canonical_sha256(template)
+            except UnicodeError:
+                pass
+    return {'source': 'server_props', 'properties': properties} if properties else None
 
 
 def response_metadata(response):
@@ -98,13 +130,14 @@ def update_observation(observation, metadata):
 
 
 @contextmanager
-def observe_inference(payload):
+def observe_inference(payload, identity=None):
     context = _CAPTURE.get()
     observation = None
     if context is not None:
         if len(context.observations) < MAX_METADATA_CALLS:
             observation = {**response_metadata(None), 'requestedModel': safe_model(payload.get('model')),
-                           'callIndex': len(context.observations) + 1, 'status': 'completed'}
+                           'callIndex': len(context.observations) + 1, 'status': 'completed',
+                           '_identity': identity, '_observedAt': _now()}
             context.observations.append(observation)
         else:
             context.metadata_truncated = True
@@ -174,13 +207,33 @@ class Capture:
         metadata = {'effectiveModel': next(iter(models)) if model_known else 'unreported',
                     'finishReason': reason, 'inferenceMs': sum(call['inferenceMs'] for call in calls) if not self.metadata_truncated else 0,
                     'engineMs': sum(call['engineMs'] for call in calls) if calls and not self.metadata_truncated and all(call['engineMs'] is not None for call in calls) else None,
-                    'cacheOutcome': cache, 'warnings': warnings, 'calls': calls}
+                    'cacheOutcome': cache, 'warnings': warnings,
+                    'calls': [{key: value for key, value in call.items() if not key.startswith('_')} for call in calls]}
         if len(requested) == 1:
             metadata['requestedModel'] = next(iter(requested))
+        identities = [call.get('_identity') for call in calls]
+        if calls and any(not identity or identity['engine'] is None for identity in identities):
+            warnings.append('engine_properties_unavailable')
+        if calls and not self.metadata_truncated and all(identity is not None for identity in identities):
+            adapters = [identity['adapter'] for identity in identities]
+            fingerprints = {canonical_sha256({'available': True, 'sha256': adapter['sha256'], 'scale': adapter['scale']})
+                            if adapter is not None else None for adapter in adapters}
+            if len(fingerprints) == 1:
+                metadata['effectiveAdapter'] = next(iter(fingerprints))
+            else:
+                warnings.append('adapter_identity_unavailable_or_mixed')
         return {'usage': usage, 'inference': metadata}
 
     def artifacts(self):
-        return [json_output_artifact(KIND, KIND, value) for value in self.calls]
+        artifacts = [json_output_artifact(KIND, KIND, value) for value in self.calls]
+        if any(call.get('_identity') and (call['_identity']['engine'] or call['_identity']['adapter']) for call in self.observations):
+            evidence = {'schemaVersion': 'inference-runtime/1', **self.identity,
+                        'complete': not self.metadata_truncated,
+                        'calls': [{'callIndex': call['callIndex'], 'observedAt': call['_observedAt'],
+                                   'engine': (call.get('_identity') or {}).get('engine'),
+                                   'adapter': (call.get('_identity') or {}).get('adapter')} for call in self.observations]}
+            artifacts.append(json_output_artifact('inference_runtime', 'inference_runtime', evidence))
+        return artifacts
 
 
 class Exchange:
@@ -242,9 +295,14 @@ def capture_assignment(function):
             metadata = capture.metadata()
             result['usage'] = metadata['usage']
             result.setdefault('inference', {}).update(metadata['inference'])
-        uploads, refs = prepare_output_artifacts(capture.artifacts())
-        result["artifactRefs"].extend(refs)
-        if uploads:
-            output_artifacts.extend(uploads)
+        artifacts_to_upload = capture.artifacts()
+        if artifacts_to_upload and output_artifacts is None:
+            # Direct in-process callers have no artifact delivery channel.
+            result.setdefault('inference', {}).setdefault('warnings', []).append('runtime_evidence_delivery_unavailable')
+        else:
+            uploads, refs = prepare_output_artifacts(artifacts_to_upload)
+            result["artifactRefs"].extend(refs)
+            if uploads:
+                output_artifacts.extend(uploads)
         return result
     return wrapped

@@ -8,6 +8,10 @@ configured local or remote endpoint is reused without starting another process.
 """
 
 import atexit
+import hashlib
+import hmac
+import re
+import stat
 import json
 import logging
 import os
@@ -122,9 +126,13 @@ def props(
         if model_id:
             suffix = "?" + urllib.parse.urlencode({"model": model_id})
         with urllib.request.urlopen(f"{url}/props{suffix}", timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8")) or {}
+            raw = resp.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                return {}
+            value = json.loads(raw.decode("utf-8"))
+            return value if isinstance(value, dict) else {}
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
-            json.JSONDecodeError):
+            json.JSONDecodeError, UnicodeDecodeError):
         return {}
 
 
@@ -144,32 +152,69 @@ def lora_adapters(
             suffix = "?" + urllib.parse.urlencode({"model": model_id})
         with urllib.request.urlopen(f"{url.rstrip('/')}/lora-adapters{suffix}",
                                     timeout=timeout) as resp:
-            loaded = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                return []
+            loaded = json.loads(raw.decode("utf-8"))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
-            json.JSONDecodeError):
+            json.JSONDecodeError, UnicodeDecodeError):
         return []
     return loaded if isinstance(loaded, list) else []
 
 
-def lora_adapter_id(
+def verified_lora_adapter(
     url: str, path: str, model_id: str | None = None,
-) -> Optional[int]:
-    """The id the server gave an adapter, or None if it hasn't got it loaded.
+    expected_sha256: str | None = None,
+) -> Dict[str, Any]:
+    """Verify local bytes and select the server-reported exact path, never a basename.
 
-    Matches on the absolute path and, failing that, on the filename: the trainer
-    and the server may name the same adapter through different mounts, and the
-    id is what a request has to cite.
+    The server reports a path and ID, not a digest of its in-memory weights.
+    Only the configured local path is opened; remote paths are never read.
     """
-    if not path:
-        return None
-    wanted = os.path.basename(path)
-    for adapter in lora_adapters(url, model_id=model_id):
-        if not isinstance(adapter, dict):
-            continue
-        loaded = str(adapter.get("path") or "")
-        if loaded == path or (wanted and os.path.basename(loaded) == wanted):
-            return adapter.get("id")
-    return None
+    if expected_sha256 is not None:
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+            raise ValueError("Invalid LoRA checksum")
+        expected_sha256 = expected_sha256.lower()
+    try:
+        initial = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(initial.st_mode):
+            raise ValueError("LoRA must be a regular file")
+        flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+        with os.fdopen(os.open(path, flags), "rb") as file:
+            before = os.fstat(file.fileno())
+            if not stat.S_ISREG(before.st_mode) or (initial.st_dev, initial.st_ino) != (before.st_dev, before.st_ino):
+                raise ValueError("LoRA must be a regular file")
+            digest = hashlib.sha256()
+            remaining = before.st_size
+            while remaining:
+                chunk = file.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise ValueError("LoRA changed during verification")
+                digest.update(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(file.fileno())
+            current = os.stat(path, follow_symlinks=False)
+            signatures = {(value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+                          for value in (before, after, current)}
+            if file.read(1) or len(signatures) != 1:
+                raise ValueError("LoRA changed during verification")
+    except OSError:
+        raise ValueError("LoRA file verification failed") from None
+    checksum = digest.hexdigest()
+    if expected_sha256 is not None and not hmac.compare_digest(checksum, expected_sha256):
+        raise ValueError("LoRA checksum mismatch")
+    wanted = os.path.abspath(path)
+    catalog = lora_adapters(url, model_id=model_id)
+    loaded = [item for item in catalog
+              if isinstance(item, dict) and isinstance(item.get('path'), str)
+              and os.path.isabs(item['path']) and os.path.normpath(item['path']) == wanted]
+    if len(loaded) != 1 or type(loaded[0].get('id')) is not int or not 0 <= loaded[0]['id'] <= 2**31 - 1:
+        raise ValueError("LoRA loaded identity is unavailable or ambiguous")
+    if sum(isinstance(item, dict) and item.get('id') == loaded[0]['id'] for item in catalog) != 1:
+        raise ValueError("LoRA loaded identity is unavailable or ambiguous")
+    return {'id': loaded[0]['id'], 'sha256': checksum,
+            'verification': 'local_file_sha256', 'binding': 'server_reported_exact_path',
+            'expectedChecksumMatched': expected_sha256 is not None}
 
 
 def loaded_model(url: str) -> str:
@@ -284,7 +329,7 @@ def _deployed_adapters() -> List[str]:
     """
     paths = []
     for deployment in active_deployments().values():
-        path = deployment["path"]
+        path = os.path.abspath(deployment["path"])
         if path not in paths and os.path.isfile(path):
             paths.append(path)
     return paths

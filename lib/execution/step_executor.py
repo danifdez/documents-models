@@ -1,8 +1,6 @@
 import logging
-import re
 from typing import Any, Dict
 
-from common.canonical_json import canonical_sha256
 from common.execution_registry import TASK_HANDLERS
 from lib.execution.active_context import effective_payload_from_active_context
 from lib.execution.outcome import InferenceOutcome
@@ -123,7 +121,11 @@ def execute_assignment(
 
 
 def _inference_metadata(task_type: str) -> Dict[str, Any]:
-    config = get_task_config(task_type)
+    try:
+        config = get_task_config(task_type)
+    except (ValueError, OSError):
+        # A failed configuration must still produce a durable failed result.
+        config = {}
     inference = {
         "requestedModel": safe_model(config.get("model")) or "unreported",
         "effectiveModel": "unreported",
@@ -133,12 +135,6 @@ def _inference_metadata(task_type: str) -> Dict[str, Any]:
         "cacheOutcome": "unknown",
         "warnings": ["token_usage_unavailable"],
     }
-    if config.get("lora_path"):
-        adapter = _adapter_fingerprint(config)
-        if adapter:
-            inference["effectiveAdapter"] = adapter
-    else:
-        inference["effectiveAdapter"] = None
     return {
         "usage": {
             "promptTokens": None,
@@ -147,15 +143,3 @@ def _inference_metadata(task_type: str) -> Dict[str, Any]:
         },
         "inference": inference,
     }
-
-
-def _adapter_fingerprint(config: Dict[str, Any]) -> str | None:
-    sha256 = str(config.get("_deployment_sha256") or "").lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
-        return None
-    try:
-        scale = float(config.get("lora_scale", 1.0))
-    except (TypeError, ValueError):
-        return None
-    identity = {"available": True, "scale": scale, "sha256": sha256}
-    return canonical_sha256(identity)

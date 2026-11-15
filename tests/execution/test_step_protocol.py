@@ -314,7 +314,7 @@ class StepProtocolTest(unittest.TestCase):
             },
         )
         self.assertEqual(result["inference"]["effectiveModel"], "unreported")
-        self.assertIsNone(result["inference"]["effectiveAdapter"])
+        self.assertNotIn("effectiveAdapter", result["inference"])
         self.assertEqual(
             result["inference"]["effectivePromptPackages"],
             [prompt_package_fingerprint()],
@@ -341,7 +341,7 @@ class StepProtocolTest(unittest.TestCase):
 
         self.assertEqual(actual, expected)
 
-    def test_reports_the_deployed_adapter_without_exposing_its_path(self):
+    def test_does_not_report_a_configured_adapter_without_observed_calls(self):
         task_type = "protocol-adapter-test"
         TASK_HANDLERS[task_type] = lambda _payload: {"response": "summary"}
         assignment = {
@@ -352,18 +352,6 @@ class StepProtocolTest(unittest.TestCase):
             "stepKind": "inference",
             "work": {"taskType": task_type, "payload": {}},
         }
-        identity = {
-            "available": True,
-            "scale": 0.75,
-            "sha256": "a" * 64,
-        }
-        expected = "sha256:" + hashlib.sha256(
-            json.dumps(
-                identity,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
         try:
             with patch(
                 "lib.execution.step_executor.ensure_task_handler",
@@ -381,10 +369,10 @@ class StepProtocolTest(unittest.TestCase):
         finally:
             TASK_HANDLERS.pop(task_type, None)
 
-        self.assertEqual(result["inference"]["effectiveAdapter"], expected)
+        self.assertNotIn("effectiveAdapter", result["inference"])
         self.assertNotIn("/private/adapter.gguf", json.dumps(result))
 
-    def test_preserves_the_verified_deployment_checksum_in_registry(self):
+    def test_preserves_the_declared_deployment_checksum_in_registry(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "deployments.json"
             path.write_text(json.dumps({"tasks": {"summarize-map": {

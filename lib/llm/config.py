@@ -9,6 +9,7 @@ Per-task overrides can be placed in config/tasks/<task-name>/config.json.
 """
 
 import json
+import math
 import logging
 import os
 import re
@@ -156,38 +157,43 @@ def get_worker_config() -> dict:
 
 
 def active_deployments() -> dict:
-    """Deployed adapters keyed by task, including a verified sha256 when present.
+    """Deployed adapters keyed by task, including a declared sha256 when present.
 
     Read on every call rather than cached: deploying an adapter is an
     interactive action, and a long-lived worker has to pick it up on the next
-    execution instead of on the next restart. A missing or malformed file simply means
-    no deployments — never an error, because inference must keep working.
+    execution instead of on the next restart. A missing file means no deployments;
+    an invalid existing registry must not silently disable the requested adapter.
     """
     try:
         with open(_deployments_file(), 'r', encoding='utf-8') as f:
             data = json.load(f)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return {}
+    except (OSError, ValueError):
+        raise ValueError("LoRA deployment registry is invalid or unavailable") from None
 
     tasks = data.get('tasks') if isinstance(data, dict) else None
     if not isinstance(tasks, dict):
-        return {}
+        raise ValueError("Invalid LoRA deployment registry")
 
     out = {}
     for name, entry in tasks.items():
-        if not isinstance(entry, dict) or not entry.get('enabled', True):
+        if not isinstance(entry, dict):
+            raise ValueError("Invalid LoRA deployment entry")
+        if not entry.get('enabled', True):
             continue
-        path = str(entry.get('path') or '').strip()
-        if not path:
-            continue
+        path = entry.get('path')
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("Invalid LoRA deployment path")
         try:
             scale = float(entry.get('scale', 1.0))
         except (TypeError, ValueError):
-            scale = 1.0
+            raise ValueError("Invalid LoRA scale") from None
+        if type(entry.get('scale')) is bool or not math.isfinite(scale):
+            raise ValueError("Invalid LoRA scale")
         deployment = {'path': path, 'scale': scale}
-        sha256 = str(entry.get('sha256') or '').lower()
-        if re.fullmatch(r'[0-9a-f]{64}', sha256):
-            deployment['sha256'] = sha256
+        if 'sha256' in entry:
+            deployment['sha256'] = entry['sha256']
         out[name] = deployment
     return out
 
@@ -214,7 +220,7 @@ def get_task_config(task_name: str) -> dict:
     if deployment:
         base['lora_path'] = deployment['path']
         base['lora_scale'] = deployment['scale']
-        if deployment.get('sha256'):
+        if 'sha256' in deployment:
             base['_deployment_sha256'] = deployment['sha256']
 
     return base
@@ -313,4 +319,5 @@ def llm_params_for(task: dict, model_name: str | None = None) -> dict:
         'n_gpu_layers': task.get('n_gpu_layers', defaults.get('n_gpu_layers', 0)),
         'lora_path': lora_path,
         'lora_scale': lora_scale,
+        'lora_sha256': task.get('_deployment_sha256'),
     }

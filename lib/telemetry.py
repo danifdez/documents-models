@@ -166,12 +166,12 @@ def inference_response(current, response, observation=None):
 
 def trace_post(function):
     @wraps(function)
-    def wrapped(url, payload, stream=False):
+    def wrapped(url, payload, stream=False, identity=None):
         # Streaming spans must be owned by the consumer, until the final chunk.
         if stream:
             return function(url, payload, stream=True)
         operation = "chat" if "messages" in payload else "text_completion"
-        with inference_span(payload, operation) as current, observe_inference(payload) as observation:
+        with inference_span(payload, operation) as current, observe_inference(payload, identity) as observation:
             response = function(url, payload, stream=False)
             inference_response(current, response, observation)
             return response

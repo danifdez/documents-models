@@ -8,6 +8,7 @@ server; request-level sampling and the model expected by each task remain here.
 
 import json
 import logging
+import math
 import os
 import urllib.error
 import urllib.request
@@ -18,7 +19,7 @@ import re
 from lib.llm.config import get_inference_sampling
 from services import llama_server
 from lib.telemetry import trace_post, inference_span, inference_response
-from lib.execution.inference_capture import current_capture, CaptureError, observe_inference
+from lib.execution.inference_capture import current_capture, CaptureError, observe_inference, engine_properties, safe_model
 
 logger = logging.getLogger(__name__)
 
@@ -164,12 +165,21 @@ class LLMService:
         n_gpu_layers: int,
         lora_path: str | None = None,
         lora_scale: float = 1.0,
+        lora_sha256: str | None = None,
     ):
         self.model_path = model_path
         self.model_id = os.path.splitext(os.path.basename(model_path))[0]
         self.n_ctx = n_ctx
         self.lora_path = lora_path
-        self.lora_scale = lora_scale
+        if type(lora_scale) is bool:
+            raise ValueError("Invalid LoRA scale")
+        try:
+            self.lora_scale = float(lora_scale)
+        except (ValueError, TypeError):
+            raise ValueError("Invalid LoRA scale") from None
+        if not math.isfinite(self.lora_scale):
+            raise ValueError("Invalid LoRA scale")
+        self.lora_sha256 = lora_sha256
 
         self.sampling = get_inference_sampling(model_path)
         logger.info(
@@ -177,55 +187,37 @@ class LLMService:
         )
 
         self.url = llama_server.ensure_server(model_path)
-        self._warn_on_mismatch()
 
-        # The adapter is applied per request, citing the id the server gave it
-        # when it loaded it (`--lora`). Resolving it here means a task whose
-        # adapter never made it into the engine fails when its client is built,
-        # loudly — before it produces a single answer that looks fine-tuned and
-        # is really the base model.
-        self._lora_id = None
-        if lora_path:
-            self._lora_id = llama_server.lora_adapter_id(
-                self.url, lora_path, self.model_id,
+    def _prepare_request(self, body):
+        data = llama_server.props(self.url, model_id=self.model_id)
+        self._warn_on_mismatch(data)
+        adapter = None
+        if self.lora_path:
+            adapter = llama_server.verified_lora_adapter(
+                self.url, self.lora_path, self.model_id, self.lora_sha256,
             )
-            if self._lora_id is None:
-                raise RuntimeError(
-                    f"LoRA {os.path.basename(lora_path)} is not loaded by the "
-                    f"engine at {self.url}. Adapters attach at startup: restart "
-                    "it so the deployment reaches the command line."
-                )
-            logger.info(
-                "LLM using LoRA %s (id=%s, scale=%s)",
-                os.path.basename(lora_path), self._lora_id, self.lora_scale,
-            )
+            adapter['scale'] = self.lora_scale
+            body['lora'] = [{'id': adapter['id'], 'scale': self.lora_scale}]
+        return {'engine': engine_properties(data), 'adapter': adapter}
 
-    def _lora_field(self) -> Dict[str, Any]:
-        """The `lora` field of a request, or nothing when there's no adapter.
-
-        Sent on every request rather than applied once on the server: one engine
-        serves every task, and the next request may belong to a task with a
-        different adapter — or with none.
-        """
-        if self._lora_id is None:
-            return {}
-        return {"lora": [{"id": self._lora_id, "scale": self.lora_scale}]}
+    def _post(self, path, body):
+        identity = self._prepare_request(body)
+        return _post(self.url + path, body, identity=identity)
 
     def _model_field(self) -> Dict[str, Any]:
         return {"model": self.model_id}
 
-    def _warn_on_mismatch(self) -> None:
+    def _warn_on_mismatch(self, data) -> None:
         """Say so when the engine isn't serving what this task asked for.
 
         Asking props for this model also selects it when the engine is a router.
         A legacy single-model server ignores the selector, so the mismatch
         warning remains useful there.
         """
-        data = llama_server.props(self.url, model_id=self.model_id)
         path = data.get("model_path") or data.get("model") or ""
         if not path and isinstance(data.get("default_generation_settings"), dict):
             path = data["default_generation_settings"].get("model") or ""
-        served = os.path.splitext(os.path.basename(str(path)))[0]
+        served = os.path.splitext(safe_model(path) or "")[0]
         if served and served != self.model_id:
             logger.warning(
                 "Documents engine serves %s, this task asked for %s.",
@@ -289,10 +281,9 @@ class LLMService:
         }
         body.update(self._model_field())
         body.update(self._sampling_kwargs({"temperature": temperature, "seed": seed}))
-        body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
-        resp = _post(f"{self.url}/completion", body)
+        resp = self._post("/completion", body)
         text = (resp.get("content") or "").strip()
         return text if allow_thinking else strip_thinking(text)
 
@@ -357,7 +348,6 @@ class LLMService:
         if seed is not None:
             overrides["seed"] = seed
         body.update(self._sampling_kwargs(overrides))
-        body.update(self._lora_field())
         if grammar is not None:
             body["grammar"] = grammar
         if response_format is not None:
@@ -368,7 +358,7 @@ class LLMService:
             template_kwargs.setdefault("preserve_thinking", False)
         if template_kwargs:
             body["chat_template_kwargs"] = template_kwargs
-        resp = _post(f"{self.url}/v1/chat/completions", body)
+        resp = self._post("/v1/chat/completions", body)
         text = _content_of(resp)
         return text if allow_thinking else strip_thinking(text)
 
@@ -403,8 +393,7 @@ class LLMService:
         }
         body.update(self._model_field())
         body.update(self._sampling_kwargs())
-        body.update(self._lora_field())
-        resp = _post(f"{self.url}/v1/chat/completions", body)
+        resp = self._post("/v1/chat/completions", body)
         choices = resp.get("choices") or [{}]
         message = choices[0].get("message") or {}
         tool_calls = message.get("tool_calls") or []
@@ -437,8 +426,8 @@ class LLMService:
         }
         body.update(self._model_field())
         body.update(self._sampling_kwargs())
-        body.update(self._lora_field())
-        with inference_span(body) as current_span, observe_inference(body) as observation:
+        identity = self._prepare_request(body)
+        with inference_span(body) as current_span, observe_inference(body, identity) as observation:
             resp = _post(f"{self.url}/v1/chat/completions", body, stream=True)
             with resp:
                 for raw in resp:
@@ -466,7 +455,7 @@ def _content_of(resp: Dict[str, Any]) -> str:
     return (message.get("content") or choice.get("text") or "").strip()
 
 
-# Cache of clients keyed by (model_path, lora_path, lora_scale)
+# Cache of clients keyed by their complete requested configuration
 _llm_cache: dict[tuple, LLMService] = {}
 
 
@@ -478,22 +467,19 @@ def get_llm_service(
     n_gpu_layers: int,
     lora_path: str | None = None,
     lora_scale: float = 1.0,
+    lora_sha256: str | None = None,
 ) -> LLMService:
     """Get or create a cached client for the given model (and optional LoRA)."""
-    key = (model_path, lora_path, lora_scale)
+    if lora_sha256 is not None and not isinstance(lora_sha256, str):
+        raise ValueError("Invalid LoRA checksum")
+    key = (model_path, n_ctx, n_threads, n_batch, n_gpu_layers, lora_path, lora_scale, lora_sha256)
     if key not in _llm_cache:
         _llm_cache[key] = LLMService(
-            model_path, n_ctx, n_threads, n_batch, n_gpu_layers, lora_path, lora_scale
+            model_path, n_ctx, n_threads, n_batch, n_gpu_layers, lora_path, lora_scale, lora_sha256
         )
     return _llm_cache[key]
 
 
 def reset_cache() -> None:
-    """Forget every cached client. Call it after restarting the engine.
-
-    A client holds the engine URL and the id its adapter had in THAT server;
-    both are meaningless once the server is replaced, and reusing them would
-    send requests citing an adapter id that now belongs to another file — or to
-    nothing at all.
-    """
+    """Forget the requested configurations; server properties and IDs are read per request."""
     _llm_cache.clear()
