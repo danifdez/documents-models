@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlsplit
 
 from common.canonical_json import canonical_sha256
+from lib.execution.engine_configuration import generation_defaults
 
 from lib.execution.output_artifact import json_output_artifact, prepare_output_artifacts
 from lib.execution.step_result import step_result_base, cancelled_inference_fields
@@ -75,7 +76,13 @@ def engine_properties(data):
                 properties[name] = canonical_sha256(template)
             except UnicodeError:
                 pass
-    return {'source': 'server_props', 'properties': properties} if properties else None
+    generation = generation_defaults(data)
+    if not properties and generation is None:
+        return None
+    result = {'source': 'server_props', 'properties': properties}
+    if generation is not None:
+        result['generationDefaults'] = generation
+    return result
 
 
 def response_metadata(response):

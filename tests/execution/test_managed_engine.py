@@ -31,7 +31,7 @@ class ManagedEngineTest(unittest.TestCase):
         self.path = self.root / 'private' / 'record.json'
         self.addCleanup(patch.stopall)
         patch.object(managed_engine, '_record_path', return_value=self.path).start()
-        self.startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)})
+        self.startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)}, [sys.executable, *sys.argv])
         managed_engine.bind(self.startup, os.getpid())
 
     def inspect(self):
@@ -67,7 +67,7 @@ class ManagedEngineTest(unittest.TestCase):
 
     def test_binary_alias_retargeting_requires_a_new_startup(self):
         alias = self.root / 'engine'; alias.symlink_to(sys.executable)
-        record = managed_engine.prepare(self.url, str(alias), {'model_path': str(self.model)})
+        record = managed_engine.prepare(self.url, str(alias), {'model_path': str(self.model)}, [sys.executable, *sys.argv])
         managed_engine.bind(record, os.getpid())
         self.assertEqual(self.inspect()['status'], 'verified_local')
         other = self.root / 'other-engine'; shutil.copyfile(sys.executable, other)
@@ -127,7 +127,7 @@ class ManagedEngineTest(unittest.TestCase):
 
     def test_new_startup_has_new_instance_even_with_identical_files(self):
         first = self.inspect()
-        startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)})
+        startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)}, [sys.executable, *sys.argv])
         managed_engine.bind(startup, os.getpid())
         second = self.inspect()
         self.assertNotEqual(first['instanceId'], second['instanceId'])
@@ -143,7 +143,7 @@ class ManagedEngineTest(unittest.TestCase):
 
     def test_restart_during_request_invalidates_old_evidence(self):
         identity = {'engine': {'localInstance': self.inspect()}}
-        startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)})
+        startup = managed_engine.prepare(self.url, sys.executable, {'model_path': str(self.model)}, [sys.executable, *sys.argv])
         managed_engine.bind(startup, os.getpid())
         with self.assertRaises(managed_engine.InstanceChanged):
             managed_engine.confirm(self.url, {'model_path': str(self.model)}, identity)
@@ -151,7 +151,21 @@ class ManagedEngineTest(unittest.TestCase):
 
     def test_remote_router_and_sharded_modes_do_not_hash_unverified_files(self):
         with patch.object(managed_engine, 'fingerprint_file') as hashed:
-            self.assertIsNone(managed_engine.prepare('http://remote.example:8080', '/PRIVATE/engine', {'model_path': '/PRIVATE/model'}))
-            self.assertIsNone(managed_engine.prepare(self.url, '/PRIVATE/engine', {'model_path': '/PRIVATE/model', 'models_dir': '/PRIVATE/models'}))
-            self.assertIsNone(managed_engine.prepare(self.url, '/PRIVATE/engine', {'model_path': '/PRIVATE/model-00001-of-00002.gguf'}))
+            self.assertIsNone(managed_engine.prepare('http://remote.example:8080', '/PRIVATE/engine', {'model_path': '/PRIVATE/model'}, []))
+            self.assertIsNone(managed_engine.prepare(self.url, '/PRIVATE/engine', {'model_path': '/PRIVATE/model', 'models_dir': '/PRIVATE/models'}, []))
+            self.assertIsNone(managed_engine.prepare(self.url, '/PRIVATE/engine', {'model_path': '/PRIVATE/model-00001-of-00002.gguf'}, []))
         hashed.assert_not_called()
+
+    def test_changed_arguments_invalidate_instance_and_remove_startup_configuration(self):
+        record=json.loads(self.path.read_text())
+        record['startupConfiguration']=managed_engine.startup_configuration([sys.executable,'--threads','77'],{})
+        self.path.write_text(json.dumps(record))
+        with self.assertRaises(managed_engine.InstanceChanged):self.inspect()
+
+    def test_invalid_startup_configuration_cannot_export_arbitrary_settings(self):
+        record=json.loads(self.path.read_text())
+        record['startupConfiguration']['settings']['PRIVATE_KEY']='PRIVATE_SECRET'
+        self.path.write_text(json.dumps(record))
+        value=self.inspect()
+        self.assertEqual(value['status'],'unknown')
+        self.assertNotIn('PRIVATE',json.dumps(value))

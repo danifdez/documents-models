@@ -9,6 +9,7 @@ import sys
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
+from lib.execution.engine_configuration import startup_configuration, valid_startup_configuration
 from lib.execution.file_identity import fingerprint_file, file_signature, stat_signature
 from lib.execution.private_storage import write_private_text
 
@@ -71,7 +72,7 @@ def _check_file(value):
     raise InstanceChanged('Managed inference files changed; restart the engine')
 
 
-def prepare(url, binary, engine):
+def prepare(url, binary, engine, command):
     """Hash once at a managed startup, before the binary can load the GGUF."""
     if not sys.platform.startswith('linux') or not _endpoint(url) or engine.get('models_dir'):
         return None
@@ -79,7 +80,7 @@ def prepare(url, binary, engine):
     if re.search(r'-\d{5}-of-\d{5}\.gguf$', str(engine['model_path'])):
         return None
     return {'schemaVersion': 'managed-engine/1', 'instanceId': str(uuid4()),
-            'endpoint': _endpoint(url)[0],
+            'endpoint': _endpoint(url)[0], 'startupConfiguration': startup_configuration(command),
             'files': {'executable': _snapshot(binary), 'gguf': _snapshot(engine['model_path'])}}
 
 
@@ -115,6 +116,8 @@ def _read_record(url):
         if record['schemaVersion'] != 'managed-engine/1' or record['endpoint'] != _endpoint(url)[0]:
             return None
         if not isinstance(record['instanceId'], str) or str(UUID(record['instanceId'])) != record['instanceId']:
+            return None
+        if not valid_startup_configuration(record.get('startupConfiguration')):
             return None
         if set(record['files']) != {'executable', 'gguf'}:
             return None
@@ -186,6 +189,15 @@ def inspect(url, properties):
             _check_file(value)
         if properties.get('model_path') not in {record['files']['gguf']['path'], record['files']['gguf']['configuredPath']}:
             return _unknown('model_declaration_not_bound')
+        with (Path('/proc') / str(pid) / 'cmdline').open('rb') as file:
+            argv = file.read(65537)
+        if len(argv) > 65536 or not argv.endswith(b'\x00'):
+            return _unknown('arguments_unavailable')
+        observed = startup_configuration([os.fsdecode(item) for item in argv[:-1].split(b'\x00')], {})
+        startup = record['startupConfiguration']
+        if (observed['settings'] != startup['settings']
+                or set(observed['omissions']) != set(startup['omissions']) - {'environment_overrides'}):
+            raise InstanceChanged('Managed inference arguments changed; restart the engine')
         if _process(pid) != process:
             return _unknown('instance_not_bound')
     except InstanceChanged:
@@ -193,7 +205,7 @@ def inspect(url, properties):
     except (OSError, ValueError, TypeError, KeyError, IndexError, OverflowError):
         return _unknown('instance_unavailable')
     return {'status': 'verified_local', 'instanceId': record['instanceId'],
-            'binding': 'linux_process_listener_mmap',
+            'binding': 'linux_process_listener_mmap', 'startupConfiguration': startup,
             'executableSha256': 'sha256:' + record['files']['executable']['sha256'],
             'ggufSha256': 'sha256:' + record['files']['gguf']['sha256']}
 

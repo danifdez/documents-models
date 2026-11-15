@@ -430,7 +430,7 @@ def _spawn(url: str, task_model_path: str) -> None:
             raise RuntimeError(f"Model file not found: {engine['model_path']}")
 
     cmd = engine_cmd(binary, url, engine)
-    startup = managed_engine.prepare(url, binary, engine)
+    startup = managed_engine.prepare(url, binary, engine, cmd)
     log_path = os.environ.get("LLAMA_SERVER_LOG", "/tmp/llama-server.log")
     logger.warning(
         "No engine answering at %s — starting one for this worker. It should be a "
@@ -542,10 +542,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.info("An engine already answers at %s — nothing to start.", url)
         return 0
 
-    logger.info("Starting engine: %s", " ".join(cmd))
+    logger.info("Starting managed inference engine")
     # exec, not spawn: the service manager's PID must be the server's, or
     # stopping the service would leave the engine running.
-    startup = managed_engine.prepare(url, binary, engine)
+    startup = managed_engine.prepare(url, binary, engine, cmd)
     managed_engine.bind(startup, os.getpid())
     os.execve(binary, cmd, _engine_environment())
 
