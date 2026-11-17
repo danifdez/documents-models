@@ -9,7 +9,8 @@
     "rag/**",
     "services/**",
     "tasks/**",
-    "utils/**"
+    "utils/**",
+    "voice/**"
   ],
   "exclude": [
     "models/**",

@@ -25,17 +25,24 @@ logger = logging.getLogger("voice.test_client")
 
 
 def _encode_to_webm(input_path: str) -> str:
-    out_path = tempfile.mktemp(suffix=".webm")
-    subprocess.run(
-        [
-            "ffmpeg", "-loglevel", "error", "-y",
-            "-i", input_path,
-            "-vn",
-            "-c:a", "libopus", "-b:a", "32k", "-ar", "16000", "-ac", "1",
-            out_path,
-        ],
-        check=True,
-    )
+    fd, out_path = tempfile.mkstemp(suffix=".webm")
+    os.close(fd)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
+                "-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,matroska,webm,ogg",
+                "-i", input_path,
+                "-vn",
+                "-c:a", "libopus", "-b:a", "32k", "-ar", "16000", "-ac", "1",
+                "-fs", str(32 * 1024 * 1024 + 1), out_path,
+            ],
+            check=True, timeout=15, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env={"PATH": os.defpath, "LANG": "C"},
+        )
+    except BaseException:
+        os.remove(out_path)
+        raise
     return out_path
 
 
@@ -45,7 +52,9 @@ async def stream_file(uri: str, audio_path: str, chunk_ms: int) -> None:
     encoded = _encode_to_webm(audio_path)
     try:
         with open(encoded, "rb") as f:
-            data = f.read()
+            data = f.read(32 * 1024 * 1024 + 1)
+            if len(data) > 32 * 1024 * 1024:
+                raise ValueError("Voice test input is too large")
     finally:
         try:
             os.remove(encoded)
@@ -57,6 +66,7 @@ async def stream_file(uri: str, audio_path: str, chunk_ms: int) -> None:
     logger.info("Streaming %d bytes in chunks of %d", len(data), chunk_size)
 
     async with websockets.connect(uri) as ws:
+        await ws.send(json.dumps({"type": "start", "capture": False}))
         async def reader():
             async for msg in ws:
                 if isinstance(msg, (bytes, bytearray)):
