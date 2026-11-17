@@ -68,9 +68,11 @@ def _initialize():
             span_limits=SpanLimits(max_attributes=24, max_attribute_length=160, max_events=0, max_links=0),
             shutdown_on_exit=False,
         )
+        # Respect SDK timeout configuration; a slow acknowledgement must not
+        # inherit the former three-second request/flush cutoff.
         _provider.add_span_processor(BatchSpanProcessor(
-            OTLPSpanExporter(endpoint=endpoint, timeout=3), max_queue_size=512,
-            max_export_batch_size=64, schedule_delay_millis=1000, export_timeout_millis=3000,
+            OTLPSpanExporter(endpoint=endpoint), max_queue_size=512,
+            max_export_batch_size=64, schedule_delay_millis=1000,
         ))
         atexit.register(shutdown)
     except Exception:
@@ -88,7 +90,7 @@ def shutdown():
 
 def flush():
     if _provider:
-        _provider.force_flush(timeout_millis=3000)
+        _provider.force_flush()
 
 
 @contextmanager
