@@ -1,48 +1,44 @@
-import re
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment, Declaration, Doctype, NavigableString, ProcessingInstruction
 
-# Function to extract text from each HTML block element and return as array
+
+BLOCK_ELEMENTS = (
+    "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
+    "li", "td", "th", "blockquote", "pre", "section",
+    "article", "header", "footer", "main", "aside",
+)
+
+
 def clean_html_text(html_content):
-    """
-    Extract complete text from each HTML block element, ignoring inline formatting tags.
-    """
-    if not html_content:
-        return []
-    
-    soup = BeautifulSoup(html_content, 'html.parser')
-    for script in soup(["script", "style"]):
-        script.decompose()
-    
-    block_elements = [
-        'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 
-        'li', 'td', 'th', 'blockquote', 'pre', 'section', 
-        'article', 'header', 'footer', 'main', 'aside'
-    ]
-    
-    text_elements = []
-    
-    for tag_name in block_elements:
-        for element in soup.find_all(tag_name):
-            text = element.get_text()
-            text = re.sub(r'\s+', ' ', text.strip())
-            
-            if text:
-                text_elements.append(text)
-    
-    soup_copy = BeautifulSoup(html_content, 'html.parser')
-    for script in soup_copy(["script", "style"]):
-        script.decompose()
-    
-    for tag_name in block_elements:
-        for element in soup_copy.find_all(tag_name):
-            element.decompose()
-    
-    remaining_text = soup_copy.get_text()
-    remaining_text = re.sub(r'\s+', ' ', remaining_text.strip())
-    if remaining_text:
-        text_elements.append(remaining_text)
-    
-    return text_elements
+    """Collect visible text in document order, once per contiguous block."""
+    soup = BeautifulSoup(html_content or "", "html.parser")
+    for node in soup(["script", "style"]):
+        node.decompose()
+
+    blocks = []
+    pieces = []
+    current = None
+    for node in soup.descendants:
+        if getattr(node, "name", None) == "br":
+            text = " "
+        elif isinstance(node, NavigableString) and not isinstance(
+            node, (Comment, Doctype, Declaration, ProcessingInstruction)
+        ):
+            text = str(node)
+        else:
+            continue
+        block = node.find_parent(BLOCK_ELEMENTS)
+        if block is not current:
+            value = " ".join("".join(pieces).split())
+            if value:
+                blocks.append(value)
+            pieces.clear()
+            current = block
+        pieces.append(text)
+    value = " ".join("".join(pieces).split())
+    if value:
+        blocks.append(value)
+    return blocks
+
 
 def _recursive_split(text, max_words):
     """Split text recursively: paragraphs -> lines -> sentences -> words."""
@@ -82,6 +78,8 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
     Chunk text using recursive splitting with overlap.
     Works well for both small and large texts.
     """
+    if not isinstance(text_elements, (list, tuple)) or any(not isinstance(text, str) for text in text_elements):
+        raise ValueError("Chunk input requires a sequence of text blocks")
     if target_words is None or max_words is None or overlap_words is None:
         from lib.llm.config import get_rag_config
         rag = get_rag_config()
@@ -91,6 +89,9 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
             max_words = rag.get("chunk_max_words", 250)
         if overlap_words is None:
             overlap_words = rag.get("chunk_overlap_words", 30)
+
+    if not 1 <= target_words <= max_words or not 0 <= overlap_words < max_words:
+        raise ValueError("Invalid chunk word limits")
 
     if not text_elements:
         return []
@@ -107,7 +108,7 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
         return [full_text]
 
     # Recursively split into semantic segments
-    segments = _recursive_split(full_text, max_words)
+    segments = _recursive_split(full_text, max_words - overlap_words)
 
     # Accumulate segments into chunks with overlap
     chunks = []
@@ -122,13 +123,9 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
             # Close current chunk
             chunks.append(" ".join(current_words))
             # Start new chunk with overlap from end of previous
-            if overlap_words > 0 and len(current_words) > overlap_words:
-                overlap = current_words[-overlap_words:]
-                current_words = overlap + seg_words
-                current_count = len(current_words)
-            else:
-                current_words = seg_words
-                current_count = seg_count
+            overlap = current_words[-overlap_words:] if overlap_words else []
+            current_words = overlap + seg_words
+            current_count = len(current_words)
         else:
             current_words.extend(seg_words)
             current_count += seg_count

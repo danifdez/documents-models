@@ -33,7 +33,7 @@ def ingest_indexed_file(payload: dict) -> HandlerOutput:
             [],
         )
 
-    chunks = semantic_chunk_text(content)
+    chunks = semantic_chunk_text([content])
     embeddings = get_embedding_service().encode(
         chunks, normalize_embeddings=True
     )
