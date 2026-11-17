@@ -1,15 +1,17 @@
+import hashlib
 import logging
 from common.execution_registry import execution_handler
 from rag.pipeline import create_ask_pipeline
 from rag.types import RAGContext
 from lib.llm.config import get_rag_config, get_task_config
 from common.vector_contract import load_vector_candidates
+from lib.execution.output_artifact import HandlerOutput, json_output_artifact
 
 logger = logging.getLogger(__name__)
 
 
 @execution_handler("ask")
-def ask_question(payload) -> dict:
+def ask_question(payload) -> HandlerOutput:
     rag = get_rag_config()
     task = get_task_config("ask")
 
@@ -38,7 +40,25 @@ def ask_question(payload) -> dict:
     logger.info("ASK prompt length: %d chars", len(ctx.prompt))
     logger.info("ASK response (%d chars): %s", len(ctx.response), ctx.response[:300] if ctx.response else "(empty)")
 
-    if not ctx.response:
-        return {"response": "No relevant information was found to answer this question."}
+    evidence = {
+        "schemaVersion": "rag-context/1",
+        "candidateCount": len(ctx.candidates),
+        "retrieved": [_chunk_identity(chunk) for chunk in ctx.chunks],
+        "ranked": [_chunk_identity(chunk) for chunk in ctx.ranked_chunks],
+        "relationshipCount": len(ctx.graph_context),
+        "contextChars": len(ctx.context_text),
+        "contextSha256": _text_hash(ctx.context_text),
+    }
+    response = ctx.response or "No relevant information was found to answer this question."
+    return HandlerOutput({"response": response}, [
+        json_output_artifact("rag_context", "rag_context_evidence", evidence),
+    ])
 
-    return {"response": ctx.response}
+
+def _chunk_identity(chunk):
+    return {"sourceId": chunk.metadata.get("source_id"),
+            "textSha256": _text_hash(chunk.text), "score": str(chunk.score)}
+
+
+def _text_hash(value):
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()

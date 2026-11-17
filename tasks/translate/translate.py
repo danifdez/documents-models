@@ -15,16 +15,26 @@ def _get_translation_pipeline(source: str, target: str):
     if key not in _translation_pipelines:
         with _translation_pipeline_lock:
             if key not in _translation_pipelines:
-                from transformers import pipeline as hf_pipeline
+                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
                 from lib.llm.config import get_task_config
 
                 prefix = get_task_config("translate-map").get(
                     "model_prefix", "Helsinki-NLP/opus-mt"
                 )
                 model_name = f"{prefix}-{source}-{target}"
-                _translation_pipelines[key] = hf_pipeline(
-                    "translation", model=model_name, device=get_device()
-                )
+                device = get_device()
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
+
+                def translate(texts):
+                    tokens = tokenizer(texts, padding=True, return_tensors="pt")
+                    output = model.generate(**tokens.to(device))
+                    return [
+                        {"translation_text": text}
+                        for text in tokenizer.batch_decode(output, skip_special_tokens=True)
+                    ]
+
+                _translation_pipelines[key] = translate
     return _translation_pipelines[key]
 
 
