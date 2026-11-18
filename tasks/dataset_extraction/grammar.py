@@ -38,7 +38,7 @@ def _value_rule(field: dict) -> str:
     return "string | null-lit"
 
 
-def build_grammar(fields_to_extract: List[dict]) -> str:
+def build_grammar(fields_to_extract: List[dict], *, allow_page: bool = True) -> str:
     """Build a GBNF that validates a flat object with one entry per field.
 
     `fields_to_extract` is a list of DatasetField dicts. The order defines the
@@ -48,6 +48,7 @@ def build_grammar(fields_to_extract: List[dict]) -> str:
         # Empty schema -> trivial grammar that matches "{}" only.
         return 'root ::= "{}"\n'
 
+    page_rule = "(integer | null-lit)" if allow_page else "null-lit"
     field_rules: List[str] = []
     for idx, field in enumerate(fields_to_extract):
         key = field["key"]
@@ -58,7 +59,7 @@ def build_grammar(fields_to_extract: List[dict]) -> str:
             f"\"\\\"{_escape_literal(key)}\\\":\" ws \"{{\" ws "
             f"\"\\\"value\\\":\" ws ({value_rule}) ws \",\" ws "
             f"\"\\\"_quote\\\":\" ws string ws \",\" ws "
-            f"\"\\\"_page\\\":\" ws (integer | null-lit) ws \"}}\""
+            f"\"\\\"_page\\\":\" ws {page_rule} ws \"}}\""
         )
 
     body = ' ws "," ws '.join(f"{rname.split(' ')[0]}" for rname in (

@@ -15,6 +15,7 @@ Payload (set by backend `DatasetExtractionService`):
       "chunkIndex":        int,                  # map assignments only
       "sourceTitle":       str,
       "isAudio":           bool,                 # mimeType startswith "audio/"
+      "sourcePagination":  "unpaginated",        # optional trusted source metadata
       "model":             str | None            # optional model override
     }
 
@@ -105,6 +106,8 @@ def _build_result(
     parsed: Dict[str, Any],
     resource_id: int,
     model_name: str,
+    *,
+    allow_page: bool,
 ) -> Dict[str, Any]:
     data: Dict[str, Any] = {}
     cell_metadata: Dict[str, Any] = {}
@@ -122,7 +125,9 @@ def _build_result(
             continue
 
         quote = entry.get("_quote") if isinstance(entry, dict) else ""
-        page = entry.get("_page") if isinstance(entry, dict) else None
+        page = (
+            entry.get("_page") if allow_page and isinstance(entry, dict) else None
+        )
         if isinstance(page, str):
             try:
                 page = int(page)
@@ -155,6 +160,7 @@ def _extract_dataset_row(
     source_title: str = payload.get("sourceTitle") or ""
     resource_id = int(payload.get("resourceId") or 0)
     is_audio: bool = bool(payload.get("isAudio") or False)
+    allow_page = payload.get("sourcePagination") != "unpaginated"
     model_override: Optional[str] = payload.get("model")
 
     if not document_text.strip():
@@ -189,8 +195,10 @@ def _extract_dataset_row(
             resource_id,
         )
 
-    grammar = build_grammar(fields)
-    prompt = build_prompt(fields, safe_text, source_title, is_audio=is_audio)
+    grammar = build_grammar(fields, allow_page=allow_page)
+    prompt = build_prompt(
+        fields, safe_text, source_title, is_audio=is_audio, allow_page=allow_page
+    )
 
     llm = get_llm_service(**get_llm_params(task_type, model_name))
 
@@ -230,7 +238,9 @@ def _extract_dataset_row(
             )
             raise RuntimeError("LLM returned invalid JSON after retry")
 
-    built = _build_result(fields, parsed, resource_id, model_name)
+    built = _build_result(
+        fields, parsed, resource_id, model_name, allow_page=allow_page
+    )
     logger.debug(
         "dataset.extract-row: extracted %d fields (resourceId=%s, recordId=%s)",
         len([v for v in built["data"].values() if v is not None]),

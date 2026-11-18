@@ -8,7 +8,7 @@ HARD RULES:
 - If the document does not explicitly or by clear inference contain the value, set value to null AND _quote to "" AND _page to null.
 - Never invent quotes. The _quote must be a verbatim substring of the document content shown below.
 
-{audio_clause}Fields to extract:
+{page_guidance}Fields to extract:
 {field_block}
 
 Document title: {source_title}
