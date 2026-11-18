@@ -65,6 +65,33 @@ class RelationshipExtractionStepTest(unittest.TestCase):
     @patch(
         "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
     )
+    def test_map_accepts_documents_organization_type(self, get_pipeline):
+        get_pipeline.return_value = Mock(
+            return_value=[
+                {"labels": ["founded"], "scores": [0.98]},
+                {"labels": ["founded"], "scores": [0.10]},
+            ]
+        )
+
+        result = relationship_extraction_map(
+            {
+                "content": "Lena Ashford founded Silver Birch Archive.",
+                "entities": [
+                    {"name": "Lena Ashford", "type": "PERSON"},
+                    {"name": "Silver Birch Archive", "type": "ORGANIZATION"},
+                ],
+            }
+        )
+
+        relationship, = result["relationships"]
+        self.assertEqual(relationship["predicate"], "founded")
+        self.assertEqual(relationship["object"], "Silver Birch Archive")
+        candidates = get_pipeline.return_value.call_args_list[0].kwargs
+        self.assertIn("founded", candidates["candidate_labels"])
+
+    @patch(
+        "tasks.relationship_extraction.relationship_extraction._get_relationship_pipeline"
+    )
     def test_map_rejects_scores_below_the_configured_threshold(self, get_pipeline):
         classifier = Mock(
             return_value=[

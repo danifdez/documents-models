@@ -14,6 +14,13 @@ _PERSON = ["PERSON"]
 _ORGANIZATION = ["ORG", "NORP"]
 _PLACE = ["GPE", "LOC"]
 _CREATION = ["PRODUCT", "WORK_OF_ART", "LAW", "EVENT"]
+_DOCUMENTS_ENTITY_TYPES = {
+    "FACILITY": "FAC",
+    "GEOPOLITICAL": "GPE",
+    "LOCATION": "LOC",
+    "NATIONALITY": "NORP",
+    "ORGANIZATION": "ORG",
+}
 _DEFAULT_RELATIONS = [
     {"predicate": "works_for", "label": "works for", "source_types": _PERSON, "target_types": _ORGANIZATION, "priority": 2},
     {"predicate": "leads", "label": "leads", "source_types": _PERSON, "target_types": _ORGANIZATION, "priority": 3},
@@ -149,16 +156,17 @@ def _relation_definitions(config: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "predicate": predicate,
                 "label": label,
                 "symmetric": bool(item.get("symmetric", False)),
-                "source_types": set(item.get("source_types", default.get("source_types", []))),
-                "target_types": set(item.get("target_types", default.get("target_types", []))),
+                "source_types": {_entity_type(value) for value in item.get("source_types", default.get("source_types", []))},
+                "target_types": {_entity_type(value) for value in item.get("target_types", default.get("target_types", []))},
                 "priority": int(item.get("priority", default.get("priority", 1))),
             }
         )
     return definitions
 
 
-def _entity_type(entity: Dict[str, Any]) -> str:
-    return str(entity.get("type") or "").strip().upper()
+def _entity_type(value: Any) -> str:
+    label = str(value or "").strip().upper()
+    return _DOCUMENTS_ENTITY_TYPES.get(label, label)
 
 
 def _supports_types(
@@ -166,8 +174,8 @@ def _supports_types(
     subject: Dict[str, Any],
     obj: Dict[str, Any],
 ) -> bool:
-    subject_type = _entity_type(subject)
-    object_type = _entity_type(obj)
+    subject_type = _entity_type(subject.get("type"))
+    object_type = _entity_type(obj.get("type"))
     return (
         (not subject_type or not definition["source_types"] or subject_type in definition["source_types"])
         and (not object_type or not definition["target_types"] or object_type in definition["target_types"])
