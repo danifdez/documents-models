@@ -1,6 +1,5 @@
-from odf.opendocument import load
 from odf.namespaces import DCNS
-
+from odf.opendocument import load
 
 _HEADING_STYLES = {'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
                    'Título 1', 'Título 2', 'Título 3', 'Título 4'}
@@ -16,7 +15,7 @@ def _get_meta(doc, local_name: str) -> str | None:
     try:
         meta = doc.meta
         for child in meta.childNodes:
-            if hasattr(child, 'qname') and child.qname[1] == local_name and child.namespaceURI == DCNS:
+            if hasattr(child, 'qname') and child.qname == (DCNS, local_name):
                 value = child.firstChild.data if child.firstChild else None
                 return value.strip() if value else None
     except Exception:
@@ -41,7 +40,8 @@ def _paragraph_to_html(paragraph) -> str:
         return ''
 
     style_name = paragraph.getAttribute('stylename') or ''
-    tag = _HEADING_TAG_MAP.get(style_name, 'p')
+    # ODF style names encode spaces, for example Heading_20_2.
+    tag = _HEADING_TAG_MAP.get(style_name.replace('_20_', ' '), 'p')
     return f'<{tag}>{text_content}</{tag}>'
 
 

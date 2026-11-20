@@ -235,14 +235,16 @@ def download_gguf(model_filename, report=None):
                 downloaded = max(0, _dir_size(model_dir) - base)
                 report(min(99, int(downloaded / total_size * 100)))
 
-    monitor = threading.Thread(target=_monitor, daemon=True)
+    monitor = None
     if report and total_size:
+        monitor = threading.Thread(target=_monitor, daemon=True)
         monitor.start()
     try:
         hf_hub_download(repo_id=repo_id, filename=model_filename, local_dir=model_dir)
     finally:
         stop.set()
-        monitor.join(timeout=2)
+        if monitor is not None:
+            monitor.join(timeout=2)
     if report:
         report(100)
 
