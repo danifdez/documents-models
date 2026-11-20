@@ -5,7 +5,7 @@ import signal
 import subprocess
 import unittest
 import urllib.error
-from contextlib import redirect_stdout
+from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, call, patch
@@ -21,10 +21,10 @@ class LlamaEndpointTests(unittest.TestCase):
 
     def test_health_checks_return_false_for_an_unavailable_engine(self):
         response = Mock()
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
         response.getcode.return_value = 200
-        with patch.object(llama_server.urllib.request, "urlopen", side_effect=[response, TimeoutError]) as request:
+        with patch.object(
+            llama_server.urllib.request, "urlopen", side_effect=[nullcontext(response), TimeoutError]
+        ) as request:
             self.assertTrue(llama_server.is_alive(URL))
             self.assertFalse(llama_server.is_alive(URL))
         self.assertEqual(request.call_args_list, [call(URL + "/health", timeout=2.0)] * 2)
