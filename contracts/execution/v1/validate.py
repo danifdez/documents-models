@@ -524,9 +524,12 @@ def apply_mutations(value, mutations):
     return mutated
 
 
+JSON_GLOB = f"*{SCHEMA_MANIFEST.suffix}"
+
+
 def validate_invalid_fixtures(bundle_validator, schema_manifest_hash, valid_fixtures, invalid_fixtures):
     failures = []
-    for path in sorted(invalid_fixtures.glob("*.json")):
+    for path in sorted(invalid_fixtures.glob(JSON_GLOB)):
         fixture = read_json(path)
         base_path = (path.parent / fixture["base"]).resolve()
         instance = apply_mutations(read_json(base_path), fixture["mutations"])
@@ -544,8 +547,8 @@ def validate_invalid_fixtures(bundle_validator, schema_manifest_hash, valid_fixt
 
 def validate_protocol_fixtures(protocol_fixtures, schemas):
     failures = []
-    valid_paths = sorted((protocol_fixtures / "valid").glob("*.json"))
-    invalid_paths = sorted((protocol_fixtures / "invalid").glob("*.json"))
+    valid_paths = sorted((protocol_fixtures / "valid").glob(JSON_GLOB))
+    invalid_paths = sorted((protocol_fixtures / "invalid").glob(JSON_GLOB))
     for path in valid_paths:
         error = validate_protocol_fixture(read_json(path), schemas)
         if error:
@@ -627,7 +630,7 @@ def main():
             print(f"FAIL {failure}", file=sys.stderr)
         raise SystemExit(1)
 
-    invalid_count = len(list(invalid_fixtures.glob("*.json")))
+    invalid_count = len(list(invalid_fixtures.glob(JSON_GLOB)))
     print(
         f"Validated {len(schemas)} schemas, {valid_count} valid bundles, "
         f"{invalid_count} invalid bundle fixtures, {valid_protocol_count} valid protocol fixtures, "
