@@ -39,45 +39,48 @@ def _tree_manifest(root: Path) -> dict:
     while stack:
         directory = stack.pop()
         for path in sorted(directory.iterdir(), reverse=True):
-            relative = unicodedata.normalize(
-                "NFC", path.relative_to(root).as_posix()
-            )
-            included = _matches_any(relative, scopes)
-            excluded = _matches_any(relative, excludes)
-            if path.is_symlink():
-                if included or _may_contain(relative, scopes):
-                    raise ValueError(
-                        f"code identity scope contains a symlink: {relative}"
-                    )
-                continue
-            if path.is_dir():
-                if not excluded and _may_contain(relative, scopes):
-                    stack.append(path)
-                continue
-            if not included or excluded or not path.is_file():
-                continue
-            metadata = path.stat()
-            if metadata.st_nlink != 1:
-                raise ValueError(
-                    f"code identity scope contains a hardlink: {relative}"
-                )
-            body = path.read_bytes()
-            mode = (
-                0o755
-                if metadata.st_mode
-                & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-                else 0o644
-            )
-            entries.append(
-                {
-                    "path": relative,
-                    "type": "file",
-                    "sha256": hashlib.sha256(body).hexdigest(),
-                    "size": len(body),
-                    "mode": f"{mode:04o}",
-                }
-            )
+            _visit_path(path, root, scopes, excludes, stack, entries)
     return {"schema": 1, "entries": sorted(entries, key=lambda item: item["path"])}
+
+
+def _visit_path(
+    path: Path,
+    root: Path,
+    scopes: tuple[str, ...],
+    excludes: tuple[str, ...],
+    stack: list[Path],
+    entries: list[dict],
+) -> None:
+    relative = unicodedata.normalize("NFC", path.relative_to(root).as_posix())
+    included = _matches_any(relative, scopes)
+    if path.is_symlink():
+        if included or _may_contain(relative, scopes):
+            raise ValueError(f"code identity scope contains a symlink: {relative}")
+        return
+    if path.is_dir():
+        if not _matches_any(relative, excludes) and _may_contain(relative, scopes):
+            stack.append(path)
+        return
+    if not included or _matches_any(relative, excludes) or not path.is_file():
+        return
+    entries.append(_file_entry(path, relative))
+
+
+def _file_entry(path: Path, relative: str) -> dict:
+    metadata = path.stat()
+    if metadata.st_nlink != 1:
+        raise ValueError(f"code identity scope contains a hardlink: {relative}")
+    body = path.read_bytes()
+    mode = 0o644
+    if metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+        mode = 0o755
+    return {
+        "path": relative,
+        "type": "file",
+        "sha256": hashlib.sha256(body).hexdigest(),
+        "size": len(body),
+        "mode": f"{mode:04o}",
+    }
 
 
 def _patterns(identity: dict, key: str) -> tuple[str, ...]:
