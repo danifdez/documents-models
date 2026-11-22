@@ -373,7 +373,7 @@ deactivate
 
 # ── Summary ──
 echo ""
-printf "${GREEN}============================================${NC}\n"
+printf '%s============================================%s\n' "$GREEN" "$NC"
 if [ "$HAS_CUDA" -eq 1 ]; then
   printf "${GREEN}  Models installation complete! (GPU mode)${NC}\n"
 else
