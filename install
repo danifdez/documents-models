@@ -71,7 +71,7 @@ with open('config/config.json', 'r') as f:
     cfg = json.load(f)
 
 # Embedding capability gate
-if $( [ "$ENABLE_EMBEDDINGS" = true ] && echo 'False' || echo 'True' ):
+if $(if [ "$ENABLE_EMBEDDINGS" = true ]; then echo 'False'; else echo 'True'; fi):
     cfg['worker']['disable_embeddings'] = True
 
 with open('config/config.json', 'w') as f:
