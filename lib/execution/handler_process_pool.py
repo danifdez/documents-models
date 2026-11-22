@@ -192,7 +192,7 @@ class HandlerProcessPool:
                 if slot.process.is_alive():
                     slot.connection.send({"kind": "shutdown"})
                     slot.process.join(PROCESS_STOP_GRACE_SECONDS)
-            except (BrokenPipeError, EOFError, OSError):
+            except (EOFError, OSError):
                 pass
             finally:
                 _stop_process(slot.process)
