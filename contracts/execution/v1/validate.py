@@ -648,12 +648,19 @@ def pointer_parent(value, pointer):
     return current, parts[-1]
 
 
+def remove_pointer_value(parent, key):
+    if isinstance(parent, list):
+        parent.pop(int(key))
+    else:
+        parent.pop(key)
+
+
 def apply_mutations(value, mutations):
     mutated = copy.deepcopy(value)
     for mutation in mutations:
         parent, key = pointer_parent(mutated, mutation["path"])
         if mutation["op"] == "remove":
-            parent.pop(int(key)) if isinstance(parent, list) else parent.pop(key)
+            remove_pointer_value(parent, key)
         elif mutation["op"] == "replace":
             if isinstance(parent, list):
                 parent[int(key)] = mutation["value"]
