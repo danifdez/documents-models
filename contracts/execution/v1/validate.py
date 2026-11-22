@@ -367,7 +367,7 @@ def validate_embedded_bodies(embedded, artifact_by_id):
             raise ContractError(f"embedded body has no artifact manifest: {artifact_id}")
         try:
             body = base64.b64decode(entry["data"], validate=True)
-        except (KeyError, TypeError, ValueError, binascii.Error) as error:
+        except (KeyError, TypeError, ValueError) as error:
             raise ContractError(f"embedded artifact is not canonical base64: {artifact_id}") from error
         if base64.b64encode(body).decode("ascii") != entry["data"]:
             raise ContractError(f"embedded artifact is not canonical base64: {artifact_id}")
