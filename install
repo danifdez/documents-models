@@ -379,7 +379,7 @@ if [ "$HAS_CUDA" -eq 1 ]; then
 else
   printf '%s\n' "${GREEN}  Models installation complete! (CPU mode)${NC}"
 fi
-printf "${GREEN}============================================${NC}\n"
+printf '%s============================================%s\n' "${GREEN}" "${NC}"
 echo ""
 echo "  Configuration:       config/config.json, config/tasks.json"
 echo "  Activate venv:       source .venv/bin/activate"
