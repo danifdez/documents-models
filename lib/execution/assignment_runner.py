@@ -43,24 +43,8 @@ def run_assignment(
         outbox.store(_policy_rejected_result(assignment, policy_error))
         return
 
-    artifacts = {}
-    for ref in assignment.get("inputArtifactRefs", []):
-        if cancellation.is_set():
-            outbox.store(_cancelled_result(assignment))
-            return
-        try:
-            artifacts[ref["role"]] = client.download_artifact(
-                attempt_id, ref["artifactId"]
-            )
-        except ProtocolTransportError:
-            if cancellation.is_set() or client.read_control(attempt_id).get(
-                "cancelled"
-            ):
-                cancellation.set()
-                outbox.store(_cancelled_result(assignment))
-                return
-            raise
-    if cancellation.is_set():
+    artifacts = _download_artifacts(client, assignment, cancellation, attempt_id)
+    if artifacts is None:
         outbox.store(_cancelled_result(assignment))
         return
 
@@ -100,6 +84,32 @@ def run_assignment(
         result = _cancelled_result(assignment)
         output_artifacts = []
     outbox.store(result, output_artifacts)
+
+
+def _download_artifacts(
+    client: ExecutionProtocolClient,
+    assignment: dict,
+    cancellation: Event,
+    attempt_id: str,
+) -> dict[str, bytes] | None:
+    artifacts: dict[str, bytes] = {}
+    for ref in assignment.get("inputArtifactRefs", []):
+        if cancellation.is_set():
+            return None
+        try:
+            artifacts[ref["role"]] = client.download_artifact(
+                attempt_id, ref["artifactId"]
+            )
+        except ProtocolTransportError:
+            if cancellation.is_set() or client.read_control(attempt_id).get(
+                "cancelled"
+            ):
+                cancellation.set()
+                return None
+            raise
+    if cancellation.is_set():
+        return None
+    return artifacts
 
 
 def _execute_in_temporary_process(
