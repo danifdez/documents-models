@@ -314,6 +314,43 @@ class Exchange:
         return raw
 
 
+def _valid_inference_capture(assignment, grant, output_artifacts):
+    return (assignment.get("stepKind") == "inference"
+            and isinstance(grant, dict) and grant.get("schemaVersion") == "inference-capture/1"
+            and grant.get("purpose") == "evaluation"
+            and isinstance(grant.get("authorizedBy"), str)
+            and grant["authorizedBy"] not in {"standalone", "system"}
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", grant["authorizedBy"])
+            and output_artifacts is not None)
+
+
+def _capture_denied_result(assignment):
+    result = {**step_result_base(assignment), "status": "failed",
+              "error": {"code": "INFERENCE_CAPTURE_DENIED", "message": "Inference capture authorization or artifact delivery is unavailable", "retryable": False}}
+    if assignment.get("stepKind") == "inference":
+        result.update(cancelled_inference_fields())
+        result["output"]["outcome"] = {"kind": "failed"}
+        result["inference"]["finishReason"] = "unknown"
+    return result
+
+
+def _capture_delivery(result, capture, output_artifacts):
+    if result.get('stepKind') == 'inference':
+        metadata = capture.metadata()
+        result['usage'] = metadata['usage']
+        result.setdefault('inference', {}).update(metadata['inference'])
+    artifacts_to_upload = capture.artifacts()
+    if artifacts_to_upload and output_artifacts is None:
+        # Direct in-process callers have no artifact delivery channel.
+        result.setdefault('inference', {}).setdefault('warnings', []).append('runtime_evidence_delivery_unavailable')
+    else:
+        uploads, refs = prepare_output_artifacts(artifacts_to_upload)
+        result["artifactRefs"].extend(refs)
+        if uploads:
+            output_artifacts.extend(uploads)
+    return result
+
+
 def capture_assignment(function):
     @wraps(function)
     def wrapped(assignment, artifacts=None, output_artifacts=None):
@@ -326,39 +363,13 @@ def capture_assignment(function):
                 return function(assignment, artifacts, output_artifacts)
             finally:
                 _CAPTURE.reset(token)
-        valid = (assignment.get("stepKind") == "inference"
-                 and isinstance(grant, dict) and grant.get("schemaVersion") == "inference-capture/1"
-                 and grant.get("purpose") == "evaluation"
-                 and isinstance(grant.get("authorizedBy"), str)
-                 and grant["authorizedBy"] not in {"standalone", "system"}
-                 and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", grant["authorizedBy"])
-                 and output_artifacts is not None)
-        if grant is not None and not valid:
-            result = {**step_result_base(assignment), "status": "failed",
-                      "error": {"code": "INFERENCE_CAPTURE_DENIED", "message": "Inference capture authorization or artifact delivery is unavailable", "retryable": False}}
-            if assignment.get("stepKind") == "inference":
-                result.update(cancelled_inference_fields())
-                result["output"]["outcome"] = {"kind": "failed"}
-                result["inference"]["finishReason"] = "unknown"
-            return result
+        if grant is not None and not _valid_inference_capture(assignment, grant, output_artifacts):
+            return _capture_denied_result(assignment)
         capture = Capture(assignment, enabled=grant is not None)
         token = _CAPTURE.set(capture)
         try:
             result = function(assignment, artifacts, output_artifacts)
         finally:
             _CAPTURE.reset(token)
-        if result.get('stepKind') == 'inference':
-            metadata = capture.metadata()
-            result['usage'] = metadata['usage']
-            result.setdefault('inference', {}).update(metadata['inference'])
-        artifacts_to_upload = capture.artifacts()
-        if artifacts_to_upload and output_artifacts is None:
-            # Direct in-process callers have no artifact delivery channel.
-            result.setdefault('inference', {}).setdefault('warnings', []).append('runtime_evidence_delivery_unavailable')
-        else:
-            uploads, refs = prepare_output_artifacts(artifacts_to_upload)
-            result["artifactRefs"].extend(refs)
-            if uploads:
-                output_artifacts.extend(uploads)
-        return result
+        return _capture_delivery(result, capture, output_artifacts)
     return wrapped
