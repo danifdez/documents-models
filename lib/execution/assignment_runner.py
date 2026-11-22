@@ -138,75 +138,85 @@ def _cancelled_result(assignment: dict) -> dict:
 def _assignment_policy_error(assignment: dict) -> tuple[str, str] | None:
     for ref in assignment.get("inputArtifactRefs", []):
         policy = ref.get("dataPolicy") if isinstance(ref, dict) else None
-        if not isinstance(policy, dict):
-            return (
-                "ARTIFACT_POLICY_MISSING",
-                "Input artifact policy is required",
-            )
-        if "execution" not in policy.get("allowedPurposes", []):
-            return (
-                "ARTIFACT_PURPOSE_DENIED",
-                "Input artifact is not authorized for execution",
-            )
-        if "documents-models" not in policy.get("allowedDestinations", []):
-            return (
-                "ARTIFACT_DESTINATION_DENIED",
-                "Input artifact is not authorized for Models",
-            )
-        if policy.get("classification") == "secret":
-            return (
-                "SECRET_INPUT_REJECTED",
-                "Secret content cannot be provided to Models",
-            )
-        if policy.get("classification") not in {
-            "public",
-            "workspace",
-            "personal",
-            "sensitive",
-        }:
-            return (
-                "ARTIFACT_CLASSIFICATION_INVALID",
-                "Input artifact classification is invalid",
-            )
-        if policy.get("retentionClass") not in {
-            "operational",
-            "diagnostic",
-            "evaluation",
-        }:
-            return (
-                "ARTIFACT_RETENTION_INVALID",
-                "Input artifact retention policy is invalid",
-            )
-        if not isinstance(policy.get("sourceRefs"), list):
-            return (
-                "ARTIFACT_PROVENANCE_MISSING",
-                "Input artifact provenance is required",
-            )
-        expires_at = policy.get("expiresAt")
-        if expires_at is None:
-            continue
-        if not isinstance(expires_at, str):
-            return (
-                "ARTIFACT_EXPIRY_INVALID",
-                "Input artifact expiry is invalid",
-            )
-        try:
-            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except ValueError:
-            return (
-                "ARTIFACT_EXPIRY_INVALID",
-                "Input artifact expiry is invalid",
-            )
-        if expiry.tzinfo is None:
-            return (
-                "ARTIFACT_EXPIRY_INVALID",
-                "Input artifact expiry must include a timezone",
-            )
-        if expiry <= datetime.now(timezone.utc):
-            return (
-                "ARTIFACT_EXPIRED",
-                "Input artifact has expired",
-            )
+        error = _artifact_policy_error(policy)
+        if error is not None:
+            return error
+    return None
+
+
+def _artifact_policy_error(policy: object) -> tuple[str, str] | None:
+    if not isinstance(policy, dict):
+        return (
+            "ARTIFACT_POLICY_MISSING",
+            "Input artifact policy is required",
+        )
+    if "execution" not in policy.get("allowedPurposes", []):
+        return (
+            "ARTIFACT_PURPOSE_DENIED",
+            "Input artifact is not authorized for execution",
+        )
+    if "documents-models" not in policy.get("allowedDestinations", []):
+        return (
+            "ARTIFACT_DESTINATION_DENIED",
+            "Input artifact is not authorized for Models",
+        )
+    if policy.get("classification") == "secret":
+        return (
+            "SECRET_INPUT_REJECTED",
+            "Secret content cannot be provided to Models",
+        )
+    if policy.get("classification") not in {
+        "public",
+        "workspace",
+        "personal",
+        "sensitive",
+    }:
+        return (
+            "ARTIFACT_CLASSIFICATION_INVALID",
+            "Input artifact classification is invalid",
+        )
+    if policy.get("retentionClass") not in {
+        "operational",
+        "diagnostic",
+        "evaluation",
+    }:
+        return (
+            "ARTIFACT_RETENTION_INVALID",
+            "Input artifact retention policy is invalid",
+        )
+    if not isinstance(policy.get("sourceRefs"), list):
+        return (
+            "ARTIFACT_PROVENANCE_MISSING",
+            "Input artifact provenance is required",
+        )
+    return _artifact_expiry_error(policy.get("expiresAt"))
+
+
+def _artifact_expiry_error(expires_at: object) -> tuple[str, str] | None:
+    if expires_at is None:
+        return None
+    if not isinstance(expires_at, str):
+        return (
+            "ARTIFACT_EXPIRY_INVALID",
+            "Input artifact expiry is invalid",
+        )
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return (
+            "ARTIFACT_EXPIRY_INVALID",
+            "Input artifact expiry is invalid",
+        )
+    if expiry.tzinfo is None:
+        return (
+            "ARTIFACT_EXPIRY_INVALID",
+            "Input artifact expiry must include a timezone",
+        )
+    if expiry <= datetime.now(timezone.utc):
+        return (
+            "ARTIFACT_EXPIRED",
+            "Input artifact has expired",
+        )
     return None
 
 
