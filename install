@@ -50,7 +50,7 @@ else
   ok "Created config/config.json from defaults"
 
   echo ""
-  printf "${BOLD}${CYAN}── Models configuration ──${NC}\n"
+  printf '%s\n' "${BOLD}${CYAN}── Models configuration ──${NC}"
   printf "${DIM}  Press Enter to accept the default value shown in brackets.${NC}\n"
   echo ""
 
