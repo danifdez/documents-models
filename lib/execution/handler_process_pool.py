@@ -84,70 +84,28 @@ class HandlerProcessPool:
                 raise HandlerProcessFailed(
                     "Could not create handler temporary directory"
                 ) from error
-            slot.connection.send(
-                {
-                    "kind": "execute",
-                    "commandId": command_id,
-                    "assignment": assignment,
-                    "artifacts": artifacts,
-                    "temporaryDirectory": temporary_directory,
-                }
-            )
-            while True:
-                if cancellation.is_set():
-                    self._replace(slot)
-                    released = True
-                    raise HandlerPreempted(
-                        f"Handler for attempt {assignment.get('attemptId')} "
-                        "was preempted"
-                    )
-                if slot.connection.poll(PROCESS_POLL_SECONDS):
-                    try:
-                        response = slot.connection.recv()
-                    except EOFError as error:
-                        self._replace(slot)
-                        released = True
-                        raise HandlerProcessFailed(
-                            "Handler process closed its result channel"
-                        ) from error
-                    if not isinstance(response, dict):
-                        self._replace(slot)
-                        released = True
-                        raise HandlerProcessFailed(
-                            "Handler process returned an invalid envelope"
-                        )
-                    if response.get("commandId") != command_id:
-                        self._replace(slot)
-                        released = True
-                        raise HandlerProcessFailed(
-                            "Handler process returned a mismatched command"
-                        )
-                    if response.get("kind") == "failed":
-                        self._replace(slot)
-                        released = True
-                        raise HandlerProcessFailed(
-                            f"{response.get('errorType')}: "
-                            f"{response.get('message')}"
-                        )
-                    result = response.get("result")
-                    output_artifacts = response.get("outputArtifacts")
-                    if not isinstance(result, dict) or not isinstance(
-                        output_artifacts, list
-                    ):
-                        self._replace(slot)
-                        released = True
-                        raise HandlerProcessFailed(
-                            "Handler process returned an invalid result"
-                        )
-                    self._available.put(slot)
-                    released = True
-                    return result, output_artifacts
-                if not slot.process.is_alive():
-                    self._replace(slot)
-                    released = True
-                    raise HandlerProcessFailed(
-                        "Handler process exited without a result"
-                    )
+            try:
+                slot.connection.send(
+                    {
+                        "kind": "execute",
+                        "commandId": command_id,
+                        "assignment": assignment,
+                        "artifacts": artifacts,
+                        "temporaryDirectory": temporary_directory,
+                    }
+                )
+                result, output_artifacts = self._await_response(
+                    slot,
+                    command_id,
+                    assignment,
+                    cancellation,
+                )
+            except (HandlerProcessFailed, HandlerPreempted):
+                released = True
+                raise
+            self._available.put(slot)
+            released = True
+            return result, output_artifacts
         except (BrokenPipeError, EOFError, OSError) as error:
             if not released:
                 self._replace(slot)
@@ -160,6 +118,67 @@ class HandlerProcessPool:
                 _remove_temporary_directory(temporary_directory)
             if not released:
                 self._available.put(slot)
+
+    def _await_response(
+        self,
+        slot: _HandlerSlot,
+        command_id: str,
+        assignment: dict,
+        cancellation: threading.Event,
+    ) -> tuple[dict, list[dict]]:
+        while True:
+            if cancellation.is_set():
+                self._replace(slot)
+                raise HandlerPreempted(
+                    f"Handler for attempt {assignment.get('attemptId')} "
+                    "was preempted"
+                )
+            if slot.connection.poll(PROCESS_POLL_SECONDS):
+                return self._read_response(slot, command_id)
+            if not slot.process.is_alive():
+                self._replace(slot)
+                raise HandlerProcessFailed(
+                    "Handler process exited without a result"
+                )
+
+    def _read_response(
+        self,
+        slot: _HandlerSlot,
+        command_id: str,
+    ) -> tuple[dict, list[dict]]:
+        try:
+            response = slot.connection.recv()
+        except EOFError as error:
+            self._replace(slot)
+            raise HandlerProcessFailed(
+                "Handler process closed its result channel"
+            ) from error
+        if not isinstance(response, dict):
+            self._replace(slot)
+            raise HandlerProcessFailed(
+                "Handler process returned an invalid envelope"
+            )
+        if response.get("commandId") != command_id:
+            self._replace(slot)
+            raise HandlerProcessFailed(
+                "Handler process returned a mismatched command"
+            )
+        if response.get("kind") == "failed":
+            self._replace(slot)
+            raise HandlerProcessFailed(
+                f"{response.get('errorType')}: "
+                f"{response.get('message')}"
+            )
+        result = response.get("result")
+        output_artifacts = response.get("outputArtifacts")
+        if not isinstance(result, dict) or not isinstance(
+            output_artifacts, list
+        ):
+            self._replace(slot)
+            raise HandlerProcessFailed(
+                "Handler process returned an invalid result"
+            )
+        return result, output_artifacts
 
     def close(self) -> None:
         with self._lock:
