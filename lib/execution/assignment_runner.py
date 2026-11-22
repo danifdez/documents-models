@@ -65,7 +65,7 @@ def run_assignment(
         outbox.store(_cancelled_result(assignment))
         return
     except HandlerProcessFailed as error:
-        logger.error(
+        logger.exception(
             "Handler process failed for attempt %s: %s",
             attempt_id,
             error,
