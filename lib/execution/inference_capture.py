@@ -71,13 +71,7 @@ def engine_properties(data):
                                   ('modelFileType', data.get('model_ftype'), 0)):
         if type(value) is int and minimum <= value <= 2**31 - 1:
             properties[name] = value
-    for source, name in (('chat_template', 'chatTemplateHash'), ('chat_template_tool_use', 'toolTemplateHash')):
-        template = data.get(source)
-        if isinstance(template, str) and 0 < len(template) <= 256 * 1024:
-            try:
-                properties[name] = canonical_sha256(template)
-            except UnicodeError:
-                pass
+    properties.update(_template_hashes(data))
     generation = generation_defaults(data)
     if not properties and generation is None:
         return None
@@ -85,6 +79,19 @@ def engine_properties(data):
     if generation is not None:
         result['generationDefaults'] = generation
     return result
+
+
+def _template_hashes(data):
+    """Hash declared chat templates without retaining their content."""
+    hashes = {}
+    for source, name in (('chat_template', 'chatTemplateHash'), ('chat_template_tool_use', 'toolTemplateHash')):
+        template = data.get(source)
+        if isinstance(template, str) and 0 < len(template) <= MAX_TEMPLATE_BYTES:
+            try:
+                hashes[name] = canonical_sha256(template)
+            except UnicodeError:
+                pass
+    return hashes
 
 
 def response_metadata(response):
