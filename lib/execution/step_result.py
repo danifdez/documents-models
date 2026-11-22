@@ -37,3 +37,10 @@ def cancelled_inference_fields() -> dict:
             "warnings": ["inference_metadata_unavailable_after_cancellation"],
         },
     }
+
+
+def result_for_delivery(result: dict) -> dict:
+    """Supply fields absent from cancelled inference records written by older workers."""
+    if result.get("stepKind") == "inference" and result.get("status") == "cancelled":
+        return {**cancelled_inference_fields(), **result}
+    return result

@@ -23,8 +23,11 @@ DECODE_TIMEOUT = 15
 MAX_PCM_BYTES = 64 * 1024 * 1024
 
 
+_SHA256_PREFIX = 'sha256:'
+
+
 def sha256(body):
-    return 'sha256:' + hashlib.sha256(body).hexdigest()
+    return _SHA256_PREFIX + hashlib.sha256(body).hexdigest()
 
 
 def binding(path):
@@ -58,7 +61,7 @@ def load_runtime(cfg):
     names += [name for name in ['preprocessor_config.json', 'vocabulary.json', 'vocabulary.txt']
               if (directory/name).is_file()]
     bindings = [binding(directory/name) for name in names]
-    files = [{'name':name, 'sha256':'sha256:'+item['sha256'], 'size':item['signature'][2]}
+    files = [{'name':name, 'sha256':_SHA256_PREFIX+item['sha256'], 'size':item['signature'][2]}
              for name, (_, item) in zip(names, bindings)]
     model = WhisperModel(str(directory), device=cfg['device'], compute_type=cfg['compute_type'], local_files_only=True)
     core = model.model
@@ -66,7 +69,7 @@ def load_runtime(cfg):
     for role, obj in [('wrapper', model), ('engine', core)]:
         path, item = binding(sys.modules[type(obj).__module__].__file__)
         bindings.append((path, item))
-        modules.append({'role':role, 'sha256':'sha256:'+item['sha256'], 'size':item['signature'][2]})
+        modules.append({'role':role, 'sha256':_SHA256_PREFIX+item['sha256'], 'size':item['signature'][2]})
     executable = shutil.which('ffmpeg')
     if not executable:
         raise ValueError('Voice decoder is unavailable')
@@ -76,7 +79,7 @@ def load_runtime(cfg):
               'model':{'sha256':canonical_sha256(files), 'files':files},
               'engine':{'name':'faster-whisper', 'packages':{name:version(name) for name in ('faster-whisper','ctranslate2','av')},
                         'modules':modules, 'device':core.device, 'computeType':core.compute_type, 'deviceIndex':list(core.device_index)},
-              'decoder':{'name':'ffmpeg', 'sha256':'sha256:'+decoder_id['sha256'],
+              'decoder':{'name':'ffmpeg', 'sha256':_SHA256_PREFIX+decoder_id['sha256'],
                          'sampleRate':16000, 'channels':1, 'sampleWidth':2},
               'requested':{'device':str(cfg['device']), 'computeType':str(cfg['compute_type'])},
               'codeFingerprint':code_fingerprint(), 'runtimeFingerprint':runtime_fingerprint(),

@@ -123,7 +123,7 @@ class WorkerRuntime:
         )
 
     def collect_completed(self) -> None:
-        for attempt_id, active in list(self.active.items()):
+        for attempt_id, active in tuple(self.active.items()):
             if not active.future.done():
                 continue
             del self.active[attempt_id]
@@ -140,58 +140,62 @@ class WorkerRuntime:
                     )
                 active.cancellation.set()
                 continue
-            if current >= active.next_control_poll:
-                if self._refresh_control(attempt_id, active, current):
-                    continue
+            if current >= active.next_control_poll and self._refresh_control(attempt_id, active, current):
+                continue
             if current < active.next_lease_renewal:
                 continue
-            try:
-                control = self.client.renew_lease(
-                    attempt_id, self.lease_duration_ms
-                )
-            except WorkerAuthenticationError:
-                raise
-            except ProtocolRejectionError as error:
-                if _is_terminal_attempt_rejection(error):
-                    logger.warning(
-                        "Preempting attempt %s after lease rejection %s",
-                        attempt_id,
-                        error.error_code or error.status_code,
-                    )
-                    active.cancellation.set()
-                    continue
-                active.next_lease_renewal = current + 1
-                logger.warning(
-                    "Lease renewal rejected for attempt %s: %s",
-                    attempt_id,
-                    error,
-                )
-                continue
-            except ProtocolTransportError as error:
-                active.next_lease_renewal = current + 1
-                logger.warning(
-                    "Lease renewal failed for attempt %s: %s",
-                    attempt_id,
-                    error,
-                )
-                continue
-            if control.get("cancelled") is True:
-                active.cancellation.set()
-                continue
-            remaining_ms = control.get("leaseRemainingMs")
-            if (
-                isinstance(remaining_ms, (int, float))
-                and not isinstance(remaining_ms, bool)
-                and remaining_ms > 0
-            ):
-                active.lease_expires_at = current + remaining_ms / 1000
-            else:
-                active.lease_expires_at = (
-                    current + self.lease_duration_ms / 1000
-                )
-            active.next_lease_renewal = (
-                current + self.lease_renewal_seconds
+            self._renew_lease(attempt_id, active, current)
+
+
+    def _renew_lease(self, attempt_id: str, active: ActiveAssignment, current: float) -> None:
+        try:
+            control = self.client.renew_lease(
+                attempt_id, self.lease_duration_ms
             )
+        except WorkerAuthenticationError:
+            raise
+        except ProtocolRejectionError as error:
+            if _is_terminal_attempt_rejection(error):
+                logger.warning(
+                    "Preempting attempt %s after lease rejection %s",
+                    attempt_id,
+                    error.error_code or error.status_code,
+                )
+                active.cancellation.set()
+                return
+            active.next_lease_renewal = current + 1
+            logger.warning(
+                "Lease renewal rejected for attempt %s: %s",
+                attempt_id,
+                error,
+            )
+            return
+        except ProtocolTransportError as error:
+            active.next_lease_renewal = current + 1
+            logger.warning(
+                "Lease renewal failed for attempt %s: %s",
+                attempt_id,
+                error,
+            )
+            return
+        if control.get("cancelled") is True:
+            active.cancellation.set()
+            return
+        remaining_ms = control.get("leaseRemainingMs")
+        if (
+            isinstance(remaining_ms, (int, float))
+            and not isinstance(remaining_ms, bool)
+            and remaining_ms > 0
+        ):
+            active.lease_expires_at = current + remaining_ms / 1000
+        else:
+            active.lease_expires_at = (
+                current + self.lease_duration_ms / 1000
+            )
+        active.next_lease_renewal = (
+            current + self.lease_renewal_seconds
+        )
+
 
     def seconds_until_maintenance(self, now: float | None = None) -> float:
         if not self.active:

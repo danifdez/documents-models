@@ -319,7 +319,7 @@ class StepProtocolTest(unittest.TestCase):
             result["inference"]["effectivePromptPackages"],
             [prompt_package_fingerprint()],
         )
-        self.assertEqual(result["usage"]["totalTokens"], None)
+        self.assertIsNone(result["usage"]["totalTokens"])
 
     def test_fingerprints_managed_prompt_resources_deterministically(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -483,6 +483,28 @@ class StepProtocolTest(unittest.TestCase):
             )
             self.assertEqual(client.submitted, [first, second])
             self.assertEqual(outbox.pending_attempt_ids(), [])
+
+    def test_delivers_legacy_cancelled_inference_without_rewriting_the_outbox(self):
+        attempt_id = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"
+        legacy = {"attemptId": attempt_id, "stepKind": "inference", "status": "cancelled"}
+        with tempfile.TemporaryDirectory() as directory:
+            outbox = ResultOutbox(directory)
+            outbox.store(legacy)
+            path = outbox.directory / f"{attempt_id}.json"
+
+            class Client:
+                def submit_result(self, result):
+                    self.result = result
+                    self.stored = json.loads(path.read_text(encoding="utf-8"))["result"]
+                    return {"code": "received"}
+
+            client = Client()
+            outbox.deliver_all(client)
+
+            self.assertEqual(client.stored, legacy)
+            self.assertEqual(client.result["output"]["outcome"]["kind"], "cancelled")
+            self.assertIsNone(client.result["usage"]["totalTokens"])
+            self.assertFalse(path.exists())
 
     def test_closes_result_outbox_after_a_terminal_artifact_ack(self):
         attempt_id = "018f1d8a-54d7-7d63-a1ee-5e9a6adca704"

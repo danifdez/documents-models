@@ -11,7 +11,7 @@ from lib.execution.inference_capture import observe_inference, response_metadata
 
 _provider = None
 _initialized = False
-_execution_ids = ContextVar("documents_execution_ids", default={})
+_execution_ids = ContextVar("documents_execution_ids", default=None)
 _parent = re.compile(r"00-(?!0{32}-)[0-9a-f]{32}-(?!0{16}-)[0-9a-f]{16}-0[01]\Z")
 
 
@@ -37,7 +37,7 @@ def initialize():
         # Spawned handlers initialize before launching ffmpeg or model tools.
         # The exporter retains its private copy, including TLS settings; subprocesses
         # need no OTLP endpoint or credentials.
-        for key in list(os.environ):
+        for key in tuple(os.environ):
             if key.startswith("OTEL_EXPORTER_OTLP"):
                 os.environ.pop(key, None)
 
@@ -141,7 +141,7 @@ def assignment_context(function):
 
 @contextmanager
 def inference_span(payload, operation="chat"):
-    attrs = {**_execution_ids.get(), "gen_ai.operation.name": operation, "gen_ai.provider.name": "llama.cpp"}
+    attrs = {**(_execution_ids.get() or {}), "gen_ai.operation.name": operation, "gen_ai.provider.name": "llama.cpp"}
     model = payload.get("model")
     if isinstance(model, str) and re.fullmatch(r"[\w.:-]{1,120}", model, flags=re.ASCII):
         attrs["gen_ai.request.model"] = model

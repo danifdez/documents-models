@@ -131,8 +131,31 @@ class EngineIdentityTest(unittest.TestCase):
         self.assertEqual(result['status'],'failed')
         evidence=json.loads(base64.b64decode(uploads[0]['bodyBase64']))
         local=evidence['calls'][0]['engine']['localInstance']
-        self.assertEqual(local,{'status':'changed','reason':'binding_invalidated'})
+        self.assertEqual(local, {'status': 'unknown', 'reason': 'instance_not_bound'})
         self.assertEqual(len(self.requests),1)
+
+    def test_ask_falls_back_only_when_chat_is_unavailable(self):
+        from urllib.error import HTTPError
+        from services import llm_service, managed_engine
+
+        client = self.client()
+        unavailable = HTTPError(client.url, 404, "Not Found", {}, None)
+        identity = {"engine": None}
+        with (
+            patch.object(client, "_prepare_request", return_value=(identity, {})),
+            patch.object(llm_service.urllib.request, "urlopen", side_effect=unavailable),
+            patch.object(client, "generate", return_value="legacy answer") as generate,
+        ):
+            self.assertEqual(client.ask("Hello"), "legacy answer")
+            generate.assert_called_once()
+
+        with (
+            patch.object(client, "chat", side_effect=managed_engine.InstanceChanged("Instance changed")),
+            patch.object(client, "generate") as generate,
+        ):
+            with self.assertRaisesRegex(managed_engine.InstanceChanged, "Instance changed"):
+                client.ask("Hello")
+            generate.assert_not_called()
 
     def test_postprocessing_failure_preserves_the_observed_runtime(self):
         result,uploads=self.execute(self.client(),fail=True)

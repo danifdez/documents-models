@@ -119,11 +119,12 @@ class ProtocolClientTest(unittest.TestCase):
                     io.BytesIO(b'{"message":"unauthorized"}'),
                 )
                 with patch("urllib.request.urlopen", side_effect=rejection):
+                    client = self._client(directory)
                     with self.assertRaisesRegex(
                         WorkerAuthenticationError,
                         expected_message,
                     ):
-                        call(self._client(directory))
+                        call(client)
 
     def test_preserves_transport_errors_for_control_and_artifacts(self):
         calls = (
@@ -146,8 +147,9 @@ class ProtocolClientTest(unittest.TestCase):
                 "urllib.request.urlopen",
                 side_effect=urllib.error.URLError("offline"),
             ):
+                client = self._client(directory)
                 with self.assertRaises(ProtocolTransportError) as raised:
-                    call(self._client(directory))
+                    call(client)
                 self.assertEqual(str(raised.exception), expected_message)
 
     def test_preserves_rejections_and_response_validation_for_get(self):
@@ -160,19 +162,21 @@ class ProtocolClientTest(unittest.TestCase):
                 io.BytesIO(b'{"message":"lease_expired"}'),
             )
             with patch("urllib.request.urlopen", side_effect=rejection):
+                client = self._client(directory)
                 with self.assertRaises(ProtocolRejectionError) as raised:
-                    self._client(directory).read_control("attempt-1")
+                    client.read_control("attempt-1")
             self.assertEqual(raised.exception.error_code, "lease_expired")
 
             with patch(
                 "urllib.request.urlopen",
                 return_value=_Response(b"null"),
             ):
+                client = self._client(directory)
                 with self.assertRaisesRegex(
                     ProtocolTransportError,
                     "Backend returned an invalid response",
                 ):
-                    self._client(directory).read_control("attempt-1")
+                    client.read_control("attempt-1")
 
     def test_registration_unauthorized_remains_a_protocol_rejection(self):
         rejection = urllib.error.HTTPError(

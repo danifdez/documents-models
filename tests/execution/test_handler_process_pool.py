@@ -174,11 +174,12 @@ class HandlerProcessPoolTest(unittest.TestCase):
                 "lib.execution.handler_process_pool.tempfile.mkdtemp",
                 side_effect=OSError("no temporary storage"),
             ):
+                cancellation = threading.Event()
                 with self.assertRaisesRegex(
                     HandlerProcessFailed,
                     "Could not create handler temporary directory",
                 ):
-                    pool.execute({}, {}, threading.Event())
+                    pool.execute({}, {}, cancellation)
 
             result, _ = pool.execute({}, {}, threading.Event())
             self.assertIn("pid", result)
@@ -381,12 +382,9 @@ class HandlerProcessPoolTest(unittest.TestCase):
     def test_replaces_a_handler_process_that_crashes(self):
         pool = HandlerProcessPool(1, executor=_process_executor)
         try:
+            cancellation = threading.Event()
             with self.assertRaises(HandlerProcessFailed):
-                pool.execute(
-                    {"mode": "crash"},
-                    {},
-                    threading.Event(),
-                )
+                pool.execute({"mode": "crash"}, {}, cancellation)
 
             recovered, _ = pool.execute(
                 {"mode": "complete"},

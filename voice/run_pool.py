@@ -37,6 +37,35 @@ def _spawn_worker(port: int, env_extra: Optional[dict] = None) -> subprocess.Pop
     )
 
 
+def _signal_workers(processes, signum):
+    for process in processes:
+        if process.poll() is None:
+            try:
+                process.send_signal(signum)
+            except ProcessLookupError:
+                pass
+
+
+def _collect_exited_workers(workers):
+    for port, process in tuple(workers.items()):
+        code = process.poll()
+        if code is not None:
+            logger.warning("Worker on port %d exited with code %d", port, code)
+            del workers[port]
+
+
+def _wait_for_workers(processes):
+    deadline = time.monotonic() + 5
+    for process in processes:
+        remaining = max(0.1, deadline - time.monotonic())
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            logger.warning("Worker pid=%d did not exit; killing", process.pid)
+            process.kill()
+            process.wait()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -61,50 +90,29 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    procs: list[subprocess.Popen] = []
-    ports = [args.base_port + i for i in range(args.workers)]
-    logger.info("Pool size=%d ports=%s", args.workers, ports)
-
-    for port in ports:
-        procs.append(_spawn_worker(port))
-
-    # Forward signals to children.
+    ports = range(args.base_port, args.base_port + args.workers)
+    logger.info("Pool size=%d ports=%s", args.workers, list(ports))
+    workers = {}
     stop_requested = False
 
-    def _forward(signum, _frame):
+    def forward(signum, _frame):
         nonlocal stop_requested
         stop_requested = True
         logger.info("Signal %s received; terminating workers", signum)
-        for p in procs:
-            if p.poll() is None:
-                try:
-                    p.send_signal(signum)
-                except Exception:  # noqa: BLE001
-                    pass
+        _signal_workers(workers.values(), signum)
 
-    signal.signal(signal.SIGTERM, _forward)
-    signal.signal(signal.SIGINT, _forward)
-
-    # Supervision loop: if a worker dies, we log it and continue.
-    # No automatic respawn (Task 07 leaves it as an optional improvement).
+    signal.signal(signal.SIGTERM, forward)
+    signal.signal(signal.SIGINT, forward)
     try:
-        while procs and not stop_requested:
+        for port in ports:
+            if stop_requested:
+                break
+            workers[port] = _spawn_worker(port)
+        while workers and not stop_requested:
             time.sleep(1)
-            for i, p in enumerate(procs):
-                rc = p.poll()
-                if rc is not None:
-                    logger.warning("Worker on port %d exited with code %d", ports[i], rc)
-            procs = [p for p, port in zip(procs, ports) if p.poll() is None]
+            _collect_exited_workers(workers)
     finally:
-        # Orderly wait up to 5s and then kill.
-        deadline = time.time() + 5
-        for p in procs:
-            remaining = max(0.1, deadline - time.time())
-            try:
-                p.wait(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                logger.warning("Worker pid=%d did not exit; killing", p.pid)
-                p.kill()
+        _wait_for_workers(workers.values())
 
     return 0
 

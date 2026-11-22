@@ -8,6 +8,8 @@ configured local or remote endpoint is reused without starting another process.
 """
 
 import atexit
+from collections import Counter
+from pathlib import Path
 import hmac
 import re
 import json
@@ -110,7 +112,7 @@ def is_alive(url: str, timeout: float = 2.0) -> bool:
     try:
         with urllib.request.urlopen(f"{url}/health", timeout=timeout) as resp:
             return resp.getcode() == 200
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+    except OSError:
         return False
 
 
@@ -132,8 +134,7 @@ def props(
                 return {}
             value = json.loads(raw.decode("utf-8"))
             return value if isinstance(value, dict) else {}
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
-            json.JSONDecodeError, UnicodeDecodeError):
+    except (OSError, ValueError):
         return {}
 
 
@@ -157,8 +158,7 @@ def lora_adapters(
             if len(raw) > 1024 * 1024:
                 return []
             loaded = json.loads(raw.decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
-            json.JSONDecodeError, UnicodeDecodeError):
+    except (OSError, ValueError):
         return []
     return loaded if isinstance(loaded, list) else []
 
@@ -224,25 +224,21 @@ def _most_used_model() -> str:
     popular one means the fewest tasks get a model other than the one they asked
     for (they still get an answer — `LLMService` warns and uses what is loaded).
     """
-    counts: Dict[str, int] = {}
-
-    def walk(node: Any) -> None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if key in ("model", "llm_model") and isinstance(value, str) \
-                        and value.endswith(".gguf"):
-                    counts[value] = counts.get(value, 0) + 1
-                else:
-                    walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-
-    walk(get_tasks())
-    if not counts:
-        return ""
+    counts = Counter(_configured_ggufs(get_tasks()))
     # Alphabetical tie-break, so the same config always picks the same model.
-    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    return min(counts, key=lambda model: (-counts[model], model), default="")
+
+
+def _configured_ggufs(node: Any):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("model", "llm_model") and isinstance(value, str) and value.endswith(".gguf"):
+                yield value
+            else:
+                yield from _configured_ggufs(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _configured_ggufs(item)
 
 
 def engine_defaults() -> Dict[str, Any]:
@@ -406,6 +402,21 @@ def _engine_environment() -> dict[str, str]:
     }
 
 
+def _default_engine_log() -> Path:
+    from lib.execution.private_storage import ensure_private_directory
+    from worker.identity import worker_data_dir
+
+    directory = Path(worker_data_dir()) / ".engine"
+    if directory.is_symlink():
+        raise OSError("The inference engine log directory must not be a symlink")
+    ensure_private_directory(directory)
+    return directory / "llama-server.log"
+
+
+def _private_log_descriptor(path, flags):
+    return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+
+
 def _spawn(url: str, task_model_path: str) -> None:
     binary = server_binary()
     if not binary:
@@ -431,20 +442,21 @@ def _spawn(url: str, task_model_path: str) -> None:
 
     cmd = engine_cmd(binary, url, engine)
     startup = managed_engine.prepare(url, binary, engine, cmd)
-    log_path = os.environ.get("LLAMA_SERVER_LOG", "/tmp/llama-server.log")
+    configured_log = os.environ.get("LLAMA_SERVER_LOG")
+    log_path = Path(configured_log) if configured_log else _default_engine_log()
     logger.warning(
         "No engine answering at %s — starting one for this worker. It should be a "
         "documents-dev service (`manage llama start`).", url,
     )
     logger.info("Starting Documents llama-server: %s (log: %s)", " ".join(cmd), log_path)
-    log = open(log_path, "ab")
     global _child
-    # Its own process group, so a Ctrl-C in the worker's terminal doesn't reach
-    # the server before we get to shut it down in order.
-    _child = subprocess.Popen(
-        cmd, stdout=log, stderr=log, start_new_session=True,
-        env=_engine_environment(),
-    )
+    # Keep the service in a separate process group for orderly shutdown.
+    opener = None if configured_log else _private_log_descriptor
+    with open(log_path, "ab", opener=opener) as log:
+        _child = subprocess.Popen(
+            cmd, stdout=log, stderr=log, start_new_session=True,
+            env=_engine_environment(),
+        )
     atexit.register(stop)
     try:
         managed_engine.bind(startup, _child.pid)
@@ -521,8 +533,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     try:
         engine = engine_defaults()
-    except RuntimeError as e:
-        logger.error("%s", e)
+    except RuntimeError:
+        logger.exception("Could not configure the inference engine")
         return 2
     cmd = engine_cmd(binary, url, engine)
     if "--print-cmd" in argv:

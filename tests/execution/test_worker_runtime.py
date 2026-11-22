@@ -199,8 +199,9 @@ class WorkerRuntimeTest(unittest.TestCase):
             ],
         }
 
+        cancellation = threading.Event()
         with self.assertRaisesRegex(ProtocolTransportError, "offline"):
-            run_assignment(client, outbox, assignment, threading.Event())
+            run_assignment(client, outbox, assignment, cancellation)
 
         outbox.store.assert_not_called()
 
@@ -308,7 +309,7 @@ class WorkerRuntimeTest(unittest.TestCase):
         result = outbox.store.call_args.args[0]
         self.assertEqual(result["error"]["code"], "SECRET_INPUT_REJECTED")
         self.assertEqual(result["inference"]["effectiveModel"], "not_executed")
-        self.assertEqual(result["usage"]["totalTokens"], None)
+        self.assertIsNone(result["usage"]["totalTokens"])
 
     def test_leaves_a_crashed_handler_attempt_to_lease_recovery(self):
         client = Mock()

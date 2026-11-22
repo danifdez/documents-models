@@ -12,7 +12,6 @@ import json
 import math
 import logging
 import os
-import re
 import shutil
 import sys
 
@@ -156,6 +155,22 @@ def get_worker_config() -> dict:
     return _load_config().get('worker', {})
 
 
+def _adapter_deployment(entry: dict) -> dict:
+    path = entry.get('path')
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("Invalid LoRA deployment path")
+    try:
+        scale = float(entry.get('scale', 1.0))
+    except (TypeError, ValueError):
+        raise ValueError("Invalid LoRA scale") from None
+    if type(entry.get('scale')) is bool or not math.isfinite(scale):
+        raise ValueError("Invalid LoRA scale")
+    deployment = {'path': path, 'scale': scale}
+    if 'sha256' in entry:
+        deployment['sha256'] = entry['sha256']
+    return deployment
+
+
 def active_deployments() -> dict:
     """Deployed adapters keyed by task, including a declared sha256 when present.
 
@@ -182,18 +197,7 @@ def active_deployments() -> dict:
             raise ValueError("Invalid LoRA deployment entry")
         if not entry.get('enabled', True):
             continue
-        path = entry.get('path')
-        if not isinstance(path, str) or not path.strip():
-            raise ValueError("Invalid LoRA deployment path")
-        try:
-            scale = float(entry.get('scale', 1.0))
-        except (TypeError, ValueError):
-            raise ValueError("Invalid LoRA scale") from None
-        if type(entry.get('scale')) is bool or not math.isfinite(scale):
-            raise ValueError("Invalid LoRA scale")
-        deployment = {'path': path, 'scale': scale}
-        if 'sha256' in entry:
-            deployment['sha256'] = entry['sha256']
+        deployment = _adapter_deployment(entry)
         out[name] = deployment
     return out
 

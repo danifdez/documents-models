@@ -106,7 +106,7 @@ class HandlerProcessPool:
             self._available.put(slot)
             released = True
             return result, output_artifacts
-        except (BrokenPipeError, EOFError, OSError) as error:
+        except (EOFError, OSError) as error:
             if not released:
                 self._replace(slot)
                 released = True
@@ -274,7 +274,7 @@ def _handler_slot_main(
                     "result": result,
                     "outputArtifacts": output_artifacts,
                 }
-            except BaseException as error:
+            except Exception as error:
                 response = {
                     "kind": "failed",
                     "commandId": command_id,
@@ -282,7 +282,7 @@ def _handler_slot_main(
                     "message": str(error),
                 }
             connection.send(response)
-    except (BrokenPipeError, EOFError, OSError):
+    except (EOFError, OSError):
         return
     finally:
         shutdown_telemetry()

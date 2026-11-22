@@ -1,4 +1,3 @@
-import json
 import unittest
 from unittest.mock import patch
 
@@ -66,9 +65,11 @@ class TelemetryBoundaryTest(unittest.TestCase):
         self.assertEqual(self.exporter.get_finished_spans(), ())
 
     def test_exception_message_is_never_recorded(self):
+        error = RuntimeError("private password or document content")
+        trace_span = telemetry.span("test")
         with self.assertRaisesRegex(RuntimeError, "private"):
-            with telemetry.span("test"):
-                raise RuntimeError("private password or document content")
+            with trace_span:
+                raise error
         span = self.exporter.get_finished_spans()[0]
         self.assertEqual(span.status.status_code.name, "ERROR")
         self.assertNotIn("private", span.to_json())

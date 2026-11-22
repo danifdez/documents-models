@@ -252,7 +252,7 @@ class ExecutionProtocolClient:
             if error.code == 401 and authentication_error is not None:
                 raise WorkerAuthenticationError(authentication_error) from error
             raise _rejection(path, error.code, detail) from error
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+        except OSError as error:
             raise ProtocolTransportError(f"{transport_error}: {error}") from error
 
     @staticmethod

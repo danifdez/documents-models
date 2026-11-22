@@ -14,6 +14,9 @@ from lib.execution.file_identity import fingerprint_file, file_signature, stat_s
 from lib.execution.private_storage import write_private_text
 
 
+_PROC = Path('/proc')
+
+
 class InstanceChanged(ValueError):
     pass
 
@@ -39,7 +42,7 @@ def _record_path(url):
 def _process(pid):
     if type(pid) is not int or not 0 < pid < 2**31:
         return None
-    root = Path('/proc') / str(pid)
+    root = _PROC / str(pid)
     try:
         if root.stat().st_uid != os.geteuid():
             return None
@@ -47,7 +50,7 @@ def _process(pid):
         if fields[0] in ('Z', 'X'):
             return None
         return {'pid': pid, 'startTicks': int(fields[19]),
-                'bootId': str(UUID(Path('/proc/sys/kernel/random/boot_id').read_text().strip()))}
+                'bootId': str(UUID((_PROC / 'sys/kernel/random/boot_id').read_text().strip()))}
     except (OSError, ValueError, IndexError):
         return None
 
@@ -98,19 +101,38 @@ def bind(record, pid):
     write_private_text(path, json.dumps({**record, 'process': process}, separators=(',', ':')))
 
 
+def _read_record_body(path):
+    directory = path.parent.lstat()
+    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.geteuid() or directory.st_mode & 0o077:
+        return None
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+    with os.fdopen(os.open(path, flags), 'rb') as file:
+        metadata = os.fstat(file.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077 or metadata.st_nlink != 1:
+            return None
+        body = file.read(16385)
+    if len(body) > 16384:
+        return None
+    return body
+
+
+def _valid_record_file(value):
+    if not re.fullmatch(r'[0-9a-f]{64}', value['sha256']):
+        return False
+    for field in ('path', 'configuredPath'):
+        if not isinstance(value[field], str) or not os.path.isabs(value[field]) or len(value[field]) > 4096 or '\x00' in value[field]:
+            return False
+    for field in ('signature', 'alias'):
+        if len(value[field]) != 5 or any(type(item) is not int or item < 0 for item in value[field]):
+            return False
+    return True
+
+
 def _read_record(url):
     path = _record_path(url)
     try:
-        directory = path.parent.lstat()
-        if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.geteuid() or directory.st_mode & 0o077:
-            return None
-        flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
-        with os.fdopen(os.open(path, flags), 'rb') as file:
-            metadata = os.fstat(file.fileno())
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o077 or metadata.st_nlink != 1:
-                return None
-            body = file.read(16385)
-        if len(body) > 16384:
+        body = _read_record_body(path)
+        if body is None:
             return None
         record = json.loads(body)
         if record['schemaVersion'] != 'managed-engine/1' or record['endpoint'] != _endpoint(url)[0]:
@@ -121,22 +143,15 @@ def _read_record(url):
             return None
         if set(record['files']) != {'executable', 'gguf'}:
             return None
-        for value in record['files'].values():
-            if not re.fullmatch(r'[0-9a-f]{64}', value['sha256']):
-                return None
-            for field in ('path', 'configuredPath'):
-                if not isinstance(value[field], str) or not os.path.isabs(value[field]) or len(value[field]) > 4096 or '\x00' in value[field]:
-                    return None
-            for field in ('signature', 'alias'):
-                if len(value[field]) != 5 or any(type(item) is not int or item < 0 for item in value[field]):
-                    return None
+        if not all(_valid_record_file(value) for value in record['files'].values()):
+            return None
         return record
     except (OSError, ValueError, TypeError, KeyError):
         return None
 
 
 def _owns_listener(pid, port):
-    root = Path('/proc') / str(pid)
+    root = _PROC / str(pid)
     sockets = set()
     for path in (root / 'fd').iterdir():
         try:
@@ -154,7 +169,7 @@ def _owns_listener(pid, port):
 def _maps_gguf(pid, signature):
     device, inode, size = signature[:3]
     # llama.cpp unmaps metadata and offloaded tensor ranges after loading.
-    for line in (Path('/proc') / str(pid) / 'maps').read_text().splitlines():
+    for line in (_PROC / str(pid) / 'maps').read_text().splitlines():
         fields = line.split(maxsplit=5)
         major, minor = (int(value, 16) for value in fields[3].split(':'))
         if os.makedev(major, minor) == device and int(fields[4]) == inode and fields[1].startswith('r'):
@@ -166,6 +181,18 @@ def _maps_gguf(pid, signature):
 
 def _unknown(reason):
     return {'status': 'unknown', 'reason': reason}
+
+
+def _verify_startup_arguments(pid, startup):
+    with (_PROC / str(pid) / 'cmdline').open('rb') as file:
+        argv = file.read(65537)
+    if len(argv) > 65536 or not argv.endswith(b'\x00'):
+        return False
+    observed = startup_configuration([os.fsdecode(item) for item in argv[:-1].split(b'\x00')], {})
+    if (observed['settings'] != startup['settings']
+            or set(observed['omissions']) != set(startup['omissions']) - {'environment_overrides'}):
+        raise InstanceChanged('Managed inference arguments changed; restart the engine')
+    return True
 
 
 def inspect(url, properties):
@@ -180,7 +207,7 @@ def inspect(url, properties):
         pid = process['pid']
         if _process(pid) != process or not _owns_listener(pid, _endpoint(url)[1]):
             return _unknown('instance_not_bound')
-        executable = os.stat(Path('/proc') / str(pid) / 'exe')
+        executable = os.stat(_PROC / str(pid) / 'exe')
         if [executable.st_dev, executable.st_ino] != record['files']['executable']['signature'][:2]:
             return _unknown('executable_not_bound')
         if not _maps_gguf(pid, record['files']['gguf']['signature']):
@@ -189,15 +216,9 @@ def inspect(url, properties):
             _check_file(value)
         if properties.get('model_path') not in {record['files']['gguf']['path'], record['files']['gguf']['configuredPath']}:
             return _unknown('model_declaration_not_bound')
-        with (Path('/proc') / str(pid) / 'cmdline').open('rb') as file:
-            argv = file.read(65537)
-        if len(argv) > 65536 or not argv.endswith(b'\x00'):
-            return _unknown('arguments_unavailable')
-        observed = startup_configuration([os.fsdecode(item) for item in argv[:-1].split(b'\x00')], {})
         startup = record['startupConfiguration']
-        if (observed['settings'] != startup['settings']
-                or set(observed['omissions']) != set(startup['omissions']) - {'environment_overrides'}):
-            raise InstanceChanged('Managed inference arguments changed; restart the engine')
+        if not _verify_startup_arguments(pid, startup):
+            return _unknown('arguments_unavailable')
         if _process(pid) != process:
             return _unknown('instance_not_bound')
     except InstanceChanged:
@@ -216,8 +237,13 @@ def confirm(url, properties, identity):
         return
     try:
         after = inspect(url, properties)
-        if after != before:
-            raise InstanceChanged('Managed inference instance changed during the request')
     except InstanceChanged:
         identity['engine']['localInstance'] = {'status': 'changed', 'reason': 'binding_invalidated'}
         raise
+    if after == before:
+        return
+    if after['status'] == 'unknown':
+        identity['engine']['localInstance'] = after
+        raise InstanceChanged('Managed inference instance could not be verified after the request')
+    identity['engine']['localInstance'] = {'status': 'changed', 'reason': 'binding_invalidated'}
+    raise InstanceChanged('Managed inference instance changed during the request')

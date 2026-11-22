@@ -1,9 +1,7 @@
 import base64
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import io
 import json
-import logging
 import threading
 import unittest
 from unittest.mock import patch
@@ -26,7 +24,7 @@ class InferenceCaptureTest(unittest.TestCase):
         self.override = None
         outer = self
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):
+            def do_POST(self):  # noqa: V105 (called by BaseHTTPRequestHandler)
                 data = self.rfile.read(int(self.headers['Content-Length']))
                 outer.requests.append(data)
                 payload = json.loads(data)
@@ -45,7 +43,8 @@ class InferenceCaptureTest(unittest.TestCase):
                     self.send_header('Location', f'http://127.0.0.1:{outer.server.server_port}/redirect-target')
                 self.end_headers()
                 self.wfile.write(body)
-            def log_message(self, *_): pass
+            def log_message(self, *_):  # noqa: V105 (called by BaseHTTPRequestHandler)
+                pass
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.stack = ExitStack()
@@ -204,7 +203,6 @@ class InferenceCaptureTest(unittest.TestCase):
 
     def test_existing_outbox_stores_private_artifacts_then_removes_them_after_ack(self):
         import stat, tempfile
-        from pathlib import Path
         from unittest.mock import MagicMock
         from lib.execution.result_outbox import ResultOutbox
         result, uploads = self.run_step()

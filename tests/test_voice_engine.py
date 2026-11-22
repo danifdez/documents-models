@@ -1,19 +1,17 @@
 import asyncio
-import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import threading
-import time
 import unittest
 from unittest.mock import patch
 
 import websockets
 from voice import live_worker as live
 from voice import evidence
-from tests.voice_fixtures import make_runtime,wav_bytes,protocol_fixture
+from tests.voice_fixtures import make_runtime,wav_bytes
 
 
 class RuntimeTests(unittest.TestCase):
@@ -54,8 +52,10 @@ class RuntimeTests(unittest.TestCase):
             runtime=make_runtime(directory);paths=[]
             def timeout(args,**kwargs):
                 paths.append(Path(args[-1]));raise subprocess.TimeoutExpired('ffmpeg',15)
-            with patch.object(evidence.subprocess,'run',side_effect=timeout),self.assertRaises(subprocess.TimeoutExpired):
-                evidence.recognize(wav_bytes(),runtime,True)
+            audio = wav_bytes()
+            with patch.object(evidence.subprocess, 'run', side_effect=timeout):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    evidence.recognize(audio, runtime, True)
             self.assertFalse(paths[0].parent.exists());self.assertEqual(runtime.model.calls,[])
 
     def test_playlist_format_is_not_decoded_or_transcribed(self):
@@ -67,7 +67,7 @@ class RuntimeTests(unittest.TestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
+    async def asyncSetUp(self):  # noqa: V105 (unittest lifecycle hook)
         self.temp=tempfile.TemporaryDirectory();self.runtime=make_runtime(self.temp.name)
         self.config={'window_seconds':5,'vad_filter':True}
         self.patches=[patch.object(live,'_loaded',self.runtime),patch.object(live,'_busy',False),
@@ -76,7 +76,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.server=await websockets.serve(live.handle_connection,'127.0.0.1',0,
                                           process_request=live._build_process_request())
         self.url='ws://127.0.0.1:'+str(self.server.sockets[0].getsockname()[1])
-    async def asyncTearDown(self):
+    async def asyncTearDown(self):  # noqa: V105 (unittest lifecycle hook)
         if self.runtime.model.release:self.runtime.model.release.set()
         self.server.close();await self.server.wait_closed()
         for p in reversed(self.patches):p.stop()

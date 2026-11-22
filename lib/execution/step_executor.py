@@ -16,6 +16,18 @@ from lib.telemetry import assignment_context
 logger = logging.getLogger(__name__)
 
 
+def _inference_outcome(value, task_type: str):
+    return (
+        value.value
+        if isinstance(value, InferenceOutcome)
+        else {
+            "kind": "structured_result",
+            "schemaId": f"{task_type}-output/1",
+            "value": value,
+        }
+    )
+
+
 @assignment_context
 @capture_assignment
 def execute_assignment(
@@ -28,28 +40,16 @@ def execute_assignment(
     step_kind = assignment.get("stepKind")
     base = step_result_base(assignment)
     if not isinstance(task_type, str) or not ensure_task_handler(task_type):
-        return {
-            **base,
-            "status": "failed",
-            "error": {
-                "code": "CAPABILITY_UNAVAILABLE",
-                "message": f"No handler for {task_type}",
-                "retryable": False,
-            },
-        }
+        return _failed_result(
+            base, task_type, "CAPABILITY_UNAVAILABLE", f"No handler for {task_type}",
+        )
 
     handler = TASK_HANDLERS[task_type]
     payload = work.get("payload") or {}
     if not isinstance(payload, dict):
-        return {
-            **base,
-            "status": "failed",
-            "error": {
-                "code": "INVALID_ASSIGNMENT",
-                "message": "work.payload must be an object",
-                "retryable": False,
-            },
-        }
+        return _failed_result(
+            base, task_type, "INVALID_ASSIGNMENT", "work.payload must be an object",
+        )
     try:
         handler_payload = effective_payload_from_active_context(
             task_type,
@@ -71,15 +71,7 @@ def execute_assignment(
             output_artifacts.extend(produced_artifacts)
         success_base = {**base, "artifactRefs": artifact_refs}
         if step_kind == "inference":
-            outcome = (
-                value.value
-                if isinstance(value, InferenceOutcome)
-                else {
-                    "kind": "structured_result",
-                    "schemaId": f"{task_type}-output/1",
-                    "value": value,
-                }
-            )
+            outcome = _inference_outcome(value, task_type)
             return {
                 **success_base,
                 "status": "succeeded",
@@ -98,26 +90,21 @@ def execute_assignment(
         }
     except Exception as error:
         logger.exception("Step %s failed", assignment.get("stepId"))
-        failed = {
-            **base,
-            "status": "failed",
-            "error": {
-                "code": "STEP_EXECUTION_FAILED",
-                "message": str(error),
-                "retryable": False,
-            },
-        }
-        if step_kind == "inference":
-            failed.update(
-                {
-                    "output": {
-                        "kind": "inference",
-                        "outcome": {"kind": "failed"},
-                    },
-                    **_inference_metadata(task_type),
-                }
-            )
-        return failed
+        return _failed_result(base, task_type, "STEP_EXECUTION_FAILED", str(error))
+
+
+def _failed_result(base, task_type, code, message):
+    failed = {
+        **base,
+        "status": "failed",
+        "error": {"code": code, "message": message, "retryable": False},
+    }
+    if base["stepKind"] == "inference":
+        failed.update({
+            "output": {"kind": "inference", "outcome": {"kind": "failed"}},
+            **_inference_metadata(task_type if isinstance(task_type, str) else ""),
+        })
+    return failed
 
 
 def _inference_metadata(task_type: str) -> Dict[str, Any]:

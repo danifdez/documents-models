@@ -94,6 +94,29 @@ def _template_hashes(data):
     return hashes
 
 
+def _finish_reason(response):
+    choices = response.get('choices')
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    reason = choice.get('finish_reason')
+    if not isinstance(reason, str) or reason not in {'stop', 'length', 'tool_calls', 'function_call', 'content_filter'}:
+        stop_type = response.get('stop_type')
+        reason = {'eos': 'stop', 'word': 'stop', 'limit': 'length'}.get(stop_type) if isinstance(stop_type, str) else None
+    return reason
+
+
+def _cached_tokens(usage, response):
+    details = usage.get('prompt_tokens_details')
+    cached = _counter(details.get('cached_tokens')) if isinstance(details, dict) else None
+    if cached is None:
+        cached = _counter(response.get('tokens_cached'))
+    return cached
+
+
+def _consistent_value(calls, key):
+    values = {call[key] for call in calls}
+    return next(iter(values)) if len(values) == 1 and None not in values else 'unknown'
+
+
 def response_metadata(response):
     """Project only bounded, body-free engine fields for results and telemetry."""
     response = response if isinstance(response, dict) else {}
@@ -108,16 +131,8 @@ def response_metadata(response):
     total = _counter(usage.get('total_tokens'))
     if total is None and prompt is not None and completion is not None:
         total = _counter(prompt + completion)
-    choices = response.get('choices')
-    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-    reason = choice.get('finish_reason')
-    if not isinstance(reason, str) or reason not in {'stop', 'length', 'tool_calls', 'function_call', 'content_filter'}:
-        stop_type = response.get('stop_type')
-        reason = {'eos': 'stop', 'word': 'stop', 'limit': 'length'}.get(stop_type) if isinstance(stop_type, str) else None
-    details = usage.get('prompt_tokens_details')
-    cached = _counter(details.get('cached_tokens')) if isinstance(details, dict) else None
-    if cached is None:
-        cached = _counter(response.get('tokens_cached'))
+    reason = _finish_reason(response)
+    cached = _cached_tokens(usage, response)
     timing = response.get('timings')
     engine_ms = None
     if isinstance(timing, dict):
@@ -204,7 +219,7 @@ class Capture:
                 if len(canonical_bytes(candidate)) > MAX_TEMPLATE_BYTES:
                     raise ValueError()
                 self.templates = candidate
-            except (ValueError, TypeError, UnicodeError):
+            except (ValueError, TypeError):
                 self.templates_omitted = True
 
     def begin(self, url, data, stream):
@@ -225,21 +240,17 @@ class Capture:
     def metadata(self):
         calls = self.observations
         warnings = []
-        usage = {key: sum(call['usage'][key] for call in calls)
-                 if calls and not self.metadata_truncated and all(call['usage'][key] is not None for call in calls) else None
-                 for key in ('promptTokens', 'completionTokens', 'totalTokens')}
+        usage = self._aggregate_usage(calls)
         if any(value is None for value in usage.values()):
             warnings.append('token_usage_unavailable')
         models = {call['effectiveModel'] for call in calls if call['effectiveModel'] is not None}
         model_known = not self.metadata_truncated and bool(calls) and len(models) == 1 and all(call['effectiveModel'] and not call.get('mixedModel') for call in calls)
         if not model_known:
             warnings.append('served_model_unavailable_or_mixed')
-        reasons = {call['finishReason'] for call in calls}
-        reason = next(iter(reasons)) if len(reasons) == 1 and None not in reasons else 'unknown'
+        reason = _consistent_value(calls, 'finishReason')
         if reason == 'unknown':
             warnings.append('engine_finish_reason_unavailable_or_mixed')
-        caches = {call['cacheOutcome'] for call in calls}
-        cache = next(iter(caches)) if len(caches) == 1 and None not in caches else 'unknown'
+        cache = _consistent_value(calls, 'cacheOutcome')
         requested = {call['requestedModel'] for call in calls if call['requestedModel']}
         if any(call['status'] != 'completed' for call in calls):
             warnings.append('inference_response_incomplete')
@@ -255,6 +266,17 @@ class Capture:
                     'calls': [{key: value for key, value in call.items() if not key.startswith('_')} for call in calls]}
         if len(requested) == 1:
             metadata['requestedModel'] = next(iter(requested))
+        self._apply_identity_metadata(metadata, calls, warnings)
+        return {'usage': usage, 'inference': metadata}
+
+    def _aggregate_usage(self, calls):
+        usage = {}
+        for key in ('promptTokens', 'completionTokens', 'totalTokens'):
+            counts = [call['usage'][key] for call in calls]
+            usage[key] = sum(counts) if counts and not self.metadata_truncated and None not in counts else None
+        return usage
+
+    def _apply_identity_metadata(self, metadata, calls, warnings):
         identities = [call.get('_identity') for call in calls]
         if calls and any(not identity or identity['engine'] is None for identity in identities):
             warnings.append('engine_properties_unavailable')
@@ -266,7 +288,19 @@ class Capture:
                 metadata['effectiveAdapter'] = next(iter(fingerprints))
             else:
                 warnings.append('adapter_identity_unavailable_or_mixed')
-        return {'usage': usage, 'inference': metadata}
+
+    def _attach_templates(self, evidence):
+        references = {properties[name] for call in evidence['calls']
+                      for properties in [((call.get('engine') or {}).get('properties') or {})]
+                      for name in ('chatTemplateHash', 'toolTemplateHash') if name in properties}
+        content = {digest: text for digest, text in self.templates.items() if digest in references}
+        if content:
+            evidence['templates'] = content
+            if len(canonical_bytes(evidence)) > MAX_RUNTIME_BYTES:
+                evidence.pop('templates')
+                self.templates_omitted = True
+        if self.templates_omitted:
+            evidence['templateCaptureOmission'] = 'unavailable_or_size_limit'
 
     def artifacts(self):
         artifacts = [json_output_artifact(KIND, KIND, value) for value in self.calls]
@@ -277,17 +311,7 @@ class Capture:
                                    'engine': (call.get('_identity') or {}).get('engine'),
                                    'adapter': (call.get('_identity') or {}).get('adapter')} for call in self.observations]}
             if self.enabled:
-                references = {properties[name] for call in evidence['calls']
-                              for properties in [((call.get('engine') or {}).get('properties') or {})]
-                              for name in ('chatTemplateHash', 'toolTemplateHash') if name in properties}
-                content = {digest: text for digest, text in self.templates.items() if digest in references}
-                if content:
-                    evidence['templates'] = content
-                    if len(canonical_bytes(evidence)) > MAX_RUNTIME_BYTES:
-                        evidence.pop('templates')
-                        self.templates_omitted = True
-                if self.templates_omitted:
-                    evidence['templateCaptureOmission'] = 'unavailable_or_size_limit'
+                self._attach_templates(evidence)
             artifacts.append(json_output_artifact('inference_runtime', 'inference_runtime', evidence))
         return artifacts
 

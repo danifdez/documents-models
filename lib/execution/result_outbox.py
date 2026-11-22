@@ -13,17 +13,13 @@ from lib.execution.private_storage import (
     secure_existing_file,
     write_private_text,
 )
-from lib.execution.step_result import cancelled_inference_fields
+from lib.execution.step_result import result_for_delivery
 
-ACK_CODES = {
-    "received",
-    "duplicate",
-    "stale_attempt",
-    "result_conflict",
-    "rejected",
-}
-ACCEPTED_ARTIFACT_ACK_CODES = {"received", "duplicate"}
-TERMINAL_ARTIFACT_ACK_CODES = {"stale_attempt", "artifact_conflict"}
+_CONTINUING_ARTIFACT_ACKS = {"received", "duplicate"}
+# The upload and result endpoints use different conflict codes. Only the
+# upload's successful acknowledgements let delivery proceed to submit_result.
+_TERMINAL_ARTIFACT_ACKS = {"stale_attempt", "artifact_conflict"}
+_RESULT_ACKS = _CONTINUING_ARTIFACT_ACKS | {"stale_attempt", "result_conflict", "rejected"}
 logger = logging.getLogger(__name__)
 
 
@@ -76,13 +72,6 @@ class ResultOutbox:
         attempt_id = self._attempt_id(value["result"])
         if path.stem != attempt_id:
             raise RuntimeError("Pending step result identity does not match")
-        result = value["result"]
-        if (
-            result.get("stepKind") == "inference"
-            and result.get("status") == "cancelled"
-        ):
-            for key, field in cancelled_inference_fields().items():
-                result.setdefault(key, field)
         return value
 
     def _deliver(
@@ -95,7 +84,7 @@ class ResultOutbox:
         for artifact in pending["artifacts"]:
             ack = client.upload_artifact(result["attemptId"], artifact)
             code = ack.get("code")
-            if code in TERMINAL_ARTIFACT_ACK_CODES:
+            if code in _TERMINAL_ARTIFACT_ACKS:
                 path.unlink(missing_ok=True)
                 logger.info(
                     "Result %s closed after output artifact ACK %s",
@@ -103,13 +92,13 @@ class ResultOutbox:
                     code,
                 )
                 return
-            if code not in ACCEPTED_ARTIFACT_ACK_CODES:
+            if code not in _CONTINUING_ARTIFACT_ACKS:
                 raise ProtocolTransportError(
                     f"Output artifact rejected: {code}"
                 )
-        ack = client.submit_result(result)
+        ack = client.submit_result(result_for_delivery(result))
         code = ack.get("code")
-        if code not in ACK_CODES:
+        if code not in _RESULT_ACKS:
             raise ProtocolTransportError(f"Unknown result ACK: {code}")
         path.unlink(missing_ok=True)
         logger.info(

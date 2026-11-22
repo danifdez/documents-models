@@ -101,77 +101,138 @@ async def _run_inference(ws, session, blob, chunks, *, is_final):
         raise
 
 
+class _VoiceConnection:
+    def __init__(self, ws, threshold):
+        self.ws = ws
+        self.threshold = threshold
+        self.session = Session()
+        self.receiving = None
+        self.pending = None
+        self.waiting = []
+        self.started = False
+        self.stopping = False
+        self.final_call = False
+
+    def enqueue(self, final):
+        if len(self.waiting) + self.session.calls >= MAX_CALLS:
+            raise ValueError("Voice call limit exceeded")
+        self.waiting.append((len(self.session.buffer), self.session.chunks, final))
+        self.session.bytes_since_last_run = 0
+
+    def accept_audio(self, message):
+        session = self.session
+        if (
+            not self.started or self.stopping
+            or not 0 < len(message) <= 256 * 1024
+            or len(session.buffer) + len(message) > MAX_AUDIO_BYTES
+            or session.chunks >= 4096
+        ):
+            raise ValueError("Voice input limit or state is invalid")
+        session.buffer.extend(message)
+        session.chunks += 1
+        session.bytes_since_last_run += len(message)
+        if session.bytes_since_last_run >= self.threshold:
+            self.enqueue(False)
+
+    async def accept_control(self, message):
+        value = json.loads(message)
+        if not isinstance(value, dict):
+            raise ValueError("Invalid voice control")
+        kind = value.get("type")
+        if kind == "start" and not self.started and set(value) == {"type", "capture"} and type(value["capture"]) is bool:
+            self.session.capture = value["capture"]
+            self.started = True
+            await _evidence(self.ws, self.session, "stream_runtime", get_runtime().evidence)
+            return
+        if self.started and set(value) == {"type"}:
+            if kind == "cancel":
+                self.session.cancelled = True
+                return
+            if kind == "stop" and not self.stopping:
+                self.stopping = True
+                if self.session.buffer:
+                    self.enqueue(True)
+                return
+        raise ValueError("Invalid voice control")
+
+    async def receive(self):
+        try:
+            message = self.receiving.result()
+        except Exception:
+            self.session.cancelled = True
+            return
+        if isinstance(message, bytes):
+            self.accept_audio(message)
+        else:
+            await self.accept_control(message)
+        if not self.session.cancelled:
+            self.receiving = asyncio.create_task(self.ws.recv())
+
+    def launch(self):
+        size, chunks, self.final_call = self.waiting.pop(0)
+        self.pending = asyncio.create_task(_run_inference(
+            self.ws, self.session, bytes(self.session.buffer[:size]), chunks, is_final=self.final_call,
+        ))
+
+    async def send_result(self):
+        text = self.pending.result()
+        self.pending = None
+        if text is not None:
+            await _send_json(self.ws, {"type": "partial", "text": text, "isFinal": self.final_call})
+        return self.final_call
+
+    async def run(self):
+        self.receiving = asyncio.create_task(self.ws.recv())
+        while True:
+            tasks = [task for task in (self.receiving, self.pending) if task is not None]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            if self.receiving in done:
+                await self.receive()
+                if self.session.cancelled:
+                    return
+            if self.pending in done and await self.send_result():
+                return
+            if self.pending is not None:
+                continue
+            if self.waiting:
+                self.launch()
+            elif self.stopping:
+                await _send_json(self.ws, {"type": "partial", "text": "", "isFinal": True})
+                return
+
+    async def drain(self):
+        self.session.cancelled = True
+        if self.receiving:
+            self.receiving.cancel()
+            await asyncio.gather(self.receiving, return_exceptions=True)
+        # Native inference cannot be safely interrupted as a Python thread.
+        # Health stays busy until it drains; the pool must not reassign it early.
+        if self.pending:
+            await asyncio.gather(self.pending, return_exceptions=True)
+        self.session.buffer.clear()
+
+
 async def handle_connection(ws):
     global _busy
     if _busy:
-        await ws.close(code=1013, reason='Voice worker is busy')
+        await ws.close(code=1013, reason="Voice worker is busy")
         return
     cfg = _live_config()
+    threshold = max(1, int(cfg["window_seconds"] * 16000 * 2 // 4))
+    connection = _VoiceConnection(ws, threshold)
     _busy = True
-    session = Session(); pending = None; receiving = None; stopping = False; started = False
-    final_call = False
-    waiting = []
-    threshold = max(1, int(cfg['window_seconds']*16000*2//4))
-    def enqueue(final):
-        if len(waiting) + session.calls >= MAX_CALLS:
-            raise ValueError('Voice call limit exceeded')
-        waiting.append((len(session.buffer), session.chunks, final))
-        session.bytes_since_last_run = 0
-    def launch(snapshot):
-        size, chunks, final = snapshot
-        return asyncio.create_task(_run_inference(ws, session, bytes(session.buffer[:size]), chunks, is_final=final))
     try:
-        receiving = asyncio.create_task(ws.recv())
-        while True:
-            done, _ = await asyncio.wait([task for task in (receiving,pending) if task], return_when=asyncio.FIRST_COMPLETED)
-            if receiving in done:
-                try: message = receiving.result()
-                except Exception:
-                    session.cancelled = True
-                    break
-                if isinstance(message, bytes):
-                    if not started or stopping or not 0 < len(message) <= 256*1024 or len(session.buffer)+len(message)>MAX_AUDIO_BYTES or session.chunks>=4096:
-                        raise ValueError('Voice input limit or state is invalid')
-                    session.buffer.extend(message);session.chunks+=1;session.bytes_since_last_run+=len(message)
-                    if session.bytes_since_last_run >= threshold:
-                        enqueue(False)
-                else:
-                    value = json.loads(message)
-                    if not isinstance(value,dict):raise ValueError('Invalid voice control')
-                    kind = value.get('type')
-                    if kind == 'start' and not started and set(value)=={'type','capture'} and type(value['capture']) is bool:
-                        session.capture=value['capture'];started=True
-                        await _evidence(ws,session,'stream_runtime',get_runtime().evidence)
-                    elif kind == 'cancel' and started and set(value)=={'type'}:
-                        session.cancelled=True
-                        break
-                    elif kind == 'stop' and started and not stopping and set(value)=={'type'}:
-                        stopping=True
-                        if session.buffer:enqueue(True)
-                    else:raise ValueError('Invalid voice control')
-                receiving=asyncio.create_task(ws.recv())
-            if pending in done:
-                text=pending.result();pending=None
-                if text is not None:await _send_json(ws,{'type':'partial','text':text,'isFinal':final_call})
-                if final_call:break
-            if pending is None and waiting:
-                snapshot=waiting.pop(0);final_call=snapshot[2];pending=launch(snapshot)
-            elif pending is None and stopping:
-                await _send_json(ws,{'type':'partial','text':'','isFinal':True});break
+        await connection.run()
     except Exception:
-        session.cancelled=True
-        logger.warning('Voice session failed')
-        try:await _send_json(ws,{'type':'error','message':'Voice processing failed'})
-        except Exception:pass
+        connection.session.cancelled = True
+        logger.warning("Voice session failed")
+        try:
+            await _send_json(ws, {"type": "error", "message": "Voice processing failed"})
+        except Exception:
+            pass
     finally:
-        session.cancelled=True
-        if receiving:
-            receiving.cancel()
-            await asyncio.gather(receiving,return_exceptions=True)
-        # Native inference cannot be safely interrupted as a Python thread.
-        # Health stays busy until it drains; the pool must not reassign it early.
-        if pending:await asyncio.gather(pending,return_exceptions=True)
-        session.buffer.clear();_busy=False
+        await connection.drain()
+        _busy = False
 
 
 def _build_process_request():

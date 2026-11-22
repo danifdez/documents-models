@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-import binascii
 import copy
 import hashlib
 import json
@@ -40,6 +39,9 @@ FORBIDDEN_KEYS = {
 
 class ContractError(Exception):
     pass
+
+
+_STATE_CHANGED_EVENT = "execution.state_changed"
 
 
 def read_json(path: Path):
@@ -109,8 +111,7 @@ def validator_for_schema(schema, schemas):
     )
 
 
-def validate_protocol_fixture(fixture, schemas):
-    records = {}
+def _validate_fixture_records(fixture, schemas, records):
     for record in fixture.get("records", []):
         schema_id = record.get("schemaId")
         schema = schemas.get(schema_id)
@@ -133,22 +134,10 @@ def validate_protocol_fixture(fixture, schemas):
                 else "invalid_contract"
             )
         records[schema_id] = record["instance"]
+    return None
 
-    def schema(name):
-        return records.get(f"https://documents.local/harness/v1/schemas/{name}")
 
-    execution = schema("execution.schema.json")
-    step = schema("step.schema.json")
-    attempt = schema("step-attempt.schema.json")
-    assignment = schema("step-assignment.schema.json")
-    result = schema("step-result.schema.json")
-    ack = schema("step-result-ack.schema.json")
-    tool_invocation = schema("tool-invocation.schema.json")
-    tool_plan = schema("tool-plan.schema.json")
-    tool_result = schema("tool-result.schema.json")
-    if not all((execution, step, attempt, assignment, result, ack)):
-        return "invalid_contract"
-
+def _valid_fixture_identity(execution, step, attempt, assignment, result, ack):
     terminal_attempt = attempt["status"] in {
         "expired",
         "cancelled",
@@ -169,12 +158,12 @@ def validate_protocol_fixture(fixture, schemas):
         or step["executionId"] != execution["executionId"]
         or not (attempt_is_current or attempt_is_fenced)
     ):
-        return "invalid_protocol_identity"
+        return False
 
     for field in ("executionId", "stepId", "operationId", "attemptId"):
         expected = assignment[field]
         if any(record[field] != expected for record in (attempt, result, ack)):
-            return "invalid_protocol_identity"
+            return False
 
     if (
         step["stepId"] != assignment["stepId"]
@@ -182,6 +171,32 @@ def validate_protocol_fixture(fixture, schemas):
         or step["stepKind"] != assignment["stepKind"]
         or result["stepKind"] != assignment["stepKind"]
     ):
+        return False
+    return True
+
+
+def validate_protocol_fixture(fixture, schemas):
+    records = {}
+    error = _validate_fixture_records(fixture, schemas, records)
+    if error:
+        return error
+
+    def schema(name):
+        return records.get(f"https://documents.local/harness/v1/schemas/{name}")
+
+    execution = schema("execution.schema.json")
+    step = schema("step.schema.json")
+    attempt = schema("step-attempt.schema.json")
+    assignment = schema("step-assignment.schema.json")
+    result = schema("step-result.schema.json")
+    ack = schema("step-result-ack.schema.json")
+    tool_invocation = schema("tool-invocation.schema.json")
+    tool_plan = schema("tool-plan.schema.json")
+    tool_result = schema("tool-result.schema.json")
+    if not all((execution, step, attempt, assignment, result, ack)):
+        return "invalid_contract"
+
+    if not _valid_fixture_identity(execution, step, attempt, assignment, result, ack):
         return "invalid_protocol_identity"
 
     tool_records = (tool_invocation, tool_plan, tool_result)
@@ -530,7 +545,7 @@ def validate_event_type_requirements(
 ):
     required_types = {
         "execution.created",
-        "execution.state_changed",
+        _STATE_CHANGED_EVENT,
         "operation.started",
         "operation.finished",
         "message.recorded",
@@ -547,7 +562,7 @@ def validate_event_type_requirements(
 def validate_terminal_events(events):
     terminal = [
         event for event in events
-        if event["eventType"] == "execution.state_changed"
+        if event["eventType"] == _STATE_CHANGED_EVENT
         and event["payload"].get("to") in {"completed", "failed", "cancelled"}
     ]
     lifecycle_events = {
@@ -569,7 +584,7 @@ def terminal_states_by_execution(events):
     return {
         event["executionId"]: event["payload"]["to"]
         for event in events
-        if event["eventType"] == "execution.state_changed"
+        if event["eventType"] == _STATE_CHANGED_EVENT
         and event["payload"].get("to") in {"completed", "failed", "cancelled"}
     }
 

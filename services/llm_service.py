@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class _NoCaptureRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    # urllib invokes this hook when the captured endpoint redirects.
+    def redirect_request(self, *_args, **_kwargs):  # noqa: V105
         return None
 
 
@@ -93,29 +94,7 @@ def _post(url: str, payload: Dict[str, Any], stream: bool = False):
     )
     capture = current_capture()
     exchange = capture.begin(url, data, stream) if capture else None
-    try:
-        resp = (_capture_opener.open(req, timeout=REQUEST_TIMEOUT_S) if exchange
-                else urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S))
-    except urllib.error.HTTPError as e:
-        if exchange:
-            try:
-                exchange.read(e, e.code)
-            except CaptureError:
-                raise
-            except Exception:
-                exchange.finish("transport_error")
-                raise CaptureError("Inference error response transport failed") from None
-            finally:
-                e.close()
-            raise CaptureError(f"Inference request failed (HTTP {e.code})") from None
-        raise RuntimeError(f"llama-server rejected the request: {_error_detail(e)}") from e
-    except Exception as e:
-        if exchange:
-            exchange.finish("transport_error")
-            raise CaptureError("Inference transport failed") from None
-        if isinstance(e, (urllib.error.URLError, TimeoutError, OSError)):
-            raise RuntimeError(f"llama-server at {url} is not answering: {e}") from e
-        raise
+    resp = _open_inference_request(req, exchange)
     if stream:
         return resp
     try:
@@ -140,6 +119,46 @@ def _post(url: str, payload: Dict[str, Any], stream: bool = False):
         raise RuntimeError(f"llama-server returned something that isn't JSON: {text[:200]}") from e
 
 
+class _EndpointUnavailable(CaptureError):
+    """The inference server does not provide the requested endpoint."""
+
+
+def _http_error_type(status):
+    return _EndpointUnavailable if status in (404, 405) else CaptureError
+
+
+def _open_inference_request(req, exchange):
+    try:
+        return (_capture_opener.open(req, timeout=REQUEST_TIMEOUT_S) if exchange
+                else urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S))
+    except urllib.error.HTTPError as e:
+        if exchange:
+            _raise_captured_http_error(exchange, e)
+        if e.code in (404, 405):
+            raise _EndpointUnavailable(f"Inference endpoint unavailable (HTTP {e.code})") from e
+        raise RuntimeError(f"llama-server rejected the request: {_error_detail(e)}") from e
+    except Exception as e:
+        if exchange:
+            exchange.finish("transport_error")
+            raise CaptureError("Inference transport failed") from None
+        if isinstance(e, OSError):
+            raise RuntimeError(f"llama-server at {req.full_url} is not answering: {e}") from e
+        raise
+
+
+def _raise_captured_http_error(exchange, error):
+    try:
+        exchange.read(error, error.code)
+    except CaptureError:
+        raise
+    except Exception:
+        exchange.finish("transport_error")
+        raise CaptureError("Inference error response transport failed") from None
+    finally:
+        error.close()
+    raise _http_error_type(error.code)(f"Inference request failed (HTTP {error.code})") from None
+
+
 def _error_detail(e: urllib.error.HTTPError) -> str:
     """The message llama-server puts in the body of a 4xx, which says what is
     actually wrong (bad grammar, context overflow) far better than the status."""
@@ -151,6 +170,9 @@ def _error_detail(e: urllib.error.HTTPError) -> str:
     if isinstance(error, dict):
         return f"HTTP {e.code}: {error.get('message') or error}"
     return f"HTTP {e.code}: {error or body}"
+
+
+_INVALID_LORA_SCALE = "Invalid LoRA scale"
 
 
 class LLMService:
@@ -172,13 +194,13 @@ class LLMService:
         self.n_ctx = n_ctx
         self.lora_path = lora_path
         if type(lora_scale) is bool:
-            raise ValueError("Invalid LoRA scale")
+            raise ValueError(_INVALID_LORA_SCALE)
         try:
             self.lora_scale = float(lora_scale)
         except (ValueError, TypeError):
-            raise ValueError("Invalid LoRA scale") from None
+            raise ValueError(_INVALID_LORA_SCALE) from None
         if not math.isfinite(self.lora_scale):
-            raise ValueError("Invalid LoRA scale")
+            raise ValueError(_INVALID_LORA_SCALE)
         self.lora_sha256 = lora_sha256
 
         self.sampling = get_inference_sampling(model_path)
@@ -317,7 +339,7 @@ class LLMService:
         try:
             return self.chat([{"role": "user", "content": prompt}],
                              max_tokens=max_tokens, temperature=temperature)
-        except Exception:  # noqa: BLE001 — engine without /v1/chat/completions
+        except _EndpointUnavailable:
             return self.generate(prompt, max_tokens=max_tokens,
                                  temperature=temperature)
 
@@ -407,9 +429,6 @@ class LLMService:
         resp = self._post("/v1/chat/completions", body)
         choices = resp.get("choices") or [{}]
         message = choices[0].get("message") or {}
-        tool_calls = message.get("tool_calls") or []
-        content = message.get("content") or ""
-        has_inline_tool_call = isinstance(content, str) and "<tool_call>" in content
         return message
 
     def chat_stream(
