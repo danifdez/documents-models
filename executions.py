@@ -208,33 +208,32 @@ def main() -> None:
                     next_heartbeat = now + HEARTBEAT_INTERVAL
                 runtime.maintain_leases(now)
 
-                if runtime.available_slots > 0:
-                    wait_seconds = min(
-                        CLAIM_WAIT_TIMEOUT_MS / 1000,
-                        max(0, next_heartbeat - time.monotonic()),
-                        runtime.seconds_until_maintenance(),
-                    )
-                    if runtime.active_attempt_ids:
-                        wait_seconds = min(
-                            wait_seconds,
-                            ACTIVE_CLAIM_WAIT_TIMEOUT_MS / 1000,
-                        )
-                    assignment = client.claim(
-                        CAPABILITIES,
-                        STEP_KINDS,
-                        LEASE_DURATION_MS,
-                        max(0, int(wait_seconds * 1000)),
-                    )
-                    if assignment:
-                        runtime.submit(assignment)
-                        continue
-                else:
+                if runtime.available_slots <= 0:
                     runtime.wait_for_completion(
                         min(
                             max(0, next_heartbeat - time.monotonic()),
                             runtime.seconds_until_maintenance(),
                         )
                     )
+                    continue
+                wait_seconds = min(
+                    CLAIM_WAIT_TIMEOUT_MS / 1000,
+                    max(0, next_heartbeat - time.monotonic()),
+                    runtime.seconds_until_maintenance(),
+                )
+                if runtime.active_attempt_ids:
+                    wait_seconds = min(
+                        wait_seconds,
+                        ACTIVE_CLAIM_WAIT_TIMEOUT_MS / 1000,
+                    )
+                assignment = client.claim(
+                    CAPABILITIES,
+                    STEP_KINDS,
+                    LEASE_DURATION_MS,
+                    max(0, int(wait_seconds * 1000)),
+                )
+                if assignment:
+                    runtime.submit(assignment)
                     continue
             except WorkerAuthenticationError as error:
                 client.reset_credential()
