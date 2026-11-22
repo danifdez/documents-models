@@ -15,6 +15,9 @@ def file_signature(path):
     return stat_signature(value)
 
 
+FILE_CHANGED_MESSAGE = 'Inference file changed during verification'
+
+
 def fingerprint_file(path):
     try:
         initial = file_signature(path)
@@ -22,17 +25,17 @@ def fingerprint_file(path):
         with os.fdopen(os.open(path, flags), 'rb') as file:
             before = stat_signature(os.fstat(file.fileno()))
             if before != initial:
-                raise ValueError('Inference file changed during verification')
+                raise ValueError(FILE_CHANGED_MESSAGE)
             digest = hashlib.sha256()
             remaining = before[2]
             while remaining:
                 chunk = file.read(min(1024 * 1024, remaining))
                 if not chunk:
-                    raise ValueError('Inference file changed during verification')
+                    raise ValueError(FILE_CHANGED_MESSAGE)
                 digest.update(chunk)
                 remaining -= len(chunk)
             if file.read(1) or before != stat_signature(os.fstat(file.fileno())) or before != file_signature(path):
-                raise ValueError('Inference file changed during verification')
+                raise ValueError(FILE_CHANGED_MESSAGE)
     except OSError:
         raise ValueError('Inference file verification failed') from None
     return {'sha256': digest.hexdigest(), 'signature': before}
