@@ -176,7 +176,11 @@ if command -v ffmpeg >/dev/null 2>&1; then
 else
   info "ffmpeg not found — attempting to install..."
   if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get install -y ffmpeg -qq && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo apt install ffmpeg)"
+    if sudo apt-get install -y ffmpeg -qq; then
+      ok "ffmpeg installed"
+    else
+      warn "Failed to install ffmpeg (try: sudo apt install ffmpeg)"
+    fi
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y ffmpeg -q && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo dnf install ffmpeg)"
   elif command -v brew >/dev/null 2>&1; then
