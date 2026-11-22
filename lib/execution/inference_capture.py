@@ -124,8 +124,12 @@ def response_metadata(response):
         values = [timing.get(key) for key in ('prompt_ms', 'predicted_ms')]
         if all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1_000_000_000 for value in values):
             engine_ms = int(sum(values))
+    if cached is None:
+        cache_outcome = None
+    else:
+        cache_outcome = 'hit' if cached > 0 else 'miss'
     return {'effectiveModel': safe_model(response.get('model')), 'finishReason': reason,
-            'cacheOutcome': None if cached is None else ('hit' if cached > 0 else 'miss'),
+            'cacheOutcome': cache_outcome,
             'engineMs': engine_ms,
             'usage': {'promptTokens': prompt, 'completionTokens': completion, 'totalTokens': total}}
 
