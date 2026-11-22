@@ -187,16 +187,15 @@ def validate_protocol_fixture(fixture, schemas):
     tool_records = (tool_invocation, tool_plan, tool_result)
     if any(tool_records) and not all(tool_records):
         return "invalid_contract"
-    if tool_invocation:
-        if (
-            tool_invocation["executionContext"]["executionId"]
-            != execution["executionId"]
-            or tool_invocation["toolCallId"] != tool_plan["toolCallId"]
-            or tool_plan["toolCallId"] != tool_result["toolCallId"]
-            or tool_plan["operationId"] != tool_result["operationId"]
-            or tool_invocation["name"] != tool_plan["toolName"]
-        ):
-            return "invalid_protocol_identity"
+    if tool_invocation and (
+        tool_invocation["executionContext"]["executionId"]
+        != execution["executionId"]
+        or tool_invocation["toolCallId"] != tool_plan["toolCallId"]
+        or tool_plan["toolCallId"] != tool_result["toolCallId"]
+        or tool_plan["operationId"] != tool_result["operationId"]
+        or tool_invocation["name"] != tool_plan["toolName"]
+    ):
+        return "invalid_protocol_identity"
 
     return None
 
