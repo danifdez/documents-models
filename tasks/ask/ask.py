@@ -19,7 +19,6 @@ def ask_question(payload) -> HandlerOutput:
 
     ctx = RAGContext(
         query=payload["question"],
-        project_id=str(payload["projectId"]) if payload.get("projectId") else None,
         limit=task.get("rag_default_limit", rag.get("default_limit", 5)),
         max_tokens=task.get("rag_max_tokens", rag.get("max_tokens", 1000)),
         score_threshold=task.get("rag_score_threshold", rag.get("score_threshold", 0.35)),

@@ -84,14 +84,9 @@ class BrowserInferenceTest(unittest.TestCase):
         )
 
     def test_rejects_non_text_messages(self) -> None:
+        request_json = json.dumps({"messages": [{"role": "tool", "content": "x"}]})
         with self.assertRaisesRegex(ValueError, "supported role"):
-            browser_inference(
-                {
-                    "requestJson": json.dumps(
-                        {"messages": [{"role": "tool", "content": "x"}]}
-                    )
-                }
-            )
+            browser_inference({"requestJson": request_json})
 
 
 if __name__ == "__main__":

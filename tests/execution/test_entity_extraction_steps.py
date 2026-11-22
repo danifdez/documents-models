@@ -35,7 +35,7 @@ class EntityExtractionStepTest(unittest.TestCase):
             model_max_length = 6
 
             def num_special_tokens_to_add(self, pair=False):
-                return 2
+                return 3 if pair else 2
 
             def __call__(self, content, **kwargs):
                 return {"offset_mapping": [(i, i + 1) for i in range(len(content))]}

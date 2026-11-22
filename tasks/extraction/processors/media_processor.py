@@ -9,6 +9,12 @@ from mutagen.wave import WAVE
 from common.media_formats import VIDEO_EXTENSIONS
 
 
+_DURATION_LABEL = 'Duración'
+
+
+_SAMPLE_RATE_LABEL = 'Sample rate'
+
+
 def _format_duration(seconds: float) -> str:
     seconds = int(seconds)
     h = seconds // 3600
@@ -76,6 +82,66 @@ def _build_content(info_rows: list[tuple[str, str]]) -> str:
     return f'<table>{rows_html}</table>'
 
 
+_MP4_EXTENSIONS = (".mp4", ".m4v", ".mov", ".m4a", ".aac")
+
+
+def _read_wave_tags(audio):
+    return _extract_id3_fields(audio) if audio.tags else (None, None, None)
+
+
+def _read_generic_tags(audio):
+    tags = audio.tags or {}
+    title = _get_tag(tags, "title", "TITLE", "TIT2", "\xa9nam")
+    author = _get_tag(tags, "artist", "ARTIST", "TPE1", "\xa9ART")
+    date = _get_tag(tags, "date", "DATE", "year", "YEAR", "TDRC", "\xa9day")
+    return title, author, str(date)[:10] if date else None
+
+
+def _read_media(file_path, extension):
+    if extension in _MP4_EXTENSIONS:
+        return MP4(file_path), _extract_mp4_fields
+    parsers = {
+        ".mp3": (MP3, _extract_id3_fields),
+        ".flac": (FLAC, _extract_vorbis_fields),
+        ".ogg": (OggVorbis, _extract_vorbis_fields),
+        ".wav": (WAVE, _read_wave_tags),
+    }
+    parser, read_tags = parsers.get(extension, (mutagen.File, _read_generic_tags))
+    return parser(file_path), read_tags
+
+
+def _mp4_info(info, extension, is_video):
+    duration = _format_duration(info.length) if hasattr(info, "length") else "—"
+    bitrate = f"{info.bitrate // 1000} kbps" if getattr(info, "bitrate", None) else "—"
+    rows = [("Formato", extension.lstrip(".").upper()), (_DURATION_LABEL, duration), ("Bitrate", bitrate)]
+    if is_video and getattr(info, "video_fps", None):
+        rows.append(("FPS", f"{info.video_fps:.2f}"))
+    return rows
+
+
+def _media_info(audio, extension, is_video):
+    if extension in _MP4_EXTENSIONS:
+        return _mp4_info(audio.info, extension, is_video)
+    if extension in {".mp3", ".flac", ".ogg", ".wav"}:
+        return _fixed_audio_info(audio.info, extension)
+    rows = [("Formato", extension.lstrip(".").upper())]
+    if hasattr(audio, "info") and hasattr(audio.info, "length"):
+        rows.append((_DURATION_LABEL, _format_duration(audio.info.length)))
+    return rows
+
+
+def _fixed_audio_info(info, extension):
+    label = "OGG Vorbis" if extension == ".ogg" else extension.lstrip(".").upper()
+    rows = [("Formato", label), (_DURATION_LABEL, _format_duration(info.length))]
+    if extension in {".mp3", ".ogg"}:
+        bitrate = "—" if extension == ".ogg" and not info.bitrate else f"{info.bitrate // 1000} kbps"
+        rows.append(("Bitrate", bitrate))
+    rows.extend([("Canales", str(info.channels)), (_SAMPLE_RATE_LABEL, f"{info.sample_rate} Hz")])
+    if extension in {".flac", ".wav"}:
+        rows.append(("Bits por muestra", str(info.bits_per_sample)))
+    return rows
+
+
 def process_media(file_path: str) -> dict:
     ext = os.path.splitext(file_path)[1].lower()
     is_video = ext in VIDEO_EXTENSIONS
@@ -86,86 +152,10 @@ def process_media(file_path: str) -> dict:
     info_rows = []
 
     try:
-        if ext == '.mp3':
-            audio = MP3(file_path)
-            title, author, publication_date = _extract_id3_fields(audio)
-            info = audio.info
-            info_rows = [
-                ('Formato', 'MP3'),
-                ('Duración', _format_duration(info.length)),
-                ('Bitrate', f'{info.bitrate // 1000} kbps'),
-                ('Canales', str(info.channels)),
-                ('Sample rate', f'{info.sample_rate} Hz'),
-            ]
-
-        elif ext in ('.mp4', '.m4v', '.mov', '.m4a', '.aac'):
-            audio = MP4(file_path)
-            title, author, publication_date = _extract_mp4_fields(audio)
-            info = audio.info
-            duration = _format_duration(info.length) if hasattr(info, 'length') else '—'
-            bitrate = f'{info.bitrate // 1000} kbps' if hasattr(info, 'bitrate') and info.bitrate else '—'
-            info_rows = [
-                ('Formato', ext.lstrip('.').upper()),
-                ('Duración', duration),
-                ('Bitrate', bitrate),
-            ]
-            if is_video and hasattr(info, 'video_fps') and info.video_fps:
-                info_rows.append(('FPS', f'{info.video_fps:.2f}'))
-
-        elif ext == '.flac':
-            audio = FLAC(file_path)
-            title, author, publication_date = _extract_vorbis_fields(audio)
-            info = audio.info
-            info_rows = [
-                ('Formato', 'FLAC'),
-                ('Duración', _format_duration(info.length)),
-                ('Canales', str(info.channels)),
-                ('Sample rate', f'{info.sample_rate} Hz'),
-                ('Bits por muestra', str(info.bits_per_sample)),
-            ]
-
-        elif ext == '.ogg':
-            audio = OggVorbis(file_path)
-            title, author, publication_date = _extract_vorbis_fields(audio)
-            info = audio.info
-            info_rows = [
-                ('Formato', 'OGG Vorbis'),
-                ('Duración', _format_duration(info.length)),
-                ('Bitrate', f'{info.bitrate // 1000} kbps' if info.bitrate else '—'),
-                ('Canales', str(info.channels)),
-                ('Sample rate', f'{info.sample_rate} Hz'),
-            ]
-
-        elif ext in ('.wav',):
-            audio = WAVE(file_path)
-            info = audio.info
-            if audio.tags:
-                title, author, publication_date = _extract_id3_fields(audio)
-            info_rows = [
-                ('Formato', 'WAV'),
-                ('Duración', _format_duration(info.length)),
-                ('Canales', str(info.channels)),
-                ('Sample rate', f'{info.sample_rate} Hz'),
-                ('Bits por muestra', str(info.bits_per_sample)),
-            ]
-
-        else:
-            # Generic fallback via mutagen.File
-            audio = mutagen.File(file_path)
-            if audio is not None:
-                tags = audio.tags or {}
-                title = _get_tag(tags, 'title', 'TITLE', 'TIT2', '\xa9nam')
-                author = _get_tag(tags, 'artist', 'ARTIST', 'TPE1', '\xa9ART')
-                publication_date = _get_tag(tags, 'date', 'DATE', 'year', 'YEAR', 'TDRC', '\xa9day')
-                if publication_date:
-                    publication_date = str(publication_date)[:10]
-                if hasattr(audio, 'info') and hasattr(audio.info, 'length'):
-                    info_rows = [
-                        ('Formato', ext.lstrip('.').upper()),
-                        ('Duración', _format_duration(audio.info.length)),
-                    ]
-                else:
-                    info_rows = [('Formato', ext.lstrip('.').upper())]
+        audio, tag_reader = _read_media(file_path, ext)
+        if audio is not None:
+            title, author, publication_date = tag_reader(audio)
+            info_rows = _media_info(audio, ext, is_video)
 
     except Exception as e:
         info_rows = [('Error', str(e))]

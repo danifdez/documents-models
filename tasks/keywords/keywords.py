@@ -161,6 +161,17 @@ def keywords_map(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _reduce_candidates(partials, leaf_start, max_words):
+    for partial in partials:
+        if not isinstance(partial, list) or not partial or any(
+            not isinstance(candidate, str) for candidate in partial
+        ):
+            raise ValueError("keywords-reduce partials must be string arrays")
+    if not isinstance(leaf_start, int) or isinstance(leaf_start, bool) or leaf_start < 0:
+        raise ValueError("keywords-reduce leafStartIndex is invalid")
+    return _candidate_statistics(partials, leaf_start, max_words)
+
+
 @execution_handler("keywords-reduce")
 def keywords_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
     partials = payload.get("partials")
@@ -171,28 +182,11 @@ def keywords_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
     max_words = int(config.get("max_words_per_item", 3))
     input_kind = payload.get("inputKind")
     if input_kind == "candidates":
-        candidate_lists: List[List[str]] = []
-        for partial in partials:
-            if not isinstance(partial, list) or not partial or any(
-                not isinstance(candidate, str) for candidate in partial
-            ):
-                raise ValueError("keywords-reduce partials must be string arrays")
-            candidate_lists.append(partial)
-        leaf_start = payload.get("leafStartIndex")
-        if (
-            not isinstance(leaf_start, int)
-            or isinstance(leaf_start, bool)
-            or leaf_start < 0
-        ):
-            raise ValueError("keywords-reduce leafStartIndex is invalid")
-        statistics = _candidate_statistics(candidate_lists, leaf_start, max_words)
+        statistics = _reduce_candidates(partials, payload.get("leafStartIndex"), max_words)
     elif input_kind == "statistics":
-        statistic_lists: List[List[Dict[str, Any]]] = []
-        for partial in partials:
-            if not isinstance(partial, list) or not partial:
-                raise ValueError("keywords-reduce partials must be statistic arrays")
-            statistic_lists.append(partial)
-        statistics = _merge_statistics(statistic_lists, max_words)
+        if any(not isinstance(partial, list) or not partial for partial in partials):
+            raise ValueError("keywords-reduce partials must be statistic arrays")
+        statistics = _merge_statistics(partials, max_words)
     else:
         raise ValueError("keywords-reduce inputKind is invalid")
 

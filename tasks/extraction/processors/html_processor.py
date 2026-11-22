@@ -3,6 +3,8 @@ import re
 from trafilatura import extract
 from bs4 import BeautifulSoup
 
+from .html_cleanup import normalize_html_blocks
+
 logger = logging.getLogger(__name__)
 
 _author_meta_names = ["author", ":author", "byl", "dc.creator"]
@@ -43,6 +45,23 @@ def _convert_custom_table_to_html(soup):
         table.replace_with(new_table)
     return soup
 
+def _clean_extracted_html(extracted):
+    soup = BeautifulSoup(extracted, "html.parser")
+    normalize_html_blocks(soup)
+    if soup.find("html") and (body := soup.find("body")):
+        body_html = "".join(str(content) for content in body.contents)
+        soup = BeautifulSoup(body_html, "html.parser")
+    for tag in soup.find_all(["head", "script", "style"]):
+        tag.decompose()
+    for graphic in soup.find_all("graphic"):
+        graphic.name = "img"
+
+    soup = _convert_custom_table_to_html(soup)
+    html = re.sub(r"\s+", " ", str(soup))
+    html = re.sub(r"<p>\s*</p>", "", html)
+    return re.sub(r"</?(?:html|body)>", "", html).strip()
+
+
 def process_html(html_content) -> dict:
     extracted = extract(
         html_content, output_format="html", favor_precision=True, include_formatting=True, include_links=True, include_images=True, include_tables=True)
@@ -54,79 +73,9 @@ def process_html(html_content) -> dict:
 
     if extracted:
         try:
-            clean_soup = BeautifulSoup(extracted, "html.parser")
-
-            is_fragment = not clean_soup.find('html')
-
-            for tag in clean_soup.find_all(True):
-                if tag.has_attr('style'):
-                    del tag['style']
-                if tag.has_attr('class'):
-                    del tag['class']
-                if tag.has_attr('id'):
-                    del tag['id']
-
-            for div in clean_soup.find_all('div'):
-                if not div.find(['div', 'p', 'ul', 'ol', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
-                    div.name = 'p'
-
-            if is_fragment:
-                top_elements = [
-                    el for el in clean_soup.children if el.name is not None]
-
-                if len(top_elements) == 1 and top_elements[0].name == 'div':
-                    top_elements[0].unwrap()
-
-            else:
-                body = clean_soup.find('body')
-                if body:
-                    body_elements = [
-                        el for el in body.children if el.name is not None]
-
-                    if len(body_elements) == 1 and body_elements[0].name == 'div':
-                        body_elements[0].unwrap()
-
-            divs_to_check = list(clean_soup.find_all('div'))
-            for div in divs_to_check:
-                if not div.attrs and len([c for c in div.children if c.name == 'div']) == 1 and len([c for c in div.children if c.name is not None]) == 1:
-                    div.unwrap()
-
-            for div in clean_soup.find_all('div'):
-                div.unwrap()
-
-            if not is_fragment:
-                body = clean_soup.find('body')
-                if body:
-                    body_html = ''.join(str(content)
-                                        for content in body.contents)
-                    clean_soup = BeautifulSoup(body_html, 'html.parser')
-                else:
-                    html_tag = clean_soup.find('html')
-                    if html_tag:
-                        head = clean_soup.find('head')
-                        if head:
-                            head.decompose()
-
-            for tag in clean_soup.find_all(['head', 'script', 'style']):
-                tag.decompose()
-
-            for graphic in clean_soup.find_all('graphic'):
-                graphic.name = 'img'
-
-            clean_html = str(clean_soup).strip()
-
-            # Convert custom tables to standard HTML tables
-            clean_soup = _convert_custom_table_to_html(clean_soup)
-            clean_html = str(clean_soup)
-
-            clean_html = re.sub(r'\s+', ' ', clean_html)
-            clean_html = re.sub(r'<p>\s*</p>', '', clean_html)
-            clean_html = re.sub(
-                r'<html>|</html>|<body>|</body>', '', clean_html)
-
-            extracted = clean_html.strip()
-        except Exception as e:
-            logger.error("Error processing HTML content: %s", e)
+            extracted = _clean_extracted_html(extracted)
+        except Exception:
+            logger.exception("Error processing HTML content")
 
     if extracted:
         extracted = extracted.strip()

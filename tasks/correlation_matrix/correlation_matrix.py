@@ -4,6 +4,23 @@ from scipy import stats as scipy_stats
 import pandas as pd
 
 
+def _strong_correlations(keys, numeric_fields, matrix, p_values):
+    n = len(keys)
+    strong = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            r = matrix[i][j]
+            if r is not None and abs(r) >= 0.5:
+                strong.append({
+                    "field1": keys[i], "field1Name": numeric_fields[i]["name"],
+                    "field2": keys[j], "field2Name": numeric_fields[j]["name"],
+                    "correlation": r,
+                    "pValue": p_values[i][j],
+                })
+    strong.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+    return strong
+
+
 @execution_handler("correlation-matrix")
 def correlation_matrix(payload) -> dict:
     """NxN Pearson correlation matrix for all (or selected) numeric fields."""
@@ -39,18 +56,7 @@ def correlation_matrix(payload) -> dict:
                 matrix[i][j] = matrix[j][i] = safe_float(r)
                 p_values[i][j] = p_values[j][i] = safe_float(p)
 
-        strong = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                r = matrix[i][j]
-                if r is not None and abs(r) >= 0.5:
-                    strong.append({
-                        "field1": keys[i], "field1Name": numeric_fields[i]["name"],
-                        "field2": keys[j], "field2Name": numeric_fields[j]["name"],
-                        "correlation": r,
-                        "pValue": p_values[i][j],
-                    })
-        strong.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+        strong = _strong_correlations(keys, numeric_fields, matrix, p_values)
 
         fields_info = [{"key": f["key"], "name": f["name"]} for f in numeric_fields]
 

@@ -38,21 +38,7 @@ def _get_translation_pipeline(source: str, target: str):
     return _translation_pipelines[key]
 
 
-@execution_handler("translate-map")
-def translate_map(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise ValueError("Translation map payload must be an object")
-    source = payload.get("sourceLanguage") or "en"
-    target = payload.get("targetLanguage")
-    units = payload.get("units")
-    if not isinstance(target, str) or not target:
-        raise ValueError("Translation map targetLanguage is required")
-    if not isinstance(source, str) or not source:
-        raise ValueError("Translation map sourceLanguage is invalid")
-    if not isinstance(units, list) or not units or len(units) > 32:
-        raise ValueError("Translation map units must contain between 1 and 32 items")
-
-    normalized = [_validate_unit(unit) for unit in units]
+def _translate_units(source, target, normalized):
     non_empty = [
         (index, unit["text"])
         for index, unit in enumerate(normalized)
@@ -72,6 +58,25 @@ def translate_map(payload: Dict[str, Any]) -> Dict[str, Any]:
                 else str(item)
             )
             translated[non_empty[output_index][0]] = value or ""
+    return translated
+
+
+@execution_handler("translate-map")
+def translate_map(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("Translation map payload must be an object")
+    source = payload.get("sourceLanguage") or "en"
+    target = payload.get("targetLanguage")
+    units = payload.get("units")
+    if not isinstance(target, str) or not target:
+        raise ValueError("Translation map targetLanguage is required")
+    if not isinstance(source, str) or not source:
+        raise ValueError("Translation map sourceLanguage is invalid")
+    if not isinstance(units, list) or not units or len(units) > 32:
+        raise ValueError("Translation map units must contain between 1 and 32 items")
+
+    normalized = [_validate_unit(unit) for unit in units]
+    translated = _translate_units(source, target, normalized)
 
     return {
         "translations": [
@@ -86,6 +91,26 @@ def translate_map(payload: Dict[str, Any]) -> Dict[str, Any]:
             for index, unit in enumerate(normalized)
         ]
     }
+
+
+def _translation_response_options(payload):
+    response_mode = payload.get("responseMode")
+    item_count = payload.get("itemCount")
+    target_languages = payload.get("targetLanguages")
+    if response_mode not in ("items", "targets"):
+        raise ValueError("Translation reduce responseMode is invalid")
+    if not isinstance(item_count, int) or item_count < 1:
+        raise ValueError("Translation reduce itemCount is invalid")
+    if not isinstance(target_languages, list) or not target_languages:
+        raise ValueError("Translation reduce targetLanguages is invalid")
+    if any(
+        not isinstance(language, str) or not language
+        for language in target_languages
+    ):
+        raise ValueError("Translation reduce target language is invalid")
+    if len(set(target_languages)) != len(target_languages):
+        raise ValueError("Translation reduce target languages must be unique")
+    return response_mode, item_count, target_languages
 
 
 @execution_handler("translate-reduce")
@@ -105,22 +130,7 @@ def translate_reduce(payload: Dict[str, Any]) -> Dict[str, Any]:
     if payload.get("final") is not True:
         return {"translations": translations}
 
-    response_mode = payload.get("responseMode")
-    item_count = payload.get("itemCount")
-    target_languages = payload.get("targetLanguages")
-    if response_mode not in ("items", "targets"):
-        raise ValueError("Translation reduce responseMode is invalid")
-    if not isinstance(item_count, int) or item_count < 1:
-        raise ValueError("Translation reduce itemCount is invalid")
-    if not isinstance(target_languages, list) or not target_languages:
-        raise ValueError("Translation reduce targetLanguages is invalid")
-    if any(
-        not isinstance(language, str) or not language
-        for language in target_languages
-    ):
-        raise ValueError("Translation reduce target language is invalid")
-    if len(set(target_languages)) != len(target_languages):
-        raise ValueError("Translation reduce target languages must be unique")
+    response_mode, item_count, target_languages = _translation_response_options(payload)
 
     if response_mode == "items":
         if len(target_languages) != 1:

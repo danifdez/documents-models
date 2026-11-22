@@ -24,31 +24,25 @@ _WEB_SOURCE = re.compile(
 )
 
 
-def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": _system_prompt(payload)}
-    ]
-    capsule_message = _continuity_capsule_message(
-        payload.get("continuityCapsule")
-    )
-    if capsule_message:
-        messages.append({"role": "user", "content": capsule_message})
-    memory_message = _active_memory_message(payload.get("activeMemory"))
-    if memory_message:
-        messages.append({"role": "user", "content": memory_message})
-    reduction_message = _active_input_reduction_message(
-        payload.get("activeInputReduction")
-    )
-    if reduction_message:
-        messages.append({"role": "user", "content": reduction_message})
-    for message in payload.get("conversation") or []:
-        if not isinstance(message, dict):
-            continue
-        role = message.get("role")
-        content = message.get("content")
-        if role in {"user", "assistant"} and isinstance(content, str):
-            messages.append({"role": role, "content": content})
+_BROWSER_RUN_TASK = "browser.run_task"
 
+
+def _tool_result_messages(payload, results):
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        tool_call_id = result.get("toolCallId")
+        if not isinstance(tool_call_id, str):
+            continue
+        yield {
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": materialize_tool_result(payload, result),
+        }
+
+
+def _tool_history_messages(payload):
+    messages = []
     for batch in payload.get("toolHistory") or []:
         if not isinstance(batch, dict):
             continue
@@ -76,19 +70,36 @@ def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 ],
             }
         )
-        for result in results:
-            if not isinstance(result, dict):
-                continue
-            tool_call_id = result.get("toolCallId")
-            if not isinstance(tool_call_id, str):
-                continue
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": materialize_tool_result(payload, result),
-                }
-            )
+        messages.extend(_tool_result_messages(payload, results))
+    return messages
+
+
+def _conversation(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": _system_prompt(payload)}
+    ]
+    capsule_message = _continuity_capsule_message(
+        payload.get("continuityCapsule")
+    )
+    if capsule_message:
+        messages.append({"role": "user", "content": capsule_message})
+    memory_message = _active_memory_message(payload.get("activeMemory"))
+    if memory_message:
+        messages.append({"role": "user", "content": memory_message})
+    reduction_message = _active_input_reduction_message(
+        payload.get("activeInputReduction")
+    )
+    if reduction_message:
+        messages.append({"role": "user", "content": reduction_message})
+    for message in payload.get("conversation") or []:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            messages.append({"role": role, "content": content})
+
+    messages.extend(_tool_history_messages(payload))
     return messages
 
 
@@ -219,7 +230,7 @@ def _system_prompt(payload: Dict[str, Any]) -> str:
             for tool in active_capabilities.get("tools", [])
             if isinstance(tool, dict)
         }
-        if "browser.run_task" in available_names:
+        if _BROWSER_RUN_TASK in available_names:
             prompt = (
                 f"{prompt}\n\nIA Browser is connected for this turn. "
                 "browser.run_task is available. For an explicit web task, "
@@ -298,28 +309,27 @@ def _arguments(value: Any) -> Dict[str, Any]:
     raise ValueError("Tool arguments must be a JSON object")
 
 
+def _requested_tool(raw: Any, allowed_tools: set[str]) -> Dict[str, Any]:
+    function = raw.get("function") if isinstance(raw, dict) else None
+    name = function.get("name") if isinstance(function, dict) else None
+    if name not in allowed_tools:
+        raise ValueError(f"Unsupported tool requested: {name}")
+    return {
+        "toolCallId": str(uuid4()),
+        "name": name,
+        "arguments": _arguments(function.get("arguments")),
+    }
+
+
 def _outcome(
     message: Dict[str, Any],
     max_tool_calls: int,
     allowed_tools: set[str],
 ) -> Dict[str, Any]:
     tool_calls = message.get("tool_calls") or []
-    if tool_calls:
-        calls = []
-        for raw in tool_calls[:max_tool_calls]:
-            function = raw.get("function") if isinstance(raw, dict) else None
-            name = function.get("name") if isinstance(function, dict) else None
-            if name not in allowed_tools:
-                raise ValueError(f"Unsupported tool requested: {name}")
-            calls.append(
-                {
-                    "toolCallId": str(uuid4()),
-                    "name": name,
-                    "arguments": _arguments(function.get("arguments")),
-                }
-            )
-        if calls:
-            return {"kind": "tool_requests", "calls": calls}
+    calls = [_requested_tool(raw, allowed_tools) for raw in tool_calls[:max_tool_calls]]
+    if calls:
+        return {"kind": "tool_requests", "calls": calls}
 
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
@@ -352,7 +362,7 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
                     "calls": [
                         {
                             "toolCallId": str(uuid4()),
-                            "name": "browser.run_task",
+                            "name": _BROWSER_RUN_TASK,
                             "arguments": {"goal": browser_goal},
                         }
                     ],
@@ -386,15 +396,21 @@ def chat_inference(payload: Dict[str, Any]) -> InferenceOutcome:
     )
 
 
-def _explicit_browser_goal(payload: Dict[str, Any], tools: List[Dict[str, Any]]) -> str | None:
-    if not any(tool["function"]["name"] == "browser.run_task" for tool in tools):
-        return None
+def _browser_already_requested(payload: Dict[str, Any]) -> bool:
     for batch in payload.get("toolHistory") or []:
         if isinstance(batch, dict) and any(
-            isinstance(call, dict) and call.get("name") == "browser.run_task"
+            isinstance(call, dict) and call.get("name") == _BROWSER_RUN_TASK
             for call in batch.get("calls") or []
         ):
-            return None
+            return True
+    return False
+
+
+def _explicit_browser_goal(payload: Dict[str, Any], tools: List[Dict[str, Any]]) -> str | None:
+    if not any(tool["function"]["name"] == _BROWSER_RUN_TASK for tool in tools):
+        return None
+    if _browser_already_requested(payload):
+        return None
     conversation = payload.get("conversation") or []
     for message in reversed(conversation):
         if not isinstance(message, dict) or message.get("role") != "user":

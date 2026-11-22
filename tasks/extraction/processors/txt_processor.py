@@ -1,6 +1,6 @@
 
 def process_txt(txt_file) -> dict:
-    if isinstance(txt_file, str) and (txt_file.startswith('/') or txt_file.startswith('./')):
+    if isinstance(txt_file, str) and txt_file.startswith(('/', './')):
         with open(txt_file, 'r', encoding='utf-8') as file:
             txt_content = file.read()
     else:

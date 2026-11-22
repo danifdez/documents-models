@@ -45,6 +45,36 @@ def _paragraph_to_html(paragraph) -> str:
     return f'<{tag}>{text_content}</{tag}>'
 
 
+def _list_to_html(node):
+    items = []
+    for list_item in node.childNodes:
+        text = "".join(
+            child.data
+            for paragraph in list_item.childNodes
+            for child in paragraph.childNodes
+            if hasattr(child, "data")
+        ).strip()
+        if text:
+            items.append(f"<li>{text}</li>")
+    return "<ul>" + "".join(items) + "</ul>" if items else ""
+
+
+def _body_to_html(body):
+    # Extract body content
+    html_parts = []
+    for node in body.childNodes:
+        tag_name = node.qname[1] if hasattr(node, 'qname') else ''
+        if tag_name in ('p', 'h'):
+            part = _paragraph_to_html(node)
+            if part:
+                html_parts.append(part)
+        elif tag_name == 'list':
+            part = _list_to_html(node)
+            if part:
+                html_parts.append(part)
+    return html_parts
+
+
 def process_odt(file_path: str) -> dict:
     doc = load(file_path)
 
@@ -57,27 +87,7 @@ def process_odt(file_path: str) -> dict:
     if date_raw:
         publication_date = date_raw[:10] if len(date_raw) >= 10 else date_raw
 
-    # Extract body content
-    html_parts = []
-    body = doc.text
-    for node in body.childNodes:
-        tag_name = node.qname[1] if hasattr(node, 'qname') else ''
-        if tag_name in ('p', 'h'):
-            part = _paragraph_to_html(node)
-            if part:
-                html_parts.append(part)
-        elif tag_name == 'list':
-            items = []
-            for list_item in node.childNodes:
-                item_text = ''
-                for p in list_item.childNodes:
-                    for n in p.childNodes:
-                        if hasattr(n, 'data'):
-                            item_text += n.data
-                if item_text.strip():
-                    items.append(f'<li>{item_text.strip()}</li>')
-            if items:
-                html_parts.append('<ul>' + ''.join(items) + '</ul>')
+    html_parts = _body_to_html(doc.text)
 
     content = ''.join(html_parts)
 

@@ -89,16 +89,35 @@ def _coerce_value(value: Any, ftype: str) -> Any:
         except (TypeError, ValueError):
             return None
     if ftype == "boolean":
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            v = value.strip().lower()
-            if v == "true":
-                return True
-            if v == "false":
-                return False
-        return None
+        return _coerce_boolean(value)
     return value
+
+
+def _coerce_boolean(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return {"true": True, "false": False}.get(value.strip().lower())
+    return None
+
+
+def _cell_metadata(entry, resource_id, model_name, extracted_at, allow_page):
+    quote = entry.get("_quote")
+    page = entry.get("_page") if allow_page else None
+    if isinstance(page, str):
+        try:
+            page = int(page)
+        except ValueError:
+            page = None
+    return {
+        "sourceResourceId": resource_id,
+        "page": page if isinstance(page, int) else None,
+        "quote": quote if isinstance(quote, str) else "",
+        "extractedAt": extracted_at,
+        "model": model_name,
+        "promptVersion": PROMPT_VERSION,
+        "editedByUser": False,
+    }
 
 
 def _build_result(
@@ -124,26 +143,48 @@ def _build_result(
             # Hard rule: no anchor for null values.
             continue
 
-        quote = entry.get("_quote") if isinstance(entry, dict) else ""
-        page = (
-            entry.get("_page") if allow_page and isinstance(entry, dict) else None
+        cell_metadata[key] = _cell_metadata(
+            entry, resource_id, model_name, extracted_at, allow_page,
         )
-        if isinstance(page, str):
-            try:
-                page = int(page)
-            except ValueError:
-                page = None
-        cell_metadata[key] = {
-            "sourceResourceId": resource_id,
-            "page": page if isinstance(page, int) else None,
-            "quote": quote if isinstance(quote, str) else "",
-            "extractedAt": extracted_at,
-            "model": model_name,
-            "promptVersion": PROMPT_VERSION,
-            "editedByUser": False,
-        }
 
     return {"data": data, "cellMetadata": cell_metadata}
+
+
+def _generate_dataset_row(llm, prompt, grammar, *, max_tokens, temperature, seed):
+    try:
+        raw = llm.generate(
+            prompt,
+            max_tokens=max_tokens,
+            grammar=grammar,
+            temperature=temperature,
+            seed=seed,
+        )
+        parsed = parse_json(raw, default=None)
+    except Exception:  # noqa: BLE001
+        logger.exception("dataset.extract-row: LLM generation failed")
+        parsed = None
+
+    if not isinstance(parsed, dict):
+        # One defensive retry without grammar — surfaces grammar bugs without
+        # silently failing entire extractions when the grammar is wrong.
+        try:
+            raw_retry = llm.generate(
+                prompt
+                + "\n\nReturn only the JSON object described above, no markdown.",
+                max_tokens=max_tokens,
+                temperature=temperature,
+                seed=seed,
+            )
+            parsed = parse_json(raw_retry, default=None)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("dataset.extract-row: retry failed")
+            raise RuntimeError(f"LLM retry failed: {exc}") from exc
+        if not isinstance(parsed, dict):
+            logger.error(
+                "dataset.extract-row: retry without grammar returned invalid JSON"
+            )
+            raise RuntimeError("LLM returned invalid JSON after retry")
+    return parsed
 
 
 def _extract_dataset_row(
@@ -202,41 +243,9 @@ def _extract_dataset_row(
 
     llm = get_llm_service(**get_llm_params(task_type, model_name))
 
-    raw = ""
-    parsed: Optional[Dict[str, Any]] = None
-    try:
-        raw = llm.generate(
-            prompt,
-            max_tokens=max_tokens,
-            grammar=grammar,
-            temperature=temperature,
-            seed=seed,
-        )
-        parsed = parse_json(raw, default=None)
-    except Exception:  # noqa: BLE001
-        logger.exception("dataset.extract-row: LLM generation failed")
-        parsed = None
-
-    if not isinstance(parsed, dict):
-        # One defensive retry without grammar — surfaces grammar bugs without
-        # silently failing entire extractions when the grammar is wrong.
-        try:
-            raw_retry = llm.generate(
-                prompt
-                + "\n\nReturn only the JSON object described above, no markdown.",
-                max_tokens=max_tokens,
-                temperature=temperature,
-                seed=seed,
-            )
-            parsed = parse_json(raw_retry, default=None)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("dataset.extract-row: retry failed")
-            raise RuntimeError(f"LLM retry failed: {exc}") from exc
-        if not isinstance(parsed, dict):
-            logger.error(
-                "dataset.extract-row: retry without grammar returned invalid JSON"
-            )
-            raise RuntimeError("LLM returned invalid JSON after retry")
+    parsed = _generate_dataset_row(
+        llm, prompt, grammar, max_tokens=max_tokens, temperature=temperature, seed=seed,
+    )
 
     built = _build_result(
         fields, parsed, resource_id, model_name, allow_page=allow_page

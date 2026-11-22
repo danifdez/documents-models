@@ -15,7 +15,6 @@ class RAGContext:
     """Mutable accumulator passed through pipeline stages."""
     # Input
     query: str
-    project_id: Optional[str] = None
 
     # Config
     limit: int = 5

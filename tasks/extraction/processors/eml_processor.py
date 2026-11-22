@@ -17,50 +17,35 @@ def _decode_header(value: str | None) -> str | None:
     return ''.join(decoded).strip() or None
 
 
+def _decode_part(part) -> str | None:
+    try:
+        return part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", errors="replace")
+    except (AttributeError, LookupError, TypeError, ValueError):
+        return None
+
+
+def _multipart_bodies(message):
+    bodies = {"text/html": None, "text/plain": None}
+    for part in message.walk():
+        content_type = part.get_content_type()
+        if content_type not in bodies or "attachment" in str(part.get("Content-Disposition", "")):
+            continue
+        if bodies[content_type] is None:
+            bodies[content_type] = _decode_part(part)
+    return bodies["text/html"], bodies["text/plain"]
+
+
 def _get_body(msg) -> str:
     """Return HTML body if available, otherwise plain text converted to <p> tags."""
-    html_part = None
-    text_part = None
-
     if msg.is_multipart():
-        for part in msg.walk():
-            ct = part.get_content_type()
-            disp = str(part.get('Content-Disposition', ''))
-            if 'attachment' in disp:
-                continue
-            if ct == 'text/html' and html_part is None:
-                charset = part.get_content_charset() or 'utf-8'
-                try:
-                    html_part = part.get_payload(decode=True).decode(charset, errors='replace')
-                except Exception:
-                    pass
-            elif ct == 'text/plain' and text_part is None:
-                charset = part.get_content_charset() or 'utf-8'
-                try:
-                    text_part = part.get_payload(decode=True).decode(charset, errors='replace')
-                except Exception:
-                    pass
+        html, text = _multipart_bodies(msg)
+    elif msg.get_content_type() == "text/html":
+        html, text = _decode_part(msg), None
     else:
-        ct = msg.get_content_type()
-        charset = msg.get_content_charset() or 'utf-8'
-        try:
-            raw = msg.get_payload(decode=True).decode(charset, errors='replace')
-        except Exception:
-            raw = ''
-        if ct == 'text/html':
-            html_part = raw
-        else:
-            text_part = raw
-
-    if html_part:
-        return html_part
-
-    if text_part:
-        lines = text_part.splitlines()
-        paragraphs = [f'<p>{line}</p>' for line in lines if line.strip()]
-        return ''.join(paragraphs)
-
-    return ''
+        html, text = None, _decode_part(msg)
+    if html:
+        return html
+    return "".join(f"<p>{line}</p>" for line in (text or "").splitlines() if line.strip())
 
 
 def process_eml(file_path: str) -> dict:

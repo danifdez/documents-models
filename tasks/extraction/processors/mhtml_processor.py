@@ -50,7 +50,7 @@ def process_mhtml(content: bytes) -> dict:
     try:
         message = message_from_bytes(content)
     except Exception as exc:
-        logger.error("MHTML content could not be parsed: %s", exc)
+        logger.exception("MHTML content could not be parsed")
         raise ValueError("MHTML content could not be parsed") from exc
 
     html = _root_html(message)

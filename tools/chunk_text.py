@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from services.text import clean_html_text, semantic_chunk_text
+from services.text import clean_html_text, semantic_chunk_text, valid_chunk_limits
 
 MAX_REQUEST_BYTES = 512 * 1024
 
@@ -19,9 +19,10 @@ def main():
         raise ValueError("Invalid text component fields")
     kind, text = data["format"], data["text"]
     target, maximum, overlap = (data[key] for key in ("target_words", "max_words", "overlap_words"))
-    if (kind not in ("html", "text") or not isinstance(text, str)
-            or any(type(number) is not int for number in (target, maximum, overlap))
-            or not 1 <= target <= maximum <= 1000 or not 0 <= overlap <= target // 2):
+    if (
+        kind not in ("html", "text") or not isinstance(text, str)
+        or not valid_chunk_limits(target, maximum, overlap) or maximum > 1000
+    ):
         raise ValueError("Invalid text component options")
     blocks = clean_html_text(text) if kind == "html" else [text]
     chunks = semantic_chunk_text(blocks, target, maximum, overlap)

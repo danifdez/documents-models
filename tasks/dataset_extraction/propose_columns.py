@@ -77,6 +77,37 @@ def _snake_case(value: str) -> str:
 _VALID_TYPES = {"text", "number", "boolean", "date", "select"}
 
 
+def _normalize_options(options) -> List[str]:
+    if not isinstance(options, list):
+        return []
+    return [str(option) for option in options if isinstance(option, (str, int, float))]
+
+
+def _normalize_column(item, key):
+    ftype = str(item.get("type") or "text").lower()
+    if ftype not in _VALID_TYPES:
+        ftype = "text"
+
+    description = str(item.get("description") or "").strip()
+    if not description:
+        # Skip columns the model didn't bother to describe — they would be
+        # useless to the extraction worker downstream.
+        return None
+
+    col: Dict[str, Any] = {
+        "key": key,
+        "name": str(item.get("name") or key).strip()[:200],
+        "type": ftype,
+        "description": description,
+        "required": False,
+    }
+    if ftype == "select":
+        options = _normalize_options(item.get("options"))
+        if options:
+            col["options"] = options
+    return col
+
+
 def _normalize_columns(raw: List[Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     seen_keys: set[str] = set()
@@ -88,29 +119,9 @@ def _normalize_columns(raw: List[Any]) -> List[Dict[str, Any]]:
             continue
         seen_keys.add(key)
 
-        ftype = str(item.get("type") or "text").lower()
-        if ftype not in _VALID_TYPES:
-            ftype = "text"
-
-        description = str(item.get("description") or "").strip()
-        if not description:
-            # Skip columns the model didn't bother to describe — they would be
-            # useless to the extraction worker downstream.
+        col = _normalize_column(item, key)
+        if col is None:
             continue
-
-        col: Dict[str, Any] = {
-            "key": key,
-            "name": str(item.get("name") or key).strip()[:200],
-            "type": ftype,
-            "description": description,
-            "required": False,
-        }
-        if ftype == "select":
-            options_raw = item.get("options")
-            if isinstance(options_raw, list):
-                opts = [str(o) for o in options_raw if isinstance(o, (str, int, float))]
-                if opts:
-                    col["options"] = opts
         out.append(col)
     return out
 

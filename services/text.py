@@ -46,40 +46,29 @@ def _recursive_split(text, max_words):
     if len(words) <= max_words:
         return [text]
 
-    separators = ["\n\n", "\n", ". ", " "]
-    for sep in separators:
-        parts = text.split(sep)
-        if len(parts) > 1:
-            segments = []
-            for i, part in enumerate(parts):
-                part = part.strip()
-                if not part:
-                    continue
-                # Re-add sentence period if we split on ". "
-                if sep == ". " and i < len(parts) - 1:
-                    part += "."
-                # Recursively split segments that are still too large
-                if len(part.split()) > max_words:
-                    segments.extend(_recursive_split(part, max_words))
-                else:
-                    segments.append(part)
-            if len(segments) > 1:
-                return segments
-
-    # Final fallback: hard split by word count
-    chunks = []
-    for i in range(0, len(words), max_words):
-        chunks.append(" ".join(words[i:i + max_words]))
-    return chunks
+    for separator in ("\n\n", "\n", ". ", " "):
+        parts = text.split(separator)
+        if len(parts) <= 1:
+            continue
+        segments = _split_parts(parts, separator, max_words)
+        if len(segments) > 1:
+            return segments
+    return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
 
-def semantic_chunk_text(text_elements, target_words=None, max_words=None, overlap_words=None):
-    """
-    Chunk text using recursive splitting with overlap.
-    Works well for both small and large texts.
-    """
-    if not isinstance(text_elements, (list, tuple)) or any(not isinstance(text, str) for text in text_elements):
-        raise ValueError("Chunk input requires a sequence of text blocks")
+def _split_parts(parts, separator, max_words):
+    segments = []
+    for index, part in enumerate(parts):
+        part = part.strip()
+        if not part:
+            continue
+        if separator == ". " and index < len(parts) - 1:
+            part += "."
+        segments.extend(_recursive_split(part, max_words))
+    return segments
+
+
+def _chunk_limits(target_words, max_words, overlap_words):
     if target_words is None or max_words is None or overlap_words is None:
         from lib.llm.config import get_rag_config
         rag = get_rag_config()
@@ -89,8 +78,27 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
             max_words = rag.get("chunk_max_words", 250)
         if overlap_words is None:
             overlap_words = rag.get("chunk_overlap_words", 30)
+    return target_words, max_words, overlap_words
 
-    if not 1 <= target_words <= max_words or not 0 <= overlap_words < max_words:
+
+def valid_chunk_limits(target, maximum, overlap):
+    return (
+        all(type(limit) is int for limit in (target, maximum, overlap))
+        and 1 <= target <= maximum
+        and 0 <= overlap <= target // 2
+    )
+
+
+def semantic_chunk_text(text_elements, target_words=None, max_words=None, overlap_words=None):
+    """
+    Chunk text using recursive splitting with overlap.
+    Works well for both small and large texts.
+    """
+    if not isinstance(text_elements, (list, tuple)) or any(not isinstance(text, str) for text in text_elements):
+        raise ValueError("Chunk input requires a sequence of text blocks")
+    target_words, max_words, overlap_words = _chunk_limits(target_words, max_words, overlap_words)
+
+    if not valid_chunk_limits(target_words, max_words, overlap_words):
         raise ValueError("Invalid chunk word limits")
 
     if not text_elements:
@@ -110,7 +118,10 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
     # Recursively split into semantic segments
     segments = _recursive_split(full_text, max_words - overlap_words)
 
-    # Accumulate segments into chunks with overlap
+    return _assemble_chunks(segments, target_words, overlap_words)
+
+
+def _assemble_chunks(segments, target_words, overlap_words):
     chunks = []
     current_words = []
     current_count = 0
@@ -123,7 +134,9 @@ def semantic_chunk_text(text_elements, target_words=None, max_words=None, overla
             # Close current chunk
             chunks.append(" ".join(current_words))
             # Start new chunk with overlap from end of previous
-            overlap = current_words[-overlap_words:] if overlap_words else []
+            # Never copy an entire previous chunk, including short paragraphs.
+            overlap_size = min(overlap_words, len(current_words) - 1)
+            overlap = current_words[-overlap_size:] if overlap_size > 0 else []
             current_words = overlap + seg_words
             current_count = len(current_words)
         else:

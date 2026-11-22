@@ -26,6 +26,13 @@ class IndexingTextTests(unittest.TestCase):
             observed.extend(tokens[2:] if observed else tokens)
         self.assertEqual(observed, words)
 
+    def test_overlap_leaves_short_passages_and_respects_the_target(self):
+        chunks = semantic_chunk_text(["first", "one two three four", "five six"], 4, 6, 2)
+
+        self.assertEqual(chunks, ["first", "one two three four", "three four five six"])
+        with self.assertRaisesRegex(ValueError, "Invalid chunk word limits"):
+            semantic_chunk_text(["content"], 4, 6, 3)
+
     def test_rejects_uncooked_string_instead_of_splitting_into_characters(self):
         with self.assertRaisesRegex(ValueError, "sequence of text blocks"):
             semantic_chunk_text("not a block list", 5, 7, 2)

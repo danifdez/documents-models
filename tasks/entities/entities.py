@@ -97,6 +97,45 @@ def _text_windows(content: str, tokenizer: Any, stride: int) -> List[tuple]:
     return windows
 
 
+def _adjust_window_spans(window_result, window_start):
+    for item in window_result:
+        if not isinstance(item, dict):
+            continue
+        adjusted = dict(item)
+        if isinstance(adjusted.get("start"), int):
+            adjusted["start"] += window_start
+        if isinstance(adjusted.get("end"), int):
+            adjusted["end"] += window_start
+        yield adjusted
+
+
+def _classify_windows(safe_content, classifier, stride):
+    parsed: List[Dict[str, Any]] = []
+    with _entity_inference_lock:
+        for window_start, window in _text_windows(
+            safe_content,
+            classifier.tokenizer,
+            stride,
+        ):
+            window_result = classifier(window)
+            if not isinstance(window_result, list):
+                raise ValueError(
+                    "entity-extraction-map classifier returned an invalid result"
+                )
+            parsed.extend(_adjust_window_spans(window_result, window_start))
+    return parsed
+
+
+def _mention_text(item, content, start, end):
+    if (
+        isinstance(start, int)
+        and isinstance(end, int)
+        and 0 <= start < end <= len(content)
+    ):
+        return content[start:end].strip()
+    return str(item.get("word") or "").replace("▁", " ").strip()
+
+
 def _extract_entities(
     content: str,
     config: Dict[str, Any],
@@ -109,28 +148,7 @@ def _extract_entities(
         raise ValueError("entity-extraction-map content exceeds its word budget")
 
     classifier = _get_entity_pipeline(config)
-    parsed: List[Dict[str, Any]] = []
-    with _entity_inference_lock:
-        for window_start, window in _text_windows(
-            safe_content,
-            classifier.tokenizer,
-            int(config.get("stride", 64)),
-        ):
-            window_result = classifier(window)
-            if not isinstance(window_result, list):
-                raise ValueError(
-                    "entity-extraction-map classifier returned an invalid result"
-                )
-            for item in window_result:
-                if not isinstance(item, dict):
-                    continue
-                adjusted = dict(item)
-                if isinstance(adjusted.get("start"), int):
-                    adjusted["start"] += window_start
-                if isinstance(adjusted.get("end"), int):
-                    adjusted["end"] += window_start
-                parsed.append(adjusted)
-
+    parsed = _classify_windows(safe_content, classifier, int(config.get("stride", 64)))
     ignored = {
         str(entity_type).strip().upper()
         for entity_type in config.get("ignored_entity_types", [])
@@ -138,8 +156,6 @@ def _extract_entities(
     result: List[Dict[str, str]] = []
     seen_spans = set()
     for item in parsed:
-        if not isinstance(item, dict):
-            continue
         model_label = str(
             item.get("entity_group") or item.get("entity") or ""
         ).strip().upper()
@@ -149,20 +165,14 @@ def _extract_entities(
 
         start = item.get("start")
         end = item.get("end")
-        if (
-            isinstance(start, int)
-            and isinstance(end, int)
-            and 0 <= start < end <= len(safe_content)
-        ):
-            word = safe_content[start:end].strip()
-        else:
-            word = str(item.get("word") or "").replace("▁", " ").strip()
+        word = _mention_text(item, safe_content, start, end)
         if not word:
             continue
         span_key = (start, end, entity)
-        if isinstance(start, int) and isinstance(end, int):
-            if span_key in seen_spans:
-                continue
+        has_offsets = isinstance(start, int) and isinstance(end, int)
+        if has_offsets and span_key in seen_spans:
+            continue
+        if has_offsets:
             seen_spans.add(span_key)
         result.append({"word": word, "entity": entity})
     max_entities = int(config.get("max_entities", 200))

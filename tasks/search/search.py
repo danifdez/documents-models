@@ -9,7 +9,6 @@ from common.vector_contract import load_vector_candidates
 def search_snippets(payload) -> dict:
     ctx = RAGContext(
         query=payload["query"],
-        project_id=str(payload["projectId"]) if payload.get("projectId") else None,
         limit=payload["limit"],
         score_threshold=payload.get("score_threshold"),
         candidates=load_vector_candidates(payload),

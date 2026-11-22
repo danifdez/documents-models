@@ -1,18 +1,47 @@
 import logging
 import re
-from docling.document_converter import DocumentConverter, InputFormat, PdfFormatOption, StandardPdfPipeline
+from docling.datamodel.pipeline_options import ThreadedPdfPipelineOptions
+from docling.document_converter import DocumentConverter, InputFormat, PdfFormatOption
 from bs4 import BeautifulSoup
+
+from .html_cleanup import normalize_html_blocks
 
 logger = logging.getLogger(__name__)
 
 
-def process_with_docling(file) -> dict:
-    pipeline_options = StandardPdfPipeline.get_default_options()
-    pipeline_options.do_ocr = False
-    pipeline_options.generate_picture_images = True
-    pipeline_options.images_scale = 2.0
-    pipeline_options.do_formula_enrichment = True
+def _replace_math_elements(soup, body):
+    for math_element in body.find_all("math"):
+        annotation = math_element.find("annotation", attrs={"encoding": "TeX"})
+        latex = (annotation.get_text() if annotation else "").strip()
+        if latex:
+            span = soup.new_tag("span", attrs={"data-formula": latex})
+            span.string = latex
+        else:
+            span = soup.new_tag("span", attrs={"data-formula-error": "true"})
+            span.string = "[Formula not extracted]"
+        math_element.replace_with(span)
 
+
+def _clean_document_body(soup):
+    body = soup.body
+    if not body:
+        return ""
+    _replace_math_elements(soup, body)
+    normalize_html_blocks(body, ("a",))
+    for tag in body.find_all(["script", "style"]):
+        tag.decompose()
+
+    html = re.sub(r"\s+", " ", body.decode_contents().strip())
+    return re.sub(r"<p>\s*</p>", "", html).strip()
+
+
+def process_with_docling(file) -> dict:
+    pipeline_options = ThreadedPdfPipelineOptions(
+        do_ocr=False,
+        generate_picture_images=True,
+        images_scale=2.0,
+        do_formula_enrichment=True,
+    )
     pdf_format_option = PdfFormatOption(pipeline_options=pipeline_options)
 
     format_options = {InputFormat.PDF: pdf_format_option}
@@ -27,57 +56,10 @@ def process_with_docling(file) -> dict:
     parsed_html = BeautifulSoup(html_content, "html.parser")
 
     try:
-        body = parsed_html.body
-        if body:
-            for math_el in body.find_all('math'):
-                annotation = math_el.find('annotation', attrs={'encoding': 'TeX'})
-                latex = (annotation.get_text() if annotation else '').strip()
-                if latex:
-                    span = parsed_html.new_tag('span', attrs={'data-formula': latex})
-                    span.string = latex
-                else:
-                    span = parsed_html.new_tag('span', attrs={'data-formula-error': 'true'})
-                    span.string = '[Formula not extracted]'
-                math_el.replace_with(span)
-
-            for tag in body.find_all(True):
-                if tag.has_attr('style'):
-                    del tag['style']
-                if tag.has_attr('class'):
-                    del tag['class']
-                if tag.has_attr('id'):
-                    del tag['id']
-
-            for div in body.find_all('div'):
-                if not div.find(['div', 'p', 'ul', 'ol', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a']):
-                    div.name = 'p'
-
-            body_elements = [el for el in body.children if el.name is not None]
-            if len(body_elements) == 1 and body_elements[0].name == 'div':
-                body_elements[0].unwrap()
-
-            divs_to_check = list(body.find_all('div'))
-            for div in divs_to_check:
-                if not div.attrs and len([c for c in div.children if c.name == 'div']) == 1 and len([c for c in div.children if c.name is not None]) == 1:
-                    div.unwrap()
-
-            for div in body.find_all('div'):
-                div.unwrap()
-
-            for tag in body.find_all(['script', 'style']):
-                tag.decompose()
-
-            clean_html = body.decode_contents().strip()
-            clean_html = re.sub(r'\s+', ' ', clean_html)
-            clean_html = re.sub(r'<p>\s*</p>', '', clean_html)
-
-            processed_content = clean_html.strip()
-        else:
-            processed_content = ""
-    except Exception as e:
-        logger.error("Error processing document content: %s", e)
-        processed_content = str(
-            parsed_html.body.decode_contents() if parsed_html.body else "")
+        processed_content = _clean_document_body(parsed_html)
+    except Exception:
+        logger.exception("Error processing document content")
+        processed_content = parsed_html.body.decode_contents() if parsed_html.body else ""
 
     result_dict = {"content": processed_content}
     if page_count is not None:

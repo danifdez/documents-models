@@ -83,12 +83,9 @@ class VectorContractTest(unittest.TestCase):
         self.assertEqual(points[0]["payload"]["source_id"], "doc_7")
 
     def test_rejects_mismatched_chunk_and_embedding_counts(self):
+        embeddings = [_Embedding(embedding(1.0))]
         with self.assertRaisesRegex(ValueError, "counts must match"):
-            vector_points_for_chunks(
-                "doc_7",
-                ["First", "Second"],
-                [_Embedding(embedding(1.0))],
-            )
+            vector_points_for_chunks("doc_7", ["First", "Second"], embeddings)
 
     def test_rejects_missing_candidates_artifact(self):
         with self.assertRaisesRegex(ValueError, "artifact is required"):

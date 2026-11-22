@@ -80,6 +80,32 @@ def _browser_page_content(page: Dict[str, Any]) -> str:
     return message
 
 
+def _browser_select_content(interaction, line: str) -> str | None:
+    options = interaction.get("options")
+    options_truncated = interaction.get("optionsTruncated")
+    if not isinstance(options, list) or not isinstance(options_truncated, bool):
+        return None
+    rendered = []
+    for option in options[:30]:
+        if not isinstance(option, dict):
+            continue
+        option_value = option.get("value")
+        option_label = option.get("label")
+        if (
+            isinstance(option_value, str)
+            and option_value
+            and isinstance(option_label, str)
+            and option_label
+        ):
+            rendered.append(f"{option_label[:120]} = {option_value[:120]}")
+    if not rendered:
+        return None
+    line += "; options: " + " | ".join(rendered)
+    if options_truncated:
+        line += " | (more options not shown)"
+    return line
+
+
 def _browser_control_content(interaction: Any) -> str | None:
     if not isinstance(interaction, dict):
         return None
@@ -112,26 +138,4 @@ def _browser_control_content(interaction: Any) -> str | None:
         line += f" ({control_type}; current value: {value[:60] or 'empty'})"
     if control_type != "select":
         return line
-    options = interaction.get("options")
-    options_truncated = interaction.get("optionsTruncated")
-    if not isinstance(options, list) or not isinstance(options_truncated, bool):
-        return None
-    rendered = []
-    for option in options[:30]:
-        if not isinstance(option, dict):
-            continue
-        option_value = option.get("value")
-        option_label = option.get("label")
-        if (
-            isinstance(option_value, str)
-            and option_value
-            and isinstance(option_label, str)
-            and option_label
-        ):
-            rendered.append(f"{option_label[:120]} = {option_value[:120]}")
-    if not rendered:
-        return None
-    line += "; options: " + " | ".join(rendered)
-    if options_truncated:
-        line += " | (more options not shown)"
-    return line
+    return _browser_select_content(interaction, line)

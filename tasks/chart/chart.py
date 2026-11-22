@@ -3,6 +3,38 @@ from common.dataset import load_dataset, safe_float, apply_filters, dataset_labe
 import pandas as pd
 
 
+def _scatter(df, x_def, y_def, x_field, y_field, dataset_id):
+    if not y_field or y_field not in df.columns:
+        raise ValueError(
+            "Scatter chart requires both X and Y numeric fields"
+        )
+
+    sub = df[[x_field, y_field]].copy()
+    sub[x_field] = pd.to_numeric(sub[x_field], errors="coerce")
+    sub[y_field] = pd.to_numeric(sub[y_field], errors="coerce")
+    sub = sub.dropna()
+
+    if len(sub) == 0:
+        raise ValueError("No valid numeric data points")
+
+    points = [{"x": safe_float(row[x_field]), "y": safe_float(row[y_field])} for _, row in sub.iterrows()]
+
+    return {
+        "chartType": "scatter",
+        "chartData": {"points": points},
+        "stats": {"totalPoints": len(points)},
+        "title": f"{x_def['name']} vs {y_def['name']}",
+        "xLabel": x_def["name"],
+        "yLabel": y_def["name"],
+        "tableData": {
+            "columns": [x_def["name"], y_def["name"]],
+            "rows": [[p["x"], p["y"]] for p in points],
+        },
+        "operation": "chart",
+        "datasetId": dataset_id,
+    }
+
+
 @execution_handler("chart")
 def chart(payload) -> dict:
     """Generate chart data for a custom visualization."""
@@ -29,37 +61,8 @@ def chart(payload) -> dict:
 
         y_def = next((f for f in schema if f["key"] == y_field), None) if y_field else None
 
-        # Scatter: return raw X/Y points
         if chart_type == "scatter":
-            if not y_field or y_field not in df.columns:
-                raise ValueError(
-                    "Scatter chart requires both X and Y numeric fields"
-                )
-
-            sub = df[[x_field, y_field]].copy()
-            sub[x_field] = pd.to_numeric(sub[x_field], errors="coerce")
-            sub[y_field] = pd.to_numeric(sub[y_field], errors="coerce")
-            sub = sub.dropna()
-
-            if len(sub) == 0:
-                raise ValueError("No valid numeric data points")
-
-            points = [{"x": safe_float(row[x_field]), "y": safe_float(row[y_field])} for _, row in sub.iterrows()]
-
-            return {
-                "chartType": "scatter",
-                "chartData": {"points": points},
-                "stats": {"totalPoints": len(points)},
-                "title": f"{x_def['name']} vs {y_def['name']}",
-                "xLabel": x_def["name"],
-                "yLabel": y_def["name"],
-                "tableData": {
-                    "columns": [x_def["name"], y_def["name"]],
-                    "rows": [[p["x"], p["y"]] for p in points],
-                },
-                "operation": "chart",
-                "datasetId": dataset_id,
-            }
+            return _scatter(df, x_def, y_def, x_field, y_field, dataset_id)
 
         # Bar/Line/Pie: group by X, aggregate Y
         if y_field and y_field in df.columns:

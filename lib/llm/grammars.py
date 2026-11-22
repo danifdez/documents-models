@@ -41,32 +41,10 @@ _BOUNDED_STRING = r"""
 sstring ::= "\"" ( [^"\\\x7F\x00-\x1F] | "\\" (["\\bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) ){0,200} "\"" ws
 """
 
-# Any single JSON value (the equivalent of "just give me valid JSON").
-JSON_VALUE_GBNF = "root ::= value\n" + _JSON_COMMON
-
 # A JSON array of strings (e.g. verbatim date expressions / candidate spans).
 STRING_ARRAY_GBNF = (
     r"""
 root ::= "[" ws ( sstring ( "," ws sstring ){0,63} )? "]"
 """
     + _BOUNDED_STRING + _JSON_COMMON
-)
-
-# Agent step decision: {"thought": ..., "tool": ..., "args": {...}}
-# or {"thought": ..., "finish": <value>}.
-AGENT_DECISION_GBNF = (
-    r"""
-root     ::= "{" ws "\"thought\"" ws ":" ws string "," ws ( toolcall | finish ) "}"
-toolcall ::= "\"tool\"" ws ":" ws string "," ws "\"args\"" ws ":" ws object
-finish   ::= "\"finish\"" ws ":" ws value
-"""
-    + _JSON_COMMON
-)
-
-# Forced final synthesis when an agent runs out of steps: finish only.
-AGENT_FINISH_GBNF = (
-    r"""
-root   ::= "{" ws "\"thought\"" ws ":" ws string "," ws "\"finish\"" ws ":" ws value "}"
-"""
-    + _JSON_COMMON
 )

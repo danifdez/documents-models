@@ -9,17 +9,16 @@ constrains decoding, which cannot produce invalid JSON in the first place.)
 """
 
 import json
-import re
 from typing import Any, Optional
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
-
-
 def _strip_fences(text: str) -> str:
-    m = _FENCE_RE.search(text)
-    if m:
-        return m.group(1)
-    return text
+    _, opening, remainder = text.partition("```")
+    if not opening:
+        return text
+    body, closing, _ = remainder.partition("```")
+    if not closing:
+        return text
+    return body[4:] if body[:4].lower() == "json" else body
 
 
 def _extract_outermost(text: str, open_ch: str, close_ch: str) -> Optional[str]:
@@ -28,20 +27,11 @@ def _extract_outermost(text: str, open_ch: str, close_ch: str) -> Optional[str]:
     if start < 0:
         return None
     depth = 0
-    in_str = False
-    escape = False
-    for i in range(start, len(text)):
+    i = start
+    while i < len(text):
         c = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif c == "\\":
-                escape = True
-            elif c == '"':
-                in_str = False
-            continue
         if c == '"':
-            in_str = True
+            i = _end_of_string(text, i + 1)
             continue
         if c == open_ch:
             depth += 1
@@ -49,7 +39,17 @@ def _extract_outermost(text: str, open_ch: str, close_ch: str) -> Optional[str]:
             depth -= 1
             if depth == 0:
                 return text[start:i + 1]
+        i += 1
     return None
+
+
+def _end_of_string(text: str, start: int) -> int:
+    i = start
+    while i < len(text):
+        if text[i] == '"':
+            return i + 1
+        i += 2 if text[i] == "\\" else 1
+    return i
 
 
 def parse_json(text: str, default: Any = None) -> Any:

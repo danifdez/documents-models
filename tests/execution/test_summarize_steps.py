@@ -221,14 +221,12 @@ class SummarizeStepTest(unittest.TestCase):
         self.assertEqual(paragraphs["items"]["type"], "string")
 
     def test_global_writer_accepts_only_complete_paragraphs_within_the_range(self):
+        response = json.dumps({"paragraphs": ["One.", "Two."]})
         with self.assertRaisesRegex(ValueError, "invalid paragraphs"):
-            summarize_task._parse_summary(
-                json.dumps({"paragraphs": ["One.", "Two."]}), 1, 1,
-            )
+            summarize_task._parse_summary(response, 1, 1)
+        response = json.dumps({"paragraphs": [["Sentence-shaped item."]]})
         with self.assertRaisesRegex(ValueError, "invalid paragraphs"):
-            summarize_task._parse_summary(
-                json.dumps({"paragraphs": [["Sentence-shaped item."]]}), 1, 2,
-            )
+            summarize_task._parse_summary(response, 1, 2)
 
     def test_finalize_joins_sections_only_at_the_terminal_step(self):
         partials = [["First paragraph."], ["Second paragraph."]]
@@ -271,10 +269,9 @@ class SummarizeStepTest(unittest.TestCase):
     def test_section_parser_fails_closed_and_rejects_cut_text(self):
         with self.assertRaisesRegex(ValueError, "invalid section JSON"):
             summarize_task._parse_section_summary("not-json")
+        response = json.dumps({"summary": "Sentence cut at the lim"})
         with self.assertRaisesRegex(ValueError, "invalid section summary"):
-            summarize_task._parse_section_summary(json.dumps({
-                "summary": "Sentence cut at the lim",
-            }))
+            summarize_task._parse_section_summary(response)
 
 
 if __name__ == "__main__":

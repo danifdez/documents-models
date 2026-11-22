@@ -127,10 +127,9 @@ class ChatInferenceTest(unittest.TestCase):
         self.assertIn("IA Browser is connected for this turn", instructions)
 
     def test_rejects_legacy_text_skill_signals(self):
+        active_capabilities = capabilities(skill_signals=["workspace_folder_configured"])
         with self.assertRaisesRegex(ValueError, "Invalid product skill signals"):
-            resolve_active_skill_instructions(
-                capabilities(skill_signals=["workspace_folder_configured"])
-            )
+            resolve_active_skill_instructions(active_capabilities)
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
@@ -208,14 +207,13 @@ class ChatInferenceTest(unittest.TestCase):
             ],
         }
 
+        payload = {
+            "_task_type": "assistant-chat",
+            "activeCapabilities": capabilities(skills=[selected_skill]),
+            "conversation": [{"role": "user", "content": "Read the file"}],
+        }
         with self.assertRaisesRegex(ValueError, "Unsupported active skill"):
-            chat_inference(
-                {
-                    "_task_type": "assistant-chat",
-                    "activeCapabilities": capabilities(skills=[selected_skill]),
-                    "conversation": [{"role": "user", "content": "Read the file"}],
-                }
-            )
+            chat_inference(payload)
 
     @patch("tasks.assistant_chat.assistant_chat.get_llm_params", return_value={})
     @patch("tasks.assistant_chat.assistant_chat.get_task_config")
@@ -874,14 +872,13 @@ class ChatInferenceTest(unittest.TestCase):
         get_llm_service.return_value = llm
         get_task_config.return_value = {"max_tokens": 200, "max_tool_calls": 2}
 
+        payload = {
+            "_task_type": "assistant-chat",
+            "activeCapabilities": capabilities("documents.search"),
+            "conversation": [{"role": "user", "content": "Delete it"}],
+        }
         with self.assertRaisesRegex(ValueError, "Unsupported tool requested"):
-            chat_inference(
-                {
-                    "_task_type": "assistant-chat",
-                    "activeCapabilities": capabilities("documents.search"),
-                    "conversation": [{"role": "user", "content": "Delete it"}],
-                }
-            )
+            chat_inference(payload)
 
 
 if __name__ == "__main__":

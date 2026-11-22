@@ -7,6 +7,8 @@ from common.execution_registry import TASK_HANDLERS
 
 logger = logging.getLogger(__name__)
 
+_DATASET_EXTRACTION_HANDLER = "tasks.dataset_extraction.handler"
+
 TASK_MODULES = {
     "date-extraction-map": "tasks.dates.dates",
     "date-extraction-reduce": "tasks.dates.dates",
@@ -33,9 +35,9 @@ TASK_MODULES = {
     "agent-chat": "tasks.assistant_chat.assistant_chat",
     "context-input-map": "tasks.context_input_map.context_input_map",
     "context-input-reduce": "tasks.context_input_reduce.context_input_reduce",
-    "dataset.extract-row": "tasks.dataset_extraction.handler",
-    "dataset.extract-row-map": "tasks.dataset_extraction.handler",
-    "dataset.extract-row-reduce": "tasks.dataset_extraction.handler",
+    "dataset.extract-row": _DATASET_EXTRACTION_HANDLER,
+    "dataset.extract-row-map": _DATASET_EXTRACTION_HANDLER,
+    "dataset.extract-row-reduce": _DATASET_EXTRACTION_HANDLER,
     "dataset.propose-columns": "tasks.dataset_extraction.propose_columns",
 }
 

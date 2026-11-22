@@ -19,7 +19,7 @@ _RANGE_SEPARATORS_RE = re.compile(
     r"\s+[-–—]\s+",
     re.IGNORECASE,
 )
-_YEAR_RE = re.compile(r"\b(1[0-9]{3}|2[0-9]{3})\b")
+_YEAR_RE = re.compile(r"\b[12](?a:\d{3})\b")
 _MONTH_NAME_RE = re.compile(
     r"\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|"
     r"aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?|"
@@ -68,7 +68,7 @@ _TIME_UNIT_RE = re.compile(
     r"mesi|anni?|ore|ora|minuti?|decenni?|secoli?)\b",
     re.IGNORECASE,
 )
-_DECOR_RE = re.compile(r"^[\s_*`~@#]+|[\s_*`~@#]+$")
+_DECORATION = "_*`~@#"
 _DETECT_PROMPT = get_prompt("date-extraction-map", "detect_prompt.md")
 _LANGUAGE_SKIP_TOKENS = {
     "it": ["il"],
@@ -85,6 +85,15 @@ def _parse_expression_array(response: str) -> List[str]:
     return parsed
 
 
+def _strip_expression_decoration(item: str) -> str:
+    start, end = 0, len(item)
+    while start < end and (item[start].isspace() or item[start] in _DECORATION):
+        start += 1
+    while start < end and (item[end - 1].isspace() or item[end - 1] in _DECORATION):
+        end -= 1
+    return item[start:end]
+
+
 def _detect_expressions(text: str, config: Dict[str, Any]) -> List[str]:
     if not _DETECT_PROMPT:
         raise RuntimeError("date-extraction-map prompt is unavailable")
@@ -97,7 +106,7 @@ def _detect_expressions(text: str, config: Dict[str, Any]) -> List[str]:
     return [
         cleaned
         for item in _parse_expression_array(response)
-        if len(cleaned := _DECOR_RE.sub("", item)) >= 2
+        if len(cleaned := _strip_expression_decoration(item)) >= 2
     ]
 
 
@@ -262,6 +271,20 @@ def _extract_dates(
     return entries
 
 
+def _duplicate_date_entry(entry, existing) -> bool:
+    raw = str(entry.get("rawExpression") or "").casefold()
+    offset = int(entry.get("charOffset") or 0)
+    existing_raw = str(existing.get("rawExpression") or "").casefold()
+    existing_offset = int(existing.get("charOffset") or 0)
+    if existing_offset == offset and existing_raw == raw:
+        return True
+    if entry.get("date") is None:
+        return False
+    same_date = all(entry.get(field) == existing.get(field) for field in ("date", "endDate", "precision"))
+    overlaps = existing_offset + len(existing_raw) > offset and offset + len(raw) > existing_offset
+    return same_date and (existing_raw == raw or overlaps)
+
+
 def _dedupe_and_sort(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ordered = sorted(
         entries,
@@ -272,30 +295,7 @@ def _dedupe_and_sort(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     )
     kept: List[Dict[str, Any]] = []
     for entry in ordered:
-        raw = str(entry.get("rawExpression") or "").casefold()
-        offset = int(entry.get("charOffset") or 0)
-        end = offset + len(raw)
-        duplicate = False
-        for existing in kept:
-            existing_raw = str(existing.get("rawExpression") or "").casefold()
-            existing_offset = int(existing.get("charOffset") or 0)
-            existing_end = existing_offset + len(existing_raw)
-            if existing_offset == offset and existing_raw == raw:
-                duplicate = True
-                break
-            same_date = (
-                entry.get("date") is not None
-                and existing.get("date") == entry.get("date")
-                and existing.get("endDate") == entry.get("endDate")
-                and existing.get("precision") == entry.get("precision")
-            )
-            if same_date and (
-                existing_raw == raw
-                or not (existing_end <= offset or end <= existing_offset)
-            ):
-                duplicate = True
-                break
-        if not duplicate:
+        if not any(_duplicate_date_entry(entry, existing) for existing in kept):
             kept.append(entry)
     return sorted(
         kept,
