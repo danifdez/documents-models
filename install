@@ -184,7 +184,11 @@ else
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y ffmpeg -q && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo dnf install ffmpeg)"
   elif command -v brew >/dev/null 2>&1; then
-    brew install ffmpeg && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: brew install ffmpeg)"
+    if brew install ffmpeg; then
+      ok "ffmpeg installed"
+    else
+      warn "Failed to install ffmpeg (try: brew install ffmpeg)"
+    fi
   else
     warn "Could not install ffmpeg automatically. Install it manually for audio/video support."
   fi
