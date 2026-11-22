@@ -59,7 +59,7 @@ def engine_properties(data):
     if model:
         properties['modelLabel'] = model
     build = data.get('build_info')
-    match = re.fullmatch(r'b([0-9]{1,9})-([0-9a-f]{7,40})(-dirty)?', build) if isinstance(build, str) else None
+    match = re.fullmatch(r'b(\d{1,9})-([0-9a-f]{7,40})(-dirty)?', build) if isinstance(build, str) else None
     if match:
         properties.update(buildNumber=int(match[1]), buildCommit=match[2])
         if match[3]:
