@@ -4,6 +4,9 @@ import email.utils
 from email import policy
 
 
+_HTML_CONTENT_TYPE = "text/html"
+
+
 def _decode_header(value: str | None) -> str | None:
     if not value:
         return None
@@ -25,21 +28,21 @@ def _decode_part(part) -> str | None:
 
 
 def _multipart_bodies(message):
-    bodies = {"text/html": None, "text/plain": None}
+    bodies = {_HTML_CONTENT_TYPE: None, "text/plain": None}
     for part in message.walk():
         content_type = part.get_content_type()
         if content_type not in bodies or "attachment" in str(part.get("Content-Disposition", "")):
             continue
         if bodies[content_type] is None:
             bodies[content_type] = _decode_part(part)
-    return bodies["text/html"], bodies["text/plain"]
+    return bodies[_HTML_CONTENT_TYPE], bodies["text/plain"]
 
 
 def _get_body(msg) -> str:
     """Return HTML body if available, otherwise plain text converted to <p> tags."""
     if msg.is_multipart():
         html, text = _multipart_bodies(msg)
-    elif msg.get_content_type() == "text/html":
+    elif msg.get_content_type() == _HTML_CONTENT_TYPE:
         html, text = _decode_part(msg), None
     else:
         html, text = None, _decode_part(msg)

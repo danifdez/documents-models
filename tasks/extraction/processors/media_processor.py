@@ -83,6 +83,7 @@ def _build_content(info_rows: list[tuple[str, str]]) -> str:
 
 
 _MP4_EXTENSIONS = (".mp4", ".m4v", ".mov", ".m4a", ".aac")
+_FLAC_EXTENSION = ".flac"
 
 
 def _read_wave_tags(audio):
@@ -102,7 +103,7 @@ def _read_media(file_path, extension):
         return MP4(file_path), _extract_mp4_fields
     parsers = {
         ".mp3": (MP3, _extract_id3_fields),
-        ".flac": (FLAC, _extract_vorbis_fields),
+        _FLAC_EXTENSION: (FLAC, _extract_vorbis_fields),
         ".ogg": (OggVorbis, _extract_vorbis_fields),
         ".wav": (WAVE, _read_wave_tags),
     }
@@ -122,7 +123,7 @@ def _mp4_info(info, extension, is_video):
 def _media_info(audio, extension, is_video):
     if extension in _MP4_EXTENSIONS:
         return _mp4_info(audio.info, extension, is_video)
-    if extension in {".mp3", ".flac", ".ogg", ".wav"}:
+    if extension in {".mp3", _FLAC_EXTENSION, ".ogg", ".wav"}:
         return _fixed_audio_info(audio.info, extension)
     rows = [("Formato", extension.lstrip(".").upper())]
     if hasattr(audio, "info") and hasattr(audio.info, "length"):
@@ -137,7 +138,7 @@ def _fixed_audio_info(info, extension):
         bitrate = "—" if extension == ".ogg" and not info.bitrate else f"{info.bitrate // 1000} kbps"
         rows.append(("Bitrate", bitrate))
     rows.extend([("Canales", str(info.channels)), (_SAMPLE_RATE_LABEL, f"{info.sample_rate} Hz")])
-    if extension in {".flac", ".wav"}:
+    if extension in {_FLAC_EXTENSION, ".wav"}:
         rows.append(("Bits por muestra", str(info.bits_per_sample)))
     return rows
 

@@ -15,17 +15,18 @@ from lib.telemetry import assignment_context
 
 logger = logging.getLogger(__name__)
 
+_JSON_VALUE_SCHEMA_ID = "https://documents.local/harness/v1/schemas/common.schema.json#/$defs/jsonValue"
 
-def _inference_outcome(value, task_type: str):
-    return (
-        value.value
-        if isinstance(value, InferenceOutcome)
-        else {
-            "kind": "structured_result",
-            "schemaId": f"{task_type}-output/1",
-            "value": value,
-        }
-    )
+
+def _inference_outcome(value):
+    if isinstance(value, InferenceOutcome):
+        return value.value
+    # Plain handler values use the JSON value definition from the v1 result contract.
+    return {
+        "kind": "structured_result",
+        "schemaId": _JSON_VALUE_SCHEMA_ID,
+        "value": value,
+    }
 
 
 @assignment_context
@@ -71,7 +72,7 @@ def execute_assignment(
             output_artifacts.extend(produced_artifacts)
         success_base = {**base, "artifactRefs": artifact_refs}
         if step_kind == "inference":
-            outcome = _inference_outcome(value, task_type)
+            outcome = _inference_outcome(value)
             return {
                 **success_base,
                 "status": "succeeded",

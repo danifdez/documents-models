@@ -206,8 +206,7 @@ def loaded_model(url: str) -> str:
         ]
         if loaded:
             return str(loaded[0])
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
-            json.JSONDecodeError, AttributeError):
+    except (OSError, json.JSONDecodeError, AttributeError):
         pass
     data = props(url)
     path = data.get("model_path") or data.get("model") or ""

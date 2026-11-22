@@ -7,6 +7,7 @@ from .html_cleanup import normalize_html_blocks
 
 logger = logging.getLogger(__name__)
 
+_HTML_PARSER = "html.parser"
 _author_meta_names = ["author", ":author", "byl", "dc.creator"]
 _date_meta_names = [":published_time", ":publishtime", "date", "publication_date","dc.date.issued", "pubdate", "timestamp"]
 
@@ -46,11 +47,11 @@ def _convert_custom_table_to_html(soup):
     return soup
 
 def _clean_extracted_html(extracted):
-    soup = BeautifulSoup(extracted, "html.parser")
+    soup = BeautifulSoup(extracted, _HTML_PARSER)
     normalize_html_blocks(soup)
     if soup.find("html") and (body := soup.find("body")):
         body_html = "".join(str(content) for content in body.contents)
-        soup = BeautifulSoup(body_html, "html.parser")
+        soup = BeautifulSoup(body_html, _HTML_PARSER)
     for tag in soup.find_all(["head", "script", "style"]):
         tag.decompose()
     for graphic in soup.find_all("graphic"):
@@ -66,7 +67,7 @@ def process_html(html_content) -> dict:
     extracted = extract(
         html_content, output_format="html", favor_precision=True, include_formatting=True, include_links=True, include_images=True, include_tables=True)
 
-    soup = BeautifulSoup(html_content, "html.parser")
+    soup = BeautifulSoup(html_content, _HTML_PARSER)
     title = soup.title.string if soup.title else "No Title"
     author = _get_meta_content(soup, _author_meta_names)
     publication_date = _get_meta_content(soup, _date_meta_names)

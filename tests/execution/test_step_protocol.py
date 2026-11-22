@@ -308,7 +308,7 @@ class StepProtocolTest(unittest.TestCase):
                 "kind": "inference",
                 "outcome": {
                     "kind": "structured_result",
-                    "schemaId": f"{task_type}-output/1",
+                    "schemaId": "https://documents.local/harness/v1/schemas/common.schema.json#/$defs/jsonValue",
                     "value": {"response": "summary"},
                 },
             },
