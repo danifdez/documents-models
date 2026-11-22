@@ -34,40 +34,62 @@ def _setting(name, value):
     return False
 
 
+_IGNORED_VALUE_ARGS = {'--host', '--port', '--model', '--lora'}
+_STARTUP_VALUE_ARGS = _INTEGER_ARGS | _NUMBER_ARGS | {
+    '--n-gpu-layers', '--cache-type-k', '--cache-type-v', '--flash-attn'
+}
+
+
+def _apply_startup_switch(flag, settings):
+    negated = flag.startswith('--no-')
+    key = '--' + flag[5:] if negated else flag
+    settings[key] = not negated
+
+
+def _skip_startup_value(args, index, flag, settings):
+    if index >= len(args):
+        return index, True
+    if flag == '--lora':
+        settings['loraCount'] = settings.get('loraCount', 0) + 1
+    return index + 1, False
+
+
+def _read_startup_setting(args, index, flag, settings):
+    value = args[index]
+    try:
+        if flag in _INTEGER_ARGS or (flag == '--n-gpu-layers' and value not in ('auto', 'all')):
+            value = int(value)
+        elif flag in _NUMBER_ARGS:
+            value = float(value)
+        if not _setting(flag, value):
+            raise ValueError()
+        settings[flag] = value
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
+def _consume_startup_argument(args, index, settings):
+    flag = args[index]
+    index += 1
+    if flag in _SWITCH_ARGS:
+        _apply_startup_switch(flag, settings)
+        return index, False
+    if flag in _IGNORED_VALUE_ARGS:
+        return _skip_startup_value(args, index, flag, settings)
+    if flag not in _STARTUP_VALUE_ARGS or index >= len(args):
+        return index, True
+    return index + 1, not _read_startup_setting(args, index, flag, settings)
+
+
 def startup_configuration(command, environment=None):
     """Capture the actual argv projection; never store argv, paths or environment values."""
     settings, omissions = {}, set()
     args = list(command[1:])
     index = 0
     while index < len(args):
-        flag = args[index]
-        index += 1
-        if flag in _SWITCH_ARGS:
-            key = '--' + flag[5:] if flag.startswith('--no-') else flag
-            settings[key] = not flag.startswith('--no-')
-            continue
-        if flag in {'--host', '--port', '--model', '--lora'}:
-            if index >= len(args):
-                omissions.add('unsupported_arguments')
-                continue
-            if flag == '--lora':
-                settings['loraCount'] = settings.get('loraCount', 0) + 1
-            index += 1
-            continue
-        if flag not in _INTEGER_ARGS | _NUMBER_ARGS | {'--n-gpu-layers', '--cache-type-k', '--cache-type-v', '--flash-attn'} or index >= len(args):
-            omissions.add('unsupported_arguments')
-            continue
-        value = args[index]
-        index += 1
-        try:
-            if flag in _INTEGER_ARGS or (flag == '--n-gpu-layers' and value not in ('auto', 'all')):
-                value = int(value)
-            elif flag in _NUMBER_ARGS:
-                value = float(value)
-            if not _setting(flag, value):
-                raise ValueError()
-            settings[flag] = value
-        except (TypeError, ValueError, OverflowError):
+        index, omitted = _consume_startup_argument(args, index, settings)
+        if omitted:
             omissions.add('unsupported_arguments')
     environment = os.environ if environment is None else environment
     if any(key.startswith(('LLAMA_ARG_', 'CUDA_', 'GGML_', 'HIP_', 'OMP_', 'SYCL_', 'VK_')) for key in environment):
