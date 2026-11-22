@@ -120,6 +120,31 @@ _SAMPLERS = {'dry', 'top_k', 'top_p', 'top_n_sigma', 'min_p', 'xtc', 'typ_p', 't
              'penalties', 'infill', 'dist', 'mirostat', 'adaptive_p'}
 
 
+def _generation_value(name, value):
+    if name in _INTEGER_DEFAULTS:
+        return type(value) is int and -2**31 <= value <= 2**32 - 1
+    if name in _NUMBER_DEFAULTS:
+        return type(value) in (int, float) and abs(value) <= 1e12 and math.isfinite(value)
+    if name in _BOOLEAN_DEFAULTS:
+        return type(value) is bool
+    if name == 'samplers':
+        return isinstance(value, list) and len(value) <= 32 and all(isinstance(item, str) and item in _SAMPLERS for item in value)
+    if name == 'reasoning_format':
+        return isinstance(value, str) and value in {'none', 'deepseek', 'deepseek-legacy', 'auto'}
+    if name == 'generation_prompt':
+        return value == ''
+    if name == 'lora':
+        return _lora_value(value)
+    return False
+
+
+def _lora_value(value):
+    return isinstance(value, list) and len(value) <= 32 and all(
+        isinstance(item, dict) and set(item) == {'id', 'scale'} and type(item['id']) is int
+        and 0 <= item['id'] < 2**31 and type(item['scale']) in (int, float)
+        and abs(item['scale']) <= 1e12 and math.isfinite(item['scale']) for item in value)
+
+
 def generation_defaults(data):
     """GET /props reports a metrics subset, not all effective sampling options."""
     defaults = data.get('default_generation_settings') if isinstance(data, dict) else None
@@ -128,25 +153,7 @@ def generation_defaults(data):
         return None
     settings, omissions = {}, {'unreported_generation_parameters'}
     for name, value in params.items():
-        valid = False
-        if name in _INTEGER_DEFAULTS:
-            valid = type(value) is int and -2**31 <= value <= 2**32 - 1
-        elif name in _NUMBER_DEFAULTS:
-            valid = type(value) in (int, float) and abs(value) <= 1e12 and math.isfinite(value)
-        elif name in _BOOLEAN_DEFAULTS:
-            valid = type(value) is bool
-        elif name == 'samplers':
-            valid = isinstance(value, list) and len(value) <= 32 and all(isinstance(item, str) and item in _SAMPLERS for item in value)
-        elif name == 'reasoning_format':
-            valid = isinstance(value, str) and value in {'none', 'deepseek', 'deepseek-legacy', 'auto'}
-        elif name == 'generation_prompt':
-            valid = value == ''
-        elif name == 'lora':
-            valid = isinstance(value, list) and len(value) <= 32 and all(
-                isinstance(item, dict) and set(item) == {'id', 'scale'} and type(item['id']) is int
-                and 0 <= item['id'] < 2**31 and type(item['scale']) in (int, float)
-                and abs(item['scale']) <= 1e12 and math.isfinite(item['scale']) for item in value)
-        if valid:
+        if _generation_value(name, value):
             settings[name] = value
         else:
             omissions.add('unexported_or_invalid_values')
