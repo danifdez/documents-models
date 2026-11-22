@@ -33,17 +33,19 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$VERSION" ] && [ -n "$TARGET" ] &&
-  [ -n "$PYINSTALLER_VERSION" ] && [ -n "$PIP_VERSION" ] && [ -n "$PYTHON_VERSION" ] && [ -n "$STAGING" ] && [ -n "$OUTPUT" ] ||
+if [ -z "$VERSION" ] || [ -z "$TARGET" ] || [ -z "$PYINSTALLER_VERSION" ] ||
+  [ -z "$PIP_VERSION" ] || [ -z "$PYTHON_VERSION" ] || [ -z "$STAGING" ] || [ -z "$OUTPUT" ]; then
   die "Models packaging requires version, target, runtime versions, staging and output" 2
+fi
 validate_semver "$VERSION"
 assert_local_target "$TARGET"
 assert_inside_workspace "$STAGING"
 assert_inside_workspace "$OUTPUT"
 require_command python3
 require_command node
-[ -n "$LLAMA_CPP_REPOSITORY" ] && [ -n "$LLAMA_CPP_REVISION" ] ||
+if [ -z "$LLAMA_CPP_REPOSITORY" ] || [ -z "$LLAMA_CPP_REVISION" ]; then
   die "llama-server build requires repository and revision" 2
+fi
 ACTIVE_PYTHON="$(python3 -c 'import platform; print(platform.python_version())')"
 [ "$ACTIVE_PYTHON" = "$PYTHON_VERSION" ] || die "Models must be packaged with Python $PYTHON_VERSION (current: $ACTIVE_PYTHON)" 3
 case "$VARIANT" in cpu|cuda|metal) ;; *) die "Unsupported Models variant: $VARIANT" 2 ;; esac

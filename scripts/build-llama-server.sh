@@ -21,8 +21,9 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$VARIANT" ] && [ -n "$REPOSITORY" ] && [ -n "$REVISION" ] && [ -n "$STAGING" ] ||
+if [ -z "$VARIANT" ] || [ -z "$REPOSITORY" ] || [ -z "$REVISION" ] || [ -z "$STAGING" ]; then
   die "llama-server build requires variant, repository, revision and staging" 2
+fi
 case "$VARIANT" in cpu|cuda|metal) ;; *) die "Unsupported llama-server variant: $VARIANT" 2 ;; esac
 assert_inside_workspace "$STAGING"
 require_command cmake

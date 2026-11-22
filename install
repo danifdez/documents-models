@@ -51,7 +51,7 @@ else
 
   echo ""
   printf '%s\n' "${BOLD}${CYAN}── Models configuration ──${NC}"
-  printf "${DIM}  Press Enter to accept the default value shown in brackets.${NC}\n"
+  printf '%s  Press Enter to accept the default value shown in brackets.%s\n' "$DIM" "$NC"
   echo ""
 
   # ── Embeddings / RAG ──
@@ -182,7 +182,11 @@ else
       warn "Failed to install ffmpeg (try: sudo apt install ffmpeg)"
     fi
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y ffmpeg -q && ok "ffmpeg installed" || warn "Failed to install ffmpeg (try: sudo dnf install ffmpeg)"
+    if sudo dnf install -y ffmpeg -q; then
+      ok "ffmpeg installed"
+    else
+      warn "Failed to install ffmpeg (try: sudo dnf install ffmpeg)"
+    fi
   elif command -v brew >/dev/null 2>&1; then
     if brew install ffmpeg; then
       ok "ffmpeg installed"
@@ -207,6 +211,7 @@ else
 fi
 
 # ── Activate venv ──
+# shellcheck source=/dev/null
 source .venv/bin/activate
 
 info "Upgrading pip..."
@@ -382,7 +387,8 @@ fi
 printf '%s============================================%s\n' "${GREEN}" "${NC}"
 echo ""
 echo "  Configuration:       config/config.json, config/tasks.json"
-echo "  Activate venv:       source .venv/bin/activate"
+echo "  Activate venv:       # shellcheck source=/dev/null
+source .venv/bin/activate"
 echo "  Start execution worker: python executions.py"
 echo "  Start voice worker:  python -m voice.run_pool    (live dictation; opt-in)"
 echo ""

@@ -12,7 +12,11 @@ def llama_build_metadata(llama_server: str) -> str:
         timeout=15,
     )
     output = f"{completed.stdout}\n{completed.stderr}".strip()
-    linker = "ldd" if sys.platform.startswith("linux") else "otool" if sys.platform == "darwin" else None
+    linker = None
+    if sys.platform.startswith("linux"):
+        linker = "ldd"
+    elif sys.platform == "darwin":
+        linker = "otool"
     if linker and shutil.which(linker):
         arguments = [linker, llama_server] if linker == "ldd" else [linker, "-L", llama_server]
         linked = subprocess.run(

@@ -47,9 +47,7 @@ def progress(component, percent):
     print(f"PROGRESS:{component}:{percent}", flush=True)
 
 
-def setup():
-    tasks = load_tasks()
-
+def _download_steps(tasks):
     steps = []
 
     # Embedding model (always needed for RAG/search)
@@ -99,6 +97,23 @@ def setup():
             if model and model.endswith(".gguf") and model not in gguf_models:
                 gguf_models.add(model)
                 steps.append(("llm", model, download_gguf))
+    return steps
+
+
+def _run_download(download, model, report):
+    try:
+        download(model, report)
+    except SystemExit as error:
+        if error.code is None or error.code == 0:
+            raise
+        # Some optional downloaders report failure through their CLI exit.
+        raise RuntimeError(str(error)) from error
+
+
+def setup():
+    tasks = load_tasks()
+
+    steps = _download_steps(tasks)
 
     # LoRA adapters are placed manually; warn if configured but missing
     check_lora_files(tasks)
@@ -118,12 +133,9 @@ def setup():
         report(0)
         print(f"Downloading {name}: {model}", flush=True)
         try:
-            fn(model, report)
+            _run_download(fn, model, report)
             print(f"OK {name}: {model}", flush=True)
-        except (Exception, SystemExit) as e:
-            # SystemExit too: a downloader that shells out (pip/uv) can raise it
-            # on failure, which would otherwise abort the whole --setup (and the
-            # profile install) over a single optional model.
+        except Exception as e:
             print(f"WARNING: Failed to download {name} ({model}): {e}", file=sys.stderr, flush=True)
         acc += w
 
