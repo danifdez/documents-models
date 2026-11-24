@@ -6,6 +6,12 @@ from tasks.summarize.summarize import _combine_summary_lists
 
 @execution_handler("summarize-finalize")
 def summarize_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if "originalText" in payload:
+        original = payload["originalText"]
+        if not isinstance(original, str) or not original.strip():
+            raise ValueError("summarize-finalize requires usable original text")
+        return {"response": original}
+
     partials = payload.get("partials")
     if not isinstance(partials, list) or not partials:
         raise ValueError("summarize-finalize requires summary partials")

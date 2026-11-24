@@ -82,6 +82,30 @@ class SummarizeStepTest(unittest.TestCase):
             ["First section.", "Second section."], "en", ANY,
         )
 
+    def test_passthrough_preserves_the_original_without_model_access(self):
+        original = "  Texto literal <p> y café.\n"
+        with patch.object(summarize_task, "get_llm_service") as service:
+            self.assertEqual(summarize_finalize({"originalText": original}), {"response": original})
+            service.assert_not_called()
+
+    @patch("tasks.summarize.summarize.get_llm_params", return_value={})
+    @patch("tasks.summarize.summarize.get_llm_service")
+    def test_compose_retries_an_overlong_summary_without_slicing(self, service, _):
+        llm = service.return_value
+        overlong = json.dumps({"paragraphs": ["Here are four words."]})
+        short = json.dumps({"paragraphs": ["Three words suffice."]})
+        llm.chat.side_effect = [overlong, short]
+        cfg = {"input_max_chars": 1_000}
+        self.assertEqual(
+            summarize_task._write_summary(["Original paragraph."], "en", cfg, max_words=3),
+            "Three words suffice.",
+        )
+        self.assertIn("first draft exceeded 3 words", llm.chat.call_args.args[0][1]["content"])
+
+        llm.chat.side_effect = [overlong, overlong]
+        with self.assertRaisesRegex(ValueError, "exceeds the requested word limit"):
+            summarize_task._write_summary(["Original paragraph."], "en", cfg, max_words=3)
+
     def test_steps_reject_missing_or_invalid_section_summaries(self):
         with self.assertRaisesRegex(ValueError, "requires summary partials"):
             summarize_reduce({"partials": []})

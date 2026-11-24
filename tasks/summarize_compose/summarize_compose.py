@@ -22,5 +22,6 @@ def summarize_compose(payload: Dict[str, Any]) -> Dict[str, Any]:
             summaries,
             _target_language(payload),
             get_task_config("summarize-compose"),
+            **({"max_words": payload["maxWords"]} if "maxWords" in payload else {}),
         )
     }

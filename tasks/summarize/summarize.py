@@ -209,6 +209,8 @@ def _write_summary(
     summaries: List[str],
     target_language: str,
     cfg: Dict[str, Any],
+    *,
+    max_words: int | None = None,
 ) -> str:
     max_sections = int(cfg.get("input_max_sections", 16))
     max_chars = int(cfg.get("input_max_chars", 20000))
@@ -218,7 +220,11 @@ def _write_summary(
         or sum(len(summary) for summary in summaries) > max_chars
     ):
         raise ValueError("summary input exceeds configured limits")
-    max_words = _dynamic_output_word_limit(summaries, cfg)
+    explicit_limit = max_words is not None
+    if explicit_limit and (type(max_words) is not int or max_words < 1):
+        raise ValueError("summary word limit must be a positive integer")
+    if max_words is None:
+        max_words = _dynamic_output_word_limit(summaries, cfg)
     min_paragraphs = int(cfg.get("output_min_paragraphs", 1))
     max_paragraphs = int(cfg.get("output_max_paragraphs", 4))
     if min_paragraphs <= 0 or max_paragraphs < min_paragraphs:
@@ -234,31 +240,48 @@ def _write_summary(
         per_unit_default=4,
     )
     llm = get_llm_service(**get_llm_params("summarize-compose"))
-    raw = llm.chat(
-        [
-            {"role": "system", "content": _MERGE_SYSTEM},
-            {
-                "role": "user",
-                "content": _MERGE_USER.format(
-                    target_language=target_language,
-                    section_count=len(summaries),
-                    max_output_words=max_words,
-                    min_paragraphs=min_paragraphs,
-                    max_paragraphs=max_paragraphs,
-                    summaries=json.dumps(
-                        summaries,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ),
+    messages = [
+        {"role": "system", "content": _MERGE_SYSTEM},
+        {
+            "role": "user",
+            "content": _MERGE_USER.format(
+                target_language=target_language,
+                section_count=len(summaries),
+                max_output_words=max_words,
+                min_paragraphs=min_paragraphs,
+                max_paragraphs=max_paragraphs,
+                summaries=json.dumps(
+                    summaries,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
                 ),
-            },
-        ],
-        max_tokens=max_tokens,
-        response_format=_summary_response_format(min_paragraphs, max_paragraphs),
-        temperature=0.0,
-        seed=int(cfg.get("seed", 0)),
-    )
-    return _parse_summary(raw, min_paragraphs, max_paragraphs)
+            ),
+        },
+    ]
+    generation = {
+        "max_tokens": max_tokens,
+        "response_format": _summary_response_format(min_paragraphs, max_paragraphs),
+        "temperature": 0.0,
+        "seed": int(cfg.get("seed", 0)),
+    }
+    summary = _parse_summary(llm.chat(messages, **generation), min_paragraphs, max_paragraphs)
+    if explicit_limit and _word_count(summary) > max_words:
+        messages = [
+            messages[0],
+            {"role": "user", "content": messages[1]["content"] + (
+                f"\n\nThe first draft exceeded {max_words} words. Rewrite the summary "
+                f"in {max_words} words or fewer, using complete sentences and preserving "
+                "the essential information."
+            )},
+        ]
+        summary = _parse_summary(llm.chat(messages, **generation), min_paragraphs, max_paragraphs)
+        if _word_count(summary) > max_words:
+            raise ValueError("summary exceeds the requested word limit")
+    return summary
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+", text))
 
 
 def _combine_summary_lists(partials: List[List[str]]) -> List[str]:
