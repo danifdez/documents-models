@@ -58,6 +58,9 @@ CMAKE_ARGS=(
   -DLLAMA_BUILD_UI=OFF
   -DLLAMA_USE_PREBUILT_UI=OFF
 )
+if [ "$(uname -s)" = "Linux" ]; then
+  CMAKE_ARGS+=(-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN')
+fi
 case "$VARIANT" in
   cuda) CMAKE_ARGS+=(-DGGML_CUDA=ON -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler) ;;
   metal) CMAKE_ARGS+=(-DGGML_METAL=ON) ;;

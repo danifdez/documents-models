@@ -215,12 +215,7 @@ fi
 source .venv/bin/activate
 
 info "Upgrading pip..."
-pip install --upgrade pip -q
-
-# ── Install base dependencies ──
-info "Installing base dependencies..."
-pip install -r requirements.txt
-ok "Base dependencies installed"
+pip install --upgrade pip==26.3 -q
 
 # ── Detect CUDA / GPU ──
 HAS_CUDA=0
@@ -242,7 +237,7 @@ if [ "$HAS_CUDA" -eq 0 ] && [ -d "/usr/local/cuda" ]; then
   HAS_CUDA=1
 fi
 
-# ── Install GPU dependencies if CUDA detected ──
+# ── Install the ML runtime for this host before the base dependencies ──
 if [ "$HAS_CUDA" -eq 1 ]; then
   ok "CUDA detected"
   if nvidia-smi >/dev/null 2>&1; then
@@ -250,19 +245,30 @@ if [ "$HAS_CUDA" -eq 1 ]; then
       info "  GPU: $line"
     done
   fi
-  info "Installing GPU dependencies..."
-  pip install -r requirements-gpu.txt
-  # Force reinstall llama-cpp-python with CUDA support (compile from source)
-  info "Compiling llama-cpp-python with CUDA support (this may take a few minutes)..."
-  CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python==0.3.36 --force-reinstall --no-cache-dir
-  ok "GPU dependencies installed"
+  VARIANT_REQUIREMENTS="requirements-gpu.txt"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  VARIANT_REQUIREMENTS="requirements-metal.txt"
 else
   warn "No CUDA detected — installing CPU-only mode"
   info "The service will run on CPU. This is fully supported but slower for ML tasks."
+  VARIANT_REQUIREMENTS="requirements-cpu.txt"
+fi
+
+info "Installing ML runtime and base dependencies..."
+pip install -r "$VARIANT_REQUIREMENTS"
+pip install -r requirements.txt
+ok "Base dependencies installed"
+
+if [ "$HAS_CUDA" -eq 1 ]; then
+  # Force reinstall llama-cpp-python with CUDA support (compile from source)
+  info "Compiling llama-cpp-python with CUDA support (this may take a few minutes)..."
+  CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler" \
+    pip install llama-cpp-python==0.3.38 --force-reinstall --no-cache-dir
+  ok "GPU dependencies installed"
 fi
 
 # ── Build the generation server owned by Models ──
-LLAMA_CPP_REV="${LLAMA_CPP_REV:-563dec81c1c538aac0fad465ea933eb2a621a183}"
+LLAMA_CPP_REV="${LLAMA_CPP_REV:-171527522610996f5f0acf12334e185156ca8f44}"
 LLAMA_CPP_DIR="$SCRIPT_DIR/.llama.cpp"
 LLAMA_BUILD_DIR="$SCRIPT_DIR/.llama-server-build"
 LLAMA_DIR="$SCRIPT_DIR/bin/llama"
@@ -287,6 +293,8 @@ if [ ! -x "$LLAMA_BIN" ] || [ ! -f "$LLAMA_REVISION_FILE" ] \
     -DLLAMA_BUILD_EXAMPLES=OFF
     -DLLAMA_BUILD_TOOLS=ON
     -DLLAMA_BUILD_SERVER=ON
+    -DLLAMA_BUILD_UI=OFF
+    -DLLAMA_USE_PREBUILT_UI=OFF
   )
   if [ "$HAS_CUDA" -eq 1 ]; then
     CMAKE_ARGS+=(-DGGML_CUDA=ON -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler)

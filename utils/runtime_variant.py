@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 def llama_build_metadata(llama_server: str) -> str:
@@ -11,14 +12,15 @@ def llama_build_metadata(llama_server: str) -> str:
         text=True,
         timeout=15,
     )
-    output = f"{completed.stdout}\n{completed.stderr}".strip()
+    output = [completed.stdout, completed.stderr]
+    binary = Path(shutil.which(llama_server) or llama_server).resolve()
     linker = None
     if sys.platform.startswith("linux"):
         linker = "ldd"
     elif sys.platform == "darwin":
         linker = "otool"
     if linker and shutil.which(linker):
-        arguments = [linker, llama_server] if linker == "ldd" else [linker, "-L", llama_server]
+        arguments = [linker, str(binary)] if linker == "ldd" else [linker, "-L", str(binary)]
         linked = subprocess.run(
             arguments,
             check=False,
@@ -26,8 +28,15 @@ def llama_build_metadata(llama_server: str) -> str:
             text=True,
             timeout=15,
         )
-        output = f"{output}\n{linked.stdout}\n{linked.stderr}".strip()
-    return output
+        output.extend((linked.stdout, linked.stderr))
+    # llama.cpp can load its GPU backends at runtime instead of linking them.
+    for backend in ("cuda", "metal"):
+        output.extend(
+            f"backend library: {library.name}"
+            for library in sorted(binary.parent.glob(f"*ggml-{backend}.*"))
+            if library.is_file()
+        )
+    return "\n".join(part.strip() for part in output if part.strip())
 
 
 def validate_llama_variant(
@@ -36,7 +45,10 @@ def validate_llama_variant(
     platform: str | None = None,
 ) -> tuple[bool, str]:
     current_platform = platform or sys.platform
-    lowered = version_output.lower()
+    lowered = "\n".join(
+        line.split(" => ", 1)[0].replace("\\", "/").rsplit("/", 1)[-1]
+        for line in version_output.lower().splitlines()
+    )
     has_cuda = "cuda" in lowered or "ggml_cuda" in lowered
     has_metal = "metal" in lowered
 

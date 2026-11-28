@@ -61,7 +61,7 @@ of the base GGUF. Adapter files are placed manually. See [docs/configuration.md]
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.11.5+
 - Access to Documents Backend's authenticated worker protocol
 - Docker (optional, recommended)
 
